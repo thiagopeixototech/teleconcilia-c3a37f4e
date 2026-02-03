@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { VendaInterna, StatusInterno, Operadora } from '@/types/database';
@@ -64,6 +65,7 @@ const statusLabels: Record<StatusInterno, string> = {
 };
 
 export default function VendasInternas() {
+  const navigate = useNavigate();
   const { isAdmin } = useAuth();
   const [vendas, setVendas] = useState<VendaInterna[]>([]);
   const [operadoras, setOperadoras] = useState<Operadora[]>([]);
@@ -255,6 +257,10 @@ export default function VendasInternas() {
               <Button variant="outline" onClick={exportToCSV}>
                 <Download className="h-4 w-4 mr-2" />
                 Exportar CSV
+              </Button>
+              <Button onClick={() => navigate('/vendas/nova')}>
+                <Plus className="h-4 w-4 mr-2" />
+                Nova Venda
               </Button>
             </div>
           </CardContent>
