@@ -1,0 +1,152 @@
+import { 
+  LayoutDashboard, 
+  ShoppingCart, 
+  FileText, 
+  GitCompare, 
+  AlertTriangle, 
+  Building2, 
+  Users, 
+  LogOut,
+  ChevronDown
+} from 'lucide-react';
+import { NavLink } from '@/components/NavLink';
+import { useAuth } from '@/contexts/AuthContext';
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarHeader,
+  SidebarFooter,
+  useSidebar,
+} from '@/components/ui/sidebar';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+
+const mainNavItems = [
+  { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard },
+  { title: 'Vendas Internas', url: '/vendas', icon: ShoppingCart },
+  { title: 'Linha a Linha', url: '/linha-operadora', icon: FileText },
+  { title: 'Conciliação', url: '/conciliacao', icon: GitCompare },
+  { title: 'Divergências', url: '/divergencias', icon: AlertTriangle },
+];
+
+const adminNavItems = [
+  { title: 'Empresas', url: '/empresas', icon: Building2 },
+  { title: 'Vendedores', url: '/vendedores', icon: Users },
+];
+
+export function AppSidebar() {
+  const { state } = useSidebar();
+  const collapsed = state === 'collapsed';
+  const { signOut, vendedor, role, isAdmin } = useAuth();
+
+  return (
+    <Sidebar collapsible="icon" className="border-r border-sidebar-border">
+      <SidebarHeader className="border-b border-sidebar-border p-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground font-bold text-lg">
+            TC
+          </div>
+          {!collapsed && (
+            <div className="flex flex-col">
+              <span className="font-semibold text-sidebar-foreground">TeleConcilia</span>
+              <span className="text-xs text-sidebar-foreground/60">Sistema de Conciliação</span>
+            </div>
+          )}
+        </div>
+      </SidebarHeader>
+
+      <SidebarContent className="scrollbar-thin">
+        <SidebarGroup>
+          <SidebarGroupLabel className="text-sidebar-foreground/50 uppercase text-xs tracking-wider">
+            Principal
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {mainNavItems.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton asChild>
+                    <NavLink 
+                      to={item.url} 
+                      className="flex items-center gap-3 px-3 py-2 rounded-md text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+                      activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
+                    >
+                      <item.icon className="h-5 w-5 shrink-0" />
+                      {!collapsed && <span>{item.title}</span>}
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {isAdmin && (
+          <SidebarGroup>
+            <Collapsible defaultOpen className="group/collapsible">
+              <CollapsibleTrigger asChild>
+                <SidebarGroupLabel className="flex items-center justify-between cursor-pointer text-sidebar-foreground/50 uppercase text-xs tracking-wider hover:text-sidebar-foreground/80 transition-colors">
+                  Gestão
+                  {!collapsed && (
+                    <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
+                  )}
+                </SidebarGroupLabel>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {adminNavItems.map((item) => (
+                      <SidebarMenuItem key={item.title}>
+                        <SidebarMenuButton asChild>
+                          <NavLink 
+                            to={item.url} 
+                            className="flex items-center gap-3 px-3 py-2 rounded-md text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+                            activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
+                          >
+                            <item.icon className="h-5 w-5 shrink-0" />
+                            {!collapsed && <span>{item.title}</span>}
+                          </NavLink>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    ))}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </CollapsibleContent>
+            </Collapsible>
+          </SidebarGroup>
+        )}
+      </SidebarContent>
+
+      <SidebarFooter className="border-t border-sidebar-border p-4">
+        {!collapsed && vendedor && (
+          <div className="mb-3 px-2">
+            <p className="text-sm font-medium text-sidebar-foreground truncate">{vendedor.nome}</p>
+            <p className="text-xs text-sidebar-foreground/60 capitalize">{role}</p>
+          </div>
+        )}
+        <Button 
+          variant="ghost" 
+          size={collapsed ? "icon" : "default"}
+          onClick={signOut}
+          className={cn(
+            "w-full text-sidebar-foreground hover:bg-sidebar-accent hover:text-destructive",
+            collapsed ? "justify-center" : "justify-start gap-3"
+          )}
+        >
+          <LogOut className="h-5 w-5" />
+          {!collapsed && <span>Sair</span>}
+        </Button>
+      </SidebarFooter>
+    </Sidebar>
+  );
+}
