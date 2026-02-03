@@ -17,6 +17,7 @@ import Empresas from "./pages/Empresas";
 import Vendedores from "./pages/Vendedores";
 import GestaoRoles from "./pages/GestaoRoles";
 import CadastrosPendentes from "./pages/CadastrosPendentes";
+import Operadoras from "./pages/Operadoras";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -109,6 +110,15 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={['admin']}>
                   <CadastrosPendentes />
+                </ProtectedRoute>
+              }
+            />
+            
+            <Route
+              path="/operadoras"
+              element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <Operadoras />
                 </ProtectedRoute>
               }
             />

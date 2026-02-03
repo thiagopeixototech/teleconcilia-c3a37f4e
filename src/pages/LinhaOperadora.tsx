@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/supabase/client';
-import { LinhaOperadora, StatusOperadora } from '@/types/database';
+import { LinhaOperadora, StatusOperadora, Operadora } from '@/types/database';
 import { useAuth } from '@/contexts/AuthContext';
 import { 
   Table, 
@@ -39,7 +39,8 @@ import {
   Download,
   Filter,
   FileSpreadsheet,
-  AlertCircle
+  AlertCircle,
+  Radio
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -63,6 +64,7 @@ const statusLabels: Record<StatusOperadora, string> = {
 export default function LinhaOperadoraPage() {
   const { isAdmin } = useAuth();
   const [linhas, setLinhas] = useState<LinhaOperadora[]>([]);
+  const [operadoras, setOperadoras] = useState<Operadora[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -72,12 +74,13 @@ export default function LinhaOperadoraPage() {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [selectedOperadoraUpload, setSelectedOperadoraUpload] = useState<string>('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const operadoras = [...new Set(linhas.map(l => l.operadora))];
 
   useEffect(() => {
     fetchLinhas();
+    fetchOperadoras();
   }, []);
 
   const fetchLinhas = async () => {
@@ -96,6 +99,24 @@ export default function LinhaOperadoraPage() {
       setIsLoading(false);
     }
   };
+
+  const fetchOperadoras = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('operadoras')
+        .select('*')
+        .eq('ativa', true)
+        .order('nome');
+
+      if (error) throw error;
+      setOperadoras(data as Operadora[]);
+    } catch (error) {
+      console.error('Error fetching operadoras:', error);
+    }
+  };
+
+  // Get unique operadoras from linhas for filter
+  const operadorasFromLinhas = [...new Set(linhas.map(l => l.operadora))];
 
   const handleViewDetails = (linha: LinhaOperadora) => {
     setSelectedLinha(linha);
@@ -118,15 +139,36 @@ export default function LinhaOperadoraPage() {
     });
   };
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file) return;
+    if (file) {
+      setSelectedFile(file);
+      setUploadError(null);
+    }
+  };
+
+  const handleFileUpload = async () => {
+    if (!selectedFile) {
+      setUploadError('Selecione um arquivo');
+      return;
+    }
+
+    if (!selectedOperadoraUpload) {
+      setUploadError('Selecione a operadora');
+      return;
+    }
+
+    const operadora = operadoras.find(o => o.id === selectedOperadoraUpload);
+    if (!operadora) {
+      setUploadError('Operadora inválida');
+      return;
+    }
 
     setIsUploading(true);
     setUploadError(null);
 
     try {
-      const content = await file.text();
+      const content = await selectedFile.text();
       const rows = parseCSV(content);
 
       if (rows.length === 0) {
@@ -134,7 +176,7 @@ export default function LinhaOperadoraPage() {
       }
 
       const linhasToInsert = rows.map(row => ({
-        operadora: row.operadora || 'Desconhecida',
+        operadora: operadora.nome,
         protocolo_operadora: row.protocolo_operadora || row.protocolo || null,
         cpf_cnpj: row.cpf_cnpj || row.cpf || row.cnpj || null,
         cliente_nome: row.cliente_nome || row.cliente || row.nome || null,
@@ -144,7 +186,7 @@ export default function LinhaOperadoraPage() {
         data_status: row.data_status || row.data || null,
         status_operadora: (row.status_operadora || row.status || 'pendente') as StatusOperadora,
         quinzena_ref: row.quinzena_ref || row.quinzena || null,
-        arquivo_origem: file.name,
+        arquivo_origem: selectedFile.name,
       }));
 
       const { error } = await supabase
@@ -153,8 +195,10 @@ export default function LinhaOperadoraPage() {
 
       if (error) throw error;
 
-      toast.success(`${linhasToInsert.length} registros importados com sucesso`);
+      toast.success(`${linhasToInsert.length} registros importados com sucesso para ${operadora.nome}`);
       setIsUploadOpen(false);
+      setSelectedFile(null);
+      setSelectedOperadoraUpload('');
       fetchLinhas();
     } catch (error: any) {
       console.error('Error uploading file:', error);
@@ -206,6 +250,13 @@ export default function LinhaOperadoraPage() {
     return matchesSearch && matchesStatus && matchesOperadora;
   });
 
+  const handleOpenUpload = () => {
+    setSelectedFile(null);
+    setSelectedOperadoraUpload('');
+    setUploadError(null);
+    setIsUploadOpen(true);
+  };
+
   if (isLoading) {
     return (
       <AppLayout title="Linha a Linha Operadora">
@@ -234,11 +285,12 @@ export default function LinhaOperadoraPage() {
               </div>
               <Select value={operadoraFilter} onValueChange={setOperadoraFilter}>
                 <SelectTrigger className="w-full md:w-48">
+                  <Radio className="h-4 w-4 mr-2" />
                   <SelectValue placeholder="Operadora" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas Operadoras</SelectItem>
-                  {operadoras.map((op) => (
+                  {operadorasFromLinhas.map((op) => (
                     <SelectItem key={op} value={op}>{op}</SelectItem>
                   ))}
                 </SelectContent>
@@ -256,7 +308,7 @@ export default function LinhaOperadoraPage() {
                 </SelectContent>
               </Select>
               {isAdmin && (
-                <Button onClick={() => setIsUploadOpen(true)}>
+                <Button onClick={handleOpenUpload}>
                   <Upload className="h-4 w-4 mr-2" />
                   Importar CSV
                 </Button>
@@ -409,7 +461,7 @@ export default function LinhaOperadoraPage() {
             <DialogHeader>
               <DialogTitle>Importar Dados da Operadora</DialogTitle>
               <DialogDescription>
-                Faça upload de um arquivo CSV com os dados da operadora
+                Selecione a operadora e faça upload do arquivo CSV
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
@@ -419,35 +471,61 @@ export default function LinhaOperadoraPage() {
                   <AlertDescription>{uploadError}</AlertDescription>
                 </Alert>
               )}
+              
+              <div className="space-y-2">
+                <Label htmlFor="operadora">Operadora *</Label>
+                <Select value={selectedOperadoraUpload} onValueChange={setSelectedOperadoraUpload}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione a operadora" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {operadoras.map((op) => (
+                      <SelectItem key={op.id} value={op.id}>{op.nome}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="border-2 border-dashed rounded-lg p-8 text-center">
                 <FileSpreadsheet className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                 <p className="text-sm text-muted-foreground mb-4">
-                  Arraste um arquivo CSV ou clique para selecionar
+                  {selectedFile ? (
+                    <span className="font-medium text-foreground">{selectedFile.name}</span>
+                  ) : (
+                    'Selecione um arquivo CSV'
+                  )}
                 </p>
                 <Input
                   ref={fileInputRef}
                   type="file"
                   accept=".csv"
-                  onChange={handleFileUpload}
+                  onChange={handleFileSelect}
                   disabled={isUploading}
                   className="max-w-xs mx-auto"
                 />
               </div>
               <div className="text-xs text-muted-foreground">
                 <p className="font-medium mb-1">Colunas esperadas:</p>
-                <p>operadora, protocolo_operadora, cpf_cnpj, cliente_nome, telefone, plano, valor, data_status, status_operadora, quinzena_ref</p>
+                <p>protocolo_operadora, cpf_cnpj, cliente_nome, telefone, plano, valor, data_status, status_operadora, quinzena_ref</p>
               </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsUploadOpen(false)} disabled={isUploading}>
                 Cancelar
               </Button>
-              {isUploading && (
-                <Button disabled>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Importando...
-                </Button>
-              )}
+              <Button onClick={handleFileUpload} disabled={isUploading || !selectedFile || !selectedOperadoraUpload}>
+                {isUploading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Importando...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="mr-2 h-4 w-4" />
+                    Importar
+                  </>
+                )}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

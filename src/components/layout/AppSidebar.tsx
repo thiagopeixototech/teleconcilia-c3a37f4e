@@ -10,7 +10,8 @@ import {
   LogOut,
   ChevronDown,
   ClipboardList,
-  Clock
+  Clock,
+  Radio
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/contexts/AuthContext';
@@ -48,6 +49,7 @@ const supervisorNavItems = [
 const cadastrosItems = [
   { title: 'Cadastros Pendentes', url: '/cadastros-pendentes', icon: Clock },
   { title: 'Empresas', url: '/empresas', icon: Building2 },
+  { title: 'Operadoras', url: '/operadoras', icon: Radio },
   { title: 'Usuários', url: '/vendedores', icon: Users },
   { title: 'Permissões', url: '/permissoes', icon: Shield },
 ];

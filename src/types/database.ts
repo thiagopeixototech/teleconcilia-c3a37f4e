@@ -10,6 +10,14 @@ export type TipoMatch = 'protocolo' | 'cpf' | 'telefone' | 'manual';
 
 export type StatusConciliacao = 'conciliado' | 'divergente' | 'nao_encontrado';
 
+export interface Operadora {
+  id: string;
+  nome: string;
+  ativa: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Empresa {
   id: string;
   nome: string;
@@ -37,6 +45,7 @@ export interface VendaInterna {
   id: string;
   empresa_id: string | null;
   vendedor_id: string;
+  operadora_id: string | null;
   protocolo_interno: string | null;
   cpf_cnpj: string | null;
   cliente_nome: string;
@@ -52,6 +61,7 @@ export interface VendaInterna {
   updated_at: string;
   vendedor?: Vendedor | null;
   empresa?: Empresa | null;
+  operadora?: Operadora | null;
 }
 
 export interface LinhaOperadora {

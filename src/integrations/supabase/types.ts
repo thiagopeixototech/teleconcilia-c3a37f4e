@@ -182,6 +182,30 @@ export type Database = {
         }
         Relationships: []
       }
+      operadoras: {
+        Row: {
+          ativa: boolean
+          created_at: string
+          id: string
+          nome: string
+          updated_at: string
+        }
+        Insert: {
+          ativa?: boolean
+          created_at?: string
+          id?: string
+          nome: string
+          updated_at?: string
+        }
+        Update: {
+          ativa?: boolean
+          created_at?: string
+          id?: string
+          nome?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -214,6 +238,7 @@ export type Database = {
           endereco: string | null
           id: string
           observacoes: string | null
+          operadora_id: string | null
           plano: string | null
           protocolo_interno: string | null
           status_interno: Database["public"]["Enums"]["status_interno"]
@@ -232,6 +257,7 @@ export type Database = {
           endereco?: string | null
           id?: string
           observacoes?: string | null
+          operadora_id?: string | null
           plano?: string | null
           protocolo_interno?: string | null
           status_interno?: Database["public"]["Enums"]["status_interno"]
@@ -250,6 +276,7 @@ export type Database = {
           endereco?: string | null
           id?: string
           observacoes?: string | null
+          operadora_id?: string | null
           plano?: string | null
           protocolo_interno?: string | null
           status_interno?: Database["public"]["Enums"]["status_interno"]
@@ -264,6 +291,13 @@ export type Database = {
             columns: ["empresa_id"]
             isOneToOne: false
             referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vendas_internas_operadora_id_fkey"
+            columns: ["operadora_id"]
+            isOneToOne: false
+            referencedRelation: "operadoras"
             referencedColumns: ["id"]
           },
           {
