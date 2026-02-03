@@ -409,14 +409,14 @@ export default function VendedoresPage() {
               <div className="space-y-2">
                 <Label htmlFor="empresa">Empresa</Label>
                 <Select 
-                  value={formData.empresa_id} 
-                  onValueChange={(v) => setFormData({ ...formData, empresa_id: v })}
+                  value={formData.empresa_id || "none"} 
+                  onValueChange={(v) => setFormData({ ...formData, empresa_id: v === "none" ? "" : v })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione uma empresa" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Nenhuma</SelectItem>
+                    <SelectItem value="none">Nenhuma</SelectItem>
                     {empresas.map((empresa) => (
                       <SelectItem key={empresa.id} value={empresa.id}>
                         {empresa.nome}
@@ -428,14 +428,14 @@ export default function VendedoresPage() {
               <div className="space-y-2">
                 <Label htmlFor="supervisor">Supervisor</Label>
                 <Select 
-                  value={formData.supervisor_id} 
-                  onValueChange={(v) => setFormData({ ...formData, supervisor_id: v })}
+                  value={formData.supervisor_id || "none"} 
+                  onValueChange={(v) => setFormData({ ...formData, supervisor_id: v === "none" ? "" : v })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione um supervisor" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Nenhum</SelectItem>
+                    <SelectItem value="none">Nenhum</SelectItem>
                     {supervisores
                       .filter(s => s.id !== selectedVendedor?.id)
                       .map((supervisor) => (
