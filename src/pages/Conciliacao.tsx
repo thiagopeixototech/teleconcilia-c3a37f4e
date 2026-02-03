@@ -39,7 +39,9 @@ import {
   CheckCircle,
   XCircle,
   AlertTriangle,
-  Filter
+  Filter,
+  FileSpreadsheet,
+  Wand2
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -83,6 +85,9 @@ export default function ConciliacaoPage() {
   const [observacao, setObservacao] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [linhaSearch, setLinhaSearch] = useState('');
+  const [arquivoFilter, setArquivoFilter] = useState<string>('all');
+  const [arquivosDisponiveis, setArquivosDisponiveis] = useState<string[]>([]);
+  const [isAutoMatchRunning, setIsAutoMatchRunning] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -127,6 +132,14 @@ export default function ConciliacaoPage() {
 
       setVendas(vendasWithConciliacao);
       setLinhasOperadora(linhasData as LinhaOperadora[]);
+      
+      // Extract unique arquivo_origem values
+      const arquivos = [...new Set(
+        linhasData
+          .map(l => l.arquivo_origem)
+          .filter((a): a is string => a !== null && a !== undefined)
+      )];
+      setArquivosDisponiveis(arquivos);
     } catch (error) {
       console.error('Error fetching data:', error);
       toast.error('Erro ao carregar dados');
@@ -213,16 +226,128 @@ export default function ConciliacaoPage() {
     );
   };
 
+  // Get linhas filtered by arquivo
+  const linhasDoArquivo = arquivoFilter !== 'all' 
+    ? linhasOperadora.filter(l => l.arquivo_origem === arquivoFilter)
+    : linhasOperadora;
+
   const filteredVendas = vendas.filter(venda => {
     const matchesSearch = 
       venda.cliente_nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
       venda.cpf_cnpj?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       venda.protocolo_interno?.toLowerCase().includes(searchTerm.toLowerCase());
     
-    if (statusFilter === 'all') return matchesSearch;
-    if (statusFilter === 'pendente') return matchesSearch && !venda.conciliacao;
-    return matchesSearch && venda.conciliacao?.status_final === statusFilter;
+    // Filter by arquivo - show only vendas that have a match in the selected arquivo
+    let matchesArquivo = true;
+    if (arquivoFilter !== 'all') {
+      // Show vendas that either:
+      // 1. Are already linked to a linha from this arquivo
+      // 2. Have potential matches (CPF or protocolo) in this arquivo
+      const hasLinkInArquivo = venda.linhaOperadoraVinculada?.arquivo_origem === arquivoFilter;
+      const hasPotentialMatch = linhasDoArquivo.some(linha => 
+        (venda.cpf_cnpj && linha.cpf_cnpj && normalizeDoc(venda.cpf_cnpj) === normalizeDoc(linha.cpf_cnpj)) ||
+        (venda.protocolo_interno && linha.protocolo_operadora && venda.protocolo_interno === linha.protocolo_operadora) ||
+        (venda.telefone && linha.telefone && normalizeTelefone(venda.telefone) === normalizeTelefone(linha.telefone))
+      );
+      matchesArquivo = hasLinkInArquivo || hasPotentialMatch;
+    }
+    
+    if (statusFilter === 'all') return matchesSearch && matchesArquivo;
+    if (statusFilter === 'pendente') return matchesSearch && matchesArquivo && !venda.conciliacao;
+    return matchesSearch && matchesArquivo && venda.conciliacao?.status_final === statusFilter;
   });
+
+  // Helper functions for matching
+  function normalizeDoc(doc: string): string {
+    return doc.replace(/\D/g, '');
+  }
+
+  function normalizeTelefone(tel: string): string {
+    return tel.replace(/\D/g, '').slice(-9);
+  }
+
+  // Find potential matches for a venda
+  const findMatchingLinha = (venda: VendaInterna): { linha: LinhaOperadora; tipoMatch: TipoMatch } | null => {
+    for (const linha of linhasDoArquivo) {
+      // Match by protocolo
+      if (venda.protocolo_interno && linha.protocolo_operadora && 
+          venda.protocolo_interno === linha.protocolo_operadora) {
+        return { linha, tipoMatch: 'protocolo' };
+      }
+      // Match by CPF/CNPJ
+      if (venda.cpf_cnpj && linha.cpf_cnpj && 
+          normalizeDoc(venda.cpf_cnpj) === normalizeDoc(linha.cpf_cnpj)) {
+        return { linha, tipoMatch: 'cpf' };
+      }
+      // Match by telefone
+      if (venda.telefone && linha.telefone && 
+          normalizeTelefone(venda.telefone) === normalizeTelefone(linha.telefone)) {
+        return { linha, tipoMatch: 'telefone' };
+      }
+    }
+    return null;
+  };
+
+  // Get vendas that can be auto-matched
+  const vendasParaAutoMatch = filteredVendas.filter(v => !v.conciliacao && findMatchingLinha(v));
+
+  // Auto-match all vendas
+  const handleAutoMatchAll = async () => {
+    if (arquivoFilter === 'all') {
+      toast.error('Selecione um arquivo Linha a Linha para vincular');
+      return;
+    }
+
+    const vendasToMatch = vendasParaAutoMatch;
+    if (vendasToMatch.length === 0) {
+      toast.info('Nenhuma venda pendente encontrada para vincular automaticamente');
+      return;
+    }
+
+    setIsAutoMatchRunning(true);
+    let successCount = 0;
+    let errorCount = 0;
+
+    try {
+      for (const venda of vendasToMatch) {
+        const match = findMatchingLinha(venda);
+        if (match) {
+          const { error } = await supabase
+            .from('conciliacoes')
+            .insert({
+              venda_interna_id: venda.id,
+              linha_operadora_id: match.linha.id,
+              tipo_match: match.tipoMatch,
+              status_final: 'conciliado',
+              validado_por: user?.id,
+              validado_em: new Date().toISOString(),
+              observacao: `Vinculação automática - Arquivo: ${arquivoFilter}`,
+            });
+
+          if (error) {
+            console.error('Error matching venda:', venda.id, error);
+            errorCount++;
+          } else {
+            successCount++;
+          }
+        }
+      }
+
+      if (successCount > 0) {
+        toast.success(`${successCount} venda(s) vinculada(s) com sucesso!`);
+      }
+      if (errorCount > 0) {
+        toast.error(`${errorCount} venda(s) não puderam ser vinculadas`);
+      }
+      
+      fetchData();
+    } catch (error) {
+      console.error('Error in auto-match:', error);
+      toast.error('Erro ao vincular vendas automaticamente');
+    } finally {
+      setIsAutoMatchRunning(false);
+    }
+  };
 
   const filteredLinhas = linhasOperadora.filter(linha => {
     if (!linhaSearch) return true;
@@ -311,29 +436,75 @@ export default function ConciliacaoPage() {
         {/* Filters */}
         <Card>
           <CardContent className="pt-6">
-            <div className="flex flex-col md:flex-row gap-4">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar por cliente, CPF/CNPJ ou protocolo..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-9"
-                />
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col md:flex-row gap-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar por cliente, CPF/CNPJ ou protocolo..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-full md:w-48">
+                    <Filter className="h-4 w-4 mr-2" />
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos</SelectItem>
+                    <SelectItem value="pendente">Pendentes</SelectItem>
+                    {Object.entries(statusLabels).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-full md:w-48">
-                  <Filter className="h-4 w-4 mr-2" />
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
-                  <SelectItem value="pendente">Pendentes</SelectItem>
-                  {Object.entries(statusLabels).map(([value, label]) => (
-                    <SelectItem key={value} value={value}>{label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              
+              {/* Arquivo filter and auto-match */}
+              <div className="flex flex-col md:flex-row gap-4 items-end">
+                <div className="flex-1">
+                  <Label className="text-sm font-medium mb-2 block">Filtrar por Linha a Linha</Label>
+                  <Select value={arquivoFilter} onValueChange={setArquivoFilter}>
+                    <SelectTrigger className="w-full">
+                      <FileSpreadsheet className="h-4 w-4 mr-2" />
+                      <SelectValue placeholder="Selecione um arquivo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos os arquivos</SelectItem>
+                      {arquivosDisponiveis.map((arquivo) => (
+                        <SelectItem key={arquivo} value={arquivo}>{arquivo}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {arquivoFilter !== 'all' && (
+                  <Button 
+                    onClick={handleAutoMatchAll}
+                    disabled={isAutoMatchRunning || vendasParaAutoMatch.length === 0}
+                    className="gap-2"
+                  >
+                    {isAutoMatchRunning ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Wand2 className="h-4 w-4" />
+                    )}
+                    Vincular Todas ({vendasParaAutoMatch.length})
+                  </Button>
+                )}
+              </div>
+
+              {arquivoFilter !== 'all' && (
+                <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md">
+                  <strong>{filteredVendas.length}</strong> venda(s) encontrada(s) no arquivo "{arquivoFilter}" 
+                  {vendasParaAutoMatch.length > 0 && (
+                    <span className="ml-2">
+                      • <strong>{vendasParaAutoMatch.length}</strong> pendente(s) para vincular automaticamente
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
