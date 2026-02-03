@@ -36,12 +36,12 @@ import { cn } from '@/lib/utils';
 const mainNavItems = [
   { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard },
   { title: 'Vendas Internas', url: '/vendas', icon: ShoppingCart },
-  { title: 'Linha a Linha', url: '/linha-operadora', icon: FileText },
   { title: 'Conciliação', url: '/conciliacao', icon: GitCompare },
   { title: 'Divergências', url: '/divergencias', icon: AlertTriangle },
 ];
 
 const adminNavItems = [
+  { title: 'Linha a Linha', url: '/linha-operadora', icon: FileText },
   { title: 'Empresas', url: '/empresas', icon: Building2 },
   { title: 'Vendedores', url: '/vendedores', icon: Users },
   { title: 'Permissões', url: '/permissoes', icon: Shield },
