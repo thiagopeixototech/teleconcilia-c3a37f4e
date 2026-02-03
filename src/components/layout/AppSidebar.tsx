@@ -38,6 +38,9 @@ import { cn } from '@/lib/utils';
 const mainNavItems = [
   { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard },
   { title: 'Vendas Internas', url: '/vendas', icon: ShoppingCart },
+];
+
+const supervisorNavItems = [
   { title: 'Conciliação', url: '/conciliacao', icon: GitCompare },
   { title: 'Divergências', url: '/divergencias', icon: AlertTriangle },
 ];
@@ -98,6 +101,33 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {/* Conciliação - visível para admin e supervisor */}
+        {(role === 'admin' || role === 'supervisor') && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="text-sidebar-foreground/50 uppercase text-xs tracking-wider">
+              Conciliação
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {supervisorNavItems.map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton asChild>
+                      <NavLink 
+                        to={item.url} 
+                        className="flex items-center gap-3 px-3 py-2 rounded-md text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+                        activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
+                      >
+                        <item.icon className="h-5 w-5 shrink-0" />
+                        {!collapsed && <span>{item.title}</span>}
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
         {isAdmin && (
           <>
