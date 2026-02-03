@@ -52,7 +52,7 @@ const App = () => (
             <Route
               path="/linha-operadora"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={['admin']}>
                   <LinhaOperadora />
                 </ProtectedRoute>
               }
