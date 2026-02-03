@@ -35,11 +35,14 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 
 interface UserWithRole {
   id: string;
+  user_id: string | null;
   email: string;
+  nome: string;
   created_at: string;
   role: AppRole | null;
   role_id: string | null;
-  vendedor_nome: string | null;
+  empresa_id: string | null;
+  empresa_nome: string | null;
 }
 
 const ROLE_LABELS: Record<AppRole, string> = {
@@ -72,57 +75,42 @@ export default function GestaoRoles() {
 
   const fetchUsers = async () => {
     try {
-      // Fetch all users with their roles
-      const { data: authUsers, error: authError } = await supabase.auth.admin.listUsers();
-      
-      if (authError) {
-        // Fallback: fetch from user_roles table
-        const { data: roles, error: rolesError } = await supabase
-          .from('user_roles')
-          .select('*');
+      // Fetch all vendedores (this is our source of users)
+      const { data: vendedores, error: vendedoresError } = await supabase
+        .from('vendedores')
+        .select(`
+          id,
+          user_id,
+          email,
+          nome,
+          created_at,
+          empresa_id,
+          empresa:empresas(nome)
+        `)
+        .order('nome');
 
-        if (rolesError) throw rolesError;
+      if (vendedoresError) throw vendedoresError;
 
-        // Get vendedores info
-        const { data: vendedores } = await supabase
-          .from('vendedores')
-          .select('user_id, nome');
-
-        const vendedorMap = new Map(vendedores?.map(v => [v.user_id, v.nome]) || []);
-
-        // Map roles to users
-        const usersData = roles?.map(role => ({
-          id: role.user_id,
-          email: 'Usuário #' + role.user_id.substring(0, 8),
-          created_at: role.created_at,
-          role: role.role as AppRole,
-          role_id: role.id,
-          vendedor_nome: vendedorMap.get(role.user_id) || null,
-        })) || [];
-
-        setUsers(usersData);
-        return;
-      }
-
-      // If admin API works, use it
-      const { data: roles } = await supabase
+      // Fetch user roles
+      const { data: roles, error: rolesError } = await supabase
         .from('user_roles')
         .select('*');
 
-      const { data: vendedores } = await supabase
-        .from('vendedores')
-        .select('user_id, nome');
+      if (rolesError) throw rolesError;
 
+      // Map roles to vendedores
       const roleMap = new Map(roles?.map(r => [r.user_id, { role: r.role as AppRole, id: r.id }]) || []);
-      const vendedorMap = new Map(vendedores?.map(v => [v.user_id, v.nome]) || []);
 
-      const usersData: UserWithRole[] = authUsers.users.map(user => ({
-        id: user.id,
-        email: user.email || 'Sem email',
-        created_at: user.created_at,
-        role: roleMap.get(user.id)?.role || null,
-        role_id: roleMap.get(user.id)?.id || null,
-        vendedor_nome: vendedorMap.get(user.id) || null,
+      const usersData: UserWithRole[] = (vendedores || []).map(v => ({
+        id: v.id,
+        user_id: v.user_id,
+        email: v.email,
+        nome: v.nome,
+        created_at: v.created_at,
+        role: v.user_id ? roleMap.get(v.user_id)?.role || null : null,
+        role_id: v.user_id ? roleMap.get(v.user_id)?.id || null : null,
+        empresa_id: v.empresa_id,
+        empresa_nome: (v.empresa as any)?.nome || null,
       }));
 
       setUsers(usersData);
@@ -149,6 +137,16 @@ export default function GestaoRoles() {
 
     setIsSaving(true);
     try {
+      if (!selectedUser.user_id) {
+        toast({
+          title: 'Erro',
+          description: 'Este vendedor ainda não tem uma conta vinculada. O usuário precisa fazer login primeiro.',
+          variant: 'destructive',
+        });
+        setIsSaving(false);
+        return;
+      }
+
       if (selectedUser.role_id) {
         // Update existing role
         const { error } = await supabase
@@ -161,7 +159,7 @@ export default function GestaoRoles() {
         // Insert new role
         const { error } = await supabase
           .from('user_roles')
-          .insert({ user_id: selectedUser.id, role: selectedRole });
+          .insert({ user_id: selectedUser.user_id, role: selectedRole });
 
         if (error) throw error;
       }
@@ -254,10 +252,10 @@ export default function GestaoRoles() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Email / Nome</TableHead>
-                  <TableHead>Perfil de Vendedor</TableHead>
+                  <TableHead>Nome / Email</TableHead>
+                  <TableHead>Empresa</TableHead>
                   <TableHead>Permissão</TableHead>
-                  <TableHead>Data de Criação</TableHead>
+                  <TableHead>Conta Vinculada</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
@@ -265,7 +263,7 @@ export default function GestaoRoles() {
                 {users.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                      Nenhum usuário encontrado
+                      Nenhum vendedor encontrado. Cadastre vendedores na página de Vendedores.
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -273,15 +271,15 @@ export default function GestaoRoles() {
                     <TableRow key={user.id}>
                       <TableCell>
                         <div>
-                          <p className="font-medium">{user.email}</p>
-                          <p className="text-sm text-muted-foreground">{user.id.substring(0, 8)}...</p>
+                          <p className="font-medium">{user.nome}</p>
+                          <p className="text-sm text-muted-foreground">{user.email}</p>
                         </div>
                       </TableCell>
                       <TableCell>
-                        {user.vendedor_nome ? (
-                          <span className="text-foreground">{user.vendedor_nome}</span>
+                        {user.empresa_nome ? (
+                          <span className="text-foreground">{user.empresa_nome}</span>
                         ) : (
-                          <span className="text-muted-foreground text-sm">Não vinculado</span>
+                          <span className="text-muted-foreground text-sm">Sem empresa</span>
                         )}
                       </TableCell>
                       <TableCell>
@@ -295,8 +293,16 @@ export default function GestaoRoles() {
                           </Badge>
                         )}
                       </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {new Date(user.created_at).toLocaleDateString('pt-BR')}
+                      <TableCell>
+                        {user.user_id ? (
+                          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                            Vinculado
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-muted-foreground">
+                            Aguardando login
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
