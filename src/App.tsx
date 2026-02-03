@@ -62,7 +62,7 @@ const App = () => (
             <Route
               path="/conciliacao"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={['admin', 'supervisor']}>
                   <Conciliacao />
                 </ProtectedRoute>
               }
@@ -71,7 +71,7 @@ const App = () => (
             <Route
               path="/divergencias"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={['admin', 'supervisor']}>
                   <Divergencias />
                 </ProtectedRoute>
               }
