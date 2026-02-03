@@ -16,6 +16,7 @@ import Divergencias from "./pages/Divergencias";
 import Empresas from "./pages/Empresas";
 import Vendedores from "./pages/Vendedores";
 import GestaoRoles from "./pages/GestaoRoles";
+import CadastrosPendentes from "./pages/CadastrosPendentes";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -99,6 +100,15 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={['admin']}>
                   <GestaoRoles />
+                </ProtectedRoute>
+              }
+            />
+            
+            <Route
+              path="/cadastros-pendentes"
+              element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <CadastrosPendentes />
                 </ProtectedRoute>
               }
             />
