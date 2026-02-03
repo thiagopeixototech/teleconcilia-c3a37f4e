@@ -10,6 +10,7 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import VendasInternas from "./pages/VendasInternas";
+import NovaVenda from "./pages/NovaVenda";
 import LinhaOperadora from "./pages/LinhaOperadora";
 import Conciliacao from "./pages/Conciliacao";
 import Divergencias from "./pages/Divergencias";
@@ -47,6 +48,15 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <VendasInternas />
+                </ProtectedRoute>
+              }
+            />
+            
+            <Route
+              path="/vendas/nova"
+              element={
+                <ProtectedRoute>
+                  <NovaVenda />
                 </ProtectedRoute>
               }
             />
