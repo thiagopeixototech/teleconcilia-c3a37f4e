@@ -41,11 +41,6 @@ const mainNavItems = [
   { title: 'Vendas Internas', url: '/vendas', icon: ShoppingCart },
 ];
 
-const supervisorNavItems = [
-  { title: 'Conciliação', url: '/conciliacao', icon: GitCompare },
-  { title: 'Divergências', url: '/divergencias', icon: AlertTriangle },
-];
-
 const cadastrosItems = [
   { title: 'Cadastros Pendentes', url: '/cadastros-pendentes', icon: Clock },
   { title: 'Empresas', url: '/empresas', icon: Building2 },
@@ -54,7 +49,14 @@ const cadastrosItems = [
   { title: 'Permissões', url: '/permissoes', icon: Shield },
 ];
 
+// Submenu Gestão - visível para admin e supervisor
 const gestaoItems = [
+  { title: 'Conciliação', url: '/conciliacao', icon: GitCompare },
+  { title: 'Divergências', url: '/divergencias', icon: AlertTriangle },
+];
+
+// Submenu Admin - apenas admin
+const adminGestaoItems = [
   { title: 'Linha a Linha', url: '/linha-operadora', icon: FileText },
 ];
 
@@ -104,30 +106,57 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* Conciliação - visível para admin e supervisor */}
+        {/* Gestão - visível para admin e supervisor */}
         {(role === 'admin' || role === 'supervisor') && (
           <SidebarGroup>
-            <SidebarGroupLabel className="text-sidebar-foreground/50 uppercase text-xs tracking-wider">
-              Conciliação
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {supervisorNavItems.map((item) => (
-                  <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild>
-                      <NavLink 
-                        to={item.url} 
-                        className="flex items-center gap-3 px-3 py-2 rounded-md text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
-                        activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
-                      >
-                        <item.icon className="h-5 w-5 shrink-0" />
-                        {!collapsed && <span>{item.title}</span>}
-                      </NavLink>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
+            <Collapsible defaultOpen className="group/collapsible-gestao">
+              <CollapsibleTrigger asChild>
+                <SidebarGroupLabel className="flex items-center justify-between cursor-pointer text-sidebar-foreground/50 uppercase text-xs tracking-wider hover:text-sidebar-foreground/80 transition-colors">
+                  <span className="flex items-center gap-2">
+                    <GitCompare className="h-4 w-4" />
+                    {!collapsed && 'Gestão'}
+                  </span>
+                  {!collapsed && (
+                    <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]/collapsible-gestao:rotate-180" />
+                  )}
+                </SidebarGroupLabel>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {gestaoItems.map((item) => (
+                      <SidebarMenuItem key={item.title}>
+                        <SidebarMenuButton asChild>
+                          <NavLink 
+                            to={item.url} 
+                            className="flex items-center gap-3 px-3 py-2 rounded-md text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+                            activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
+                          >
+                            <item.icon className="h-5 w-5 shrink-0" />
+                            {!collapsed && <span>{item.title}</span>}
+                          </NavLink>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    ))}
+                    {/* Linha a Linha - apenas admin */}
+                    {isAdmin && adminGestaoItems.map((item) => (
+                      <SidebarMenuItem key={item.title}>
+                        <SidebarMenuButton asChild>
+                          <NavLink 
+                            to={item.url} 
+                            className="flex items-center gap-3 px-3 py-2 rounded-md text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+                            activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
+                          >
+                            <item.icon className="h-5 w-5 shrink-0" />
+                            {!collapsed && <span>{item.title}</span>}
+                          </NavLink>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    ))}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </CollapsibleContent>
+            </Collapsible>
           </SidebarGroup>
         )}
 
@@ -169,41 +198,6 @@ export function AppSidebar() {
               </Collapsible>
             </SidebarGroup>
 
-            <SidebarGroup>
-              <Collapsible defaultOpen className="group/collapsible-gestao">
-                <CollapsibleTrigger asChild>
-                  <SidebarGroupLabel className="flex items-center justify-between cursor-pointer text-sidebar-foreground/50 uppercase text-xs tracking-wider hover:text-sidebar-foreground/80 transition-colors">
-                    <span className="flex items-center gap-2">
-                      <FileText className="h-4 w-4" />
-                      {!collapsed && 'Gestão'}
-                    </span>
-                    {!collapsed && (
-                      <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]/collapsible-gestao:rotate-180" />
-                    )}
-                  </SidebarGroupLabel>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <SidebarGroupContent>
-                    <SidebarMenu>
-                      {gestaoItems.map((item) => (
-                        <SidebarMenuItem key={item.title}>
-                          <SidebarMenuButton asChild>
-                            <NavLink 
-                              to={item.url} 
-                              className="flex items-center gap-3 px-3 py-2 rounded-md text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
-                              activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
-                            >
-                              <item.icon className="h-5 w-5 shrink-0" />
-                              {!collapsed && <span>{item.title}</span>}
-                            </NavLink>
-                          </SidebarMenuButton>
-                        </SidebarMenuItem>
-                      ))}
-                    </SidebarMenu>
-                  </SidebarGroupContent>
-                </CollapsibleContent>
-              </Collapsible>
-            </SidebarGroup>
           </>
         )}
       </SidebarContent>
