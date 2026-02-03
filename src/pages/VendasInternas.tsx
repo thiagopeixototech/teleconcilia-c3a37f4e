@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/supabase/client';
-import { VendaInterna, StatusInterno } from '@/types/database';
+import { VendaInterna, StatusInterno, Operadora } from '@/types/database';
 import { useAuth } from '@/contexts/AuthContext';
 import { 
   Table, 
@@ -40,7 +40,8 @@ import {
   Eye, 
   Edit, 
   Download,
-  Filter
+  Filter,
+  Radio
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -65,9 +66,11 @@ const statusLabels: Record<StatusInterno, string> = {
 export default function VendasInternas() {
   const { isAdmin } = useAuth();
   const [vendas, setVendas] = useState<VendaInterna[]>([]);
+  const [operadoras, setOperadoras] = useState<Operadora[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [operadoraFilter, setOperadoraFilter] = useState<string>('all');
   const [selectedVenda, setSelectedVenda] = useState<VendaInterna | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -77,6 +80,7 @@ export default function VendasInternas() {
 
   useEffect(() => {
     fetchVendas();
+    fetchOperadoras();
   }, []);
 
   const fetchVendas = async () => {
@@ -98,6 +102,28 @@ export default function VendasInternas() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const fetchOperadoras = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('operadoras')
+        .select('*')
+        .eq('ativa', true)
+        .order('nome');
+
+      if (error) throw error;
+      setOperadoras(data as Operadora[]);
+    } catch (error) {
+      console.error('Error fetching operadoras:', error);
+    }
+  };
+
+  // Get operadora name by ID
+  const getOperadoraNome = (operadoraId: string | null) => {
+    if (!operadoraId) return '-';
+    const operadora = operadoras.find(o => o.id === operadoraId);
+    return operadora?.nome || '-';
   };
 
   const handleViewDetails = (venda: VendaInterna) => {
@@ -139,11 +165,12 @@ export default function VendasInternas() {
   };
 
   const exportToCSV = () => {
-    const headers = ['Protocolo', 'Cliente', 'CPF/CNPJ', 'Plano', 'Valor', 'Status', 'Data'];
+    const headers = ['Protocolo', 'Cliente', 'CPF/CNPJ', 'Operadora', 'Plano', 'Valor', 'Status', 'Data'];
     const rows = filteredVendas.map(v => [
       v.protocolo_interno || '',
       v.cliente_nome,
       v.cpf_cnpj || '',
+      getOperadoraNome(v.operadora_id),
       v.plano || '',
       v.valor?.toString() || '',
       statusLabels[v.status_interno],
@@ -170,8 +197,9 @@ export default function VendasInternas() {
       venda.protocolo_interno?.toLowerCase().includes(searchTerm.toLowerCase());
     
     const matchesStatus = statusFilter === 'all' || venda.status_interno === statusFilter;
+    const matchesOperadora = operadoraFilter === 'all' || venda.operadora_id === operadoraFilter;
     
-    return matchesSearch && matchesStatus;
+    return matchesSearch && matchesStatus && matchesOperadora;
   });
 
   if (isLoading) {
@@ -212,6 +240,18 @@ export default function VendasInternas() {
                   ))}
                 </SelectContent>
               </Select>
+              <Select value={operadoraFilter} onValueChange={setOperadoraFilter}>
+                <SelectTrigger className="w-full md:w-48">
+                  <Radio className="h-4 w-4 mr-2" />
+                  <SelectValue placeholder="Operadora" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas Operadoras</SelectItem>
+                  {operadoras.map((op) => (
+                    <SelectItem key={op.id} value={op.id}>{op.nome}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Button variant="outline" onClick={exportToCSV}>
                 <Download className="h-4 w-4 mr-2" />
                 Exportar CSV
@@ -233,6 +273,7 @@ export default function VendasInternas() {
                     <TableHead>Protocolo</TableHead>
                     <TableHead>Cliente</TableHead>
                     <TableHead>CPF/CNPJ</TableHead>
+                    <TableHead>Operadora</TableHead>
                     <TableHead>Plano</TableHead>
                     <TableHead>Valor</TableHead>
                     <TableHead>Status</TableHead>
@@ -243,7 +284,7 @@ export default function VendasInternas() {
                 <TableBody>
                   {filteredVendas.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                         Nenhuma venda encontrada
                       </TableCell>
                     </TableRow>
@@ -255,6 +296,7 @@ export default function VendasInternas() {
                         </TableCell>
                         <TableCell className="font-medium">{venda.cliente_nome}</TableCell>
                         <TableCell className="font-mono text-sm">{venda.cpf_cnpj || '-'}</TableCell>
+                        <TableCell>{getOperadoraNome(venda.operadora_id)}</TableCell>
                         <TableCell>{venda.plano || '-'}</TableCell>
                         <TableCell>
                           {venda.valor 
@@ -320,6 +362,10 @@ export default function VendasInternas() {
                   <div>
                     <Label className="text-muted-foreground">Telefone</Label>
                     <p className="font-medium">{selectedVenda.telefone || '-'}</p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Operadora</Label>
+                    <p className="font-medium">{getOperadoraNome(selectedVenda.operadora_id)}</p>
                   </div>
                   <div>
                     <Label className="text-muted-foreground">Plano</Label>
