@@ -6,6 +6,7 @@ import {
   AlertTriangle, 
   Building2, 
   Users, 
+  Shield,
   LogOut,
   ChevronDown
 } from 'lucide-react';
@@ -43,6 +44,7 @@ const mainNavItems = [
 const adminNavItems = [
   { title: 'Empresas', url: '/empresas', icon: Building2 },
   { title: 'Vendedores', url: '/vendedores', icon: Users },
+  { title: 'Permissões', url: '/permissoes', icon: Shield },
 ];
 
 export function AppSidebar() {

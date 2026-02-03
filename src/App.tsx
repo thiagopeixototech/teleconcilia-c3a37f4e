@@ -15,6 +15,7 @@ import Conciliacao from "./pages/Conciliacao";
 import Divergencias from "./pages/Divergencias";
 import Empresas from "./pages/Empresas";
 import Vendedores from "./pages/Vendedores";
+import GestaoRoles from "./pages/GestaoRoles";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -89,6 +90,15 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={['admin']}>
                   <Vendedores />
+                </ProtectedRoute>
+              }
+            />
+            
+            <Route
+              path="/permissoes"
+              element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <GestaoRoles />
                 </ProtectedRoute>
               }
             />
