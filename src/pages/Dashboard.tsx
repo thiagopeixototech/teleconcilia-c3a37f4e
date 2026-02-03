@@ -3,6 +3,7 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { PendingAccessMessage } from '@/components/PendingAccessMessage';
 import { 
   ShoppingCart, 
   CheckCircle, 
@@ -34,14 +35,21 @@ interface DashboardStats {
 const COLORS = ['hsl(215, 70%, 45%)', 'hsl(142, 70%, 45%)', 'hsl(38, 92%, 50%)', 'hsl(0, 72%, 51%)'];
 
 export default function Dashboard() {
-  const { vendedor, isAdmin, isSupervisor } = useAuth();
+  const { vendedor, isAdmin, isSupervisor, role } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [vendasPorStatus, setVendasPorStatus] = useState<{ name: string; value: number }[]>([]);
 
+  // Usuário sem role e sem vendedor vinculado = acesso pendente
+  const isPendingAccess = !role && !vendedor && !isAdmin;
+
   useEffect(() => {
-    fetchDashboardData();
-  }, [vendedor]);
+    if (!isPendingAccess) {
+      fetchDashboardData();
+    } else {
+      setIsLoading(false);
+    }
+  }, [vendedor, isPendingAccess]);
 
   const fetchDashboardData = async () => {
     try {
@@ -101,6 +109,15 @@ export default function Dashboard() {
         <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
+      </AppLayout>
+    );
+  }
+
+  // Mostrar mensagem para usuários sem acesso
+  if (isPendingAccess) {
+    return (
+      <AppLayout title="Dashboard">
+        <PendingAccessMessage />
       </AppLayout>
     );
   }
