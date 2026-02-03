@@ -66,6 +66,7 @@ const tipoMatchLabels: Record<TipoMatch, string> = {
 
 interface VendaWithConciliacao extends VendaInterna {
   conciliacao?: Conciliacao | null;
+  linhaOperadoraVinculada?: LinhaOperadora | null;
 }
 
 export default function ConciliacaoPage() {
@@ -118,7 +119,10 @@ export default function ConciliacaoPage() {
       // Map conciliacoes to vendas
       const vendasWithConciliacao = vendasData.map(venda => {
         const conciliacao = conciliacoesData?.find(c => c.venda_interna_id === venda.id);
-        return { ...venda, conciliacao } as VendaWithConciliacao;
+        const linhaOperadoraVinculada = conciliacao 
+          ? linhasData?.find(l => l.id === conciliacao.linha_operadora_id) 
+          : null;
+        return { ...venda, conciliacao, linhaOperadoraVinculada } as VendaWithConciliacao;
       });
 
       setVendas(vendasWithConciliacao);
@@ -353,6 +357,7 @@ export default function ConciliacaoPage() {
                     <TableHead>Plano</TableHead>
                     <TableHead>Valor</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Linha a Linha</TableHead>
                     <TableHead>Tipo Match</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
@@ -360,7 +365,7 @@ export default function ConciliacaoPage() {
                 <TableBody>
                   {filteredVendas.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                         Nenhuma venda encontrada
                       </TableCell>
                     </TableRow>
@@ -380,6 +385,20 @@ export default function ConciliacaoPage() {
                           }
                         </TableCell>
                         <TableCell>{getStatusBadge(venda)}</TableCell>
+                        <TableCell>
+                          {venda.linhaOperadoraVinculada ? (
+                            <div className="text-sm">
+                              <span className="font-medium">{venda.linhaOperadoraVinculada.operadora}</span>
+                              {venda.linhaOperadoraVinculada.protocolo_operadora && (
+                                <span className="text-muted-foreground ml-1">
+                                  ({venda.linhaOperadoraVinculada.protocolo_operadora})
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
                         <TableCell>
                           {venda.conciliacao 
                             ? tipoMatchLabels[venda.conciliacao.tipo_match]
