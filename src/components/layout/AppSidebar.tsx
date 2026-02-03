@@ -8,7 +8,9 @@ import {
   Users, 
   Shield,
   LogOut,
-  ChevronDown
+  ChevronDown,
+  ClipboardList,
+  Clock
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/contexts/AuthContext';
@@ -40,11 +42,15 @@ const mainNavItems = [
   { title: 'Divergências', url: '/divergencias', icon: AlertTriangle },
 ];
 
-const adminNavItems = [
-  { title: 'Linha a Linha', url: '/linha-operadora', icon: FileText },
+const cadastrosItems = [
+  { title: 'Cadastros Pendentes', url: '/cadastros-pendentes', icon: Clock },
   { title: 'Empresas', url: '/empresas', icon: Building2 },
-  { title: 'Vendedores', url: '/vendedores', icon: Users },
+  { title: 'Usuários', url: '/vendedores', icon: Users },
   { title: 'Permissões', url: '/permissoes', icon: Shield },
+];
+
+const gestaoItems = [
+  { title: 'Linha a Linha', url: '/linha-operadora', icon: FileText },
 ];
 
 export function AppSidebar() {
@@ -94,38 +100,79 @@ export function AppSidebar() {
         </SidebarGroup>
 
         {isAdmin && (
-          <SidebarGroup>
-            <Collapsible defaultOpen className="group/collapsible">
-              <CollapsibleTrigger asChild>
-                <SidebarGroupLabel className="flex items-center justify-between cursor-pointer text-sidebar-foreground/50 uppercase text-xs tracking-wider hover:text-sidebar-foreground/80 transition-colors">
-                  Gestão
-                  {!collapsed && (
-                    <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
-                  )}
-                </SidebarGroupLabel>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <SidebarGroupContent>
-                  <SidebarMenu>
-                    {adminNavItems.map((item) => (
-                      <SidebarMenuItem key={item.title}>
-                        <SidebarMenuButton asChild>
-                          <NavLink 
-                            to={item.url} 
-                            className="flex items-center gap-3 px-3 py-2 rounded-md text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
-                            activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
-                          >
-                            <item.icon className="h-5 w-5 shrink-0" />
-                            {!collapsed && <span>{item.title}</span>}
-                          </NavLink>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    ))}
-                  </SidebarMenu>
-                </SidebarGroupContent>
-              </CollapsibleContent>
-            </Collapsible>
-          </SidebarGroup>
+          <>
+            <SidebarGroup>
+              <Collapsible defaultOpen className="group/collapsible-cadastros">
+                <CollapsibleTrigger asChild>
+                  <SidebarGroupLabel className="flex items-center justify-between cursor-pointer text-sidebar-foreground/50 uppercase text-xs tracking-wider hover:text-sidebar-foreground/80 transition-colors">
+                    <span className="flex items-center gap-2">
+                      <ClipboardList className="h-4 w-4" />
+                      {!collapsed && 'Cadastros'}
+                    </span>
+                    {!collapsed && (
+                      <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]/collapsible-cadastros:rotate-180" />
+                    )}
+                  </SidebarGroupLabel>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <SidebarGroupContent>
+                    <SidebarMenu>
+                      {cadastrosItems.map((item) => (
+                        <SidebarMenuItem key={item.title}>
+                          <SidebarMenuButton asChild>
+                            <NavLink 
+                              to={item.url} 
+                              className="flex items-center gap-3 px-3 py-2 rounded-md text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+                              activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
+                            >
+                              <item.icon className="h-5 w-5 shrink-0" />
+                              {!collapsed && <span>{item.title}</span>}
+                            </NavLink>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      ))}
+                    </SidebarMenu>
+                  </SidebarGroupContent>
+                </CollapsibleContent>
+              </Collapsible>
+            </SidebarGroup>
+
+            <SidebarGroup>
+              <Collapsible defaultOpen className="group/collapsible-gestao">
+                <CollapsibleTrigger asChild>
+                  <SidebarGroupLabel className="flex items-center justify-between cursor-pointer text-sidebar-foreground/50 uppercase text-xs tracking-wider hover:text-sidebar-foreground/80 transition-colors">
+                    <span className="flex items-center gap-2">
+                      <FileText className="h-4 w-4" />
+                      {!collapsed && 'Gestão'}
+                    </span>
+                    {!collapsed && (
+                      <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]/collapsible-gestao:rotate-180" />
+                    )}
+                  </SidebarGroupLabel>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <SidebarGroupContent>
+                    <SidebarMenu>
+                      {gestaoItems.map((item) => (
+                        <SidebarMenuItem key={item.title}>
+                          <SidebarMenuButton asChild>
+                            <NavLink 
+                              to={item.url} 
+                              className="flex items-center gap-3 px-3 py-2 rounded-md text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+                              activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
+                            >
+                              <item.icon className="h-5 w-5 shrink-0" />
+                              {!collapsed && <span>{item.title}</span>}
+                            </NavLink>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      ))}
+                    </SidebarMenu>
+                  </SidebarGroupContent>
+                </CollapsibleContent>
+              </Collapsible>
+            </SidebarGroup>
+          </>
         )}
       </SidebarContent>
 
