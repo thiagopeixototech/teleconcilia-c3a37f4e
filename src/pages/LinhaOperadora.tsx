@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/supabase/client';
-import { LinhaOperadora, StatusOperadora, Operadora } from '@/types/database';
+import { LinhaOperadora, StatusOperadora, Operadora, MapeamentoColunas, CampoSistema } from '@/types/database';
 import { useAuth } from '@/contexts/AuthContext';
 import { 
   Table, 
@@ -14,7 +14,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Select,
   SelectContent,
@@ -40,12 +40,14 @@ import {
   Filter,
   FileSpreadsheet,
   AlertCircle,
-  Radio
+  Radio,
+  Settings
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Link } from 'react-router-dom';
 
 const statusColors: Record<StatusOperadora, string> = {
   aprovado: 'bg-success text-success-foreground',
@@ -61,10 +63,25 @@ const statusLabels: Record<StatusOperadora, string> = {
   pendente: 'Pendente',
 };
 
+interface LinhaAgrupada {
+  key: string;
+  cliente_nome: string | null;
+  cpf_cnpj: string | null;
+  protocolo_operadora: string | null;
+  telefone: string | null;
+  planos: string[];
+  valor_total: number;
+  data_status: string | null;
+  status_operadora: StatusOperadora;
+  quinzena_ref: string | null;
+  linhas_originais: Record<string, string>[];
+}
+
 export default function LinhaOperadoraPage() {
   const { isAdmin } = useAuth();
   const [linhas, setLinhas] = useState<LinhaOperadora[]>([]);
   const [operadoras, setOperadoras] = useState<Operadora[]>([]);
+  const [mapeamentos, setMapeamentos] = useState<MapeamentoColunas[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -75,13 +92,36 @@ export default function LinhaOperadoraPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [selectedOperadoraUpload, setSelectedOperadoraUpload] = useState<string>('');
+  const [selectedMapeamentoId, setSelectedMapeamentoId] = useState<string>('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewData, setPreviewData] = useState<LinhaAgrupada[]>([]);
+  const [showPreview, setShowPreview] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchLinhas();
     fetchOperadoras();
+    fetchMapeamentos();
   }, []);
+
+  // Filter mapeamentos by selected operadora
+  const mapeamentosDisponiveis = mapeamentos.filter(
+    m => m.operadora_id === selectedOperadoraUpload
+  );
+
+  // Auto-select active mapping when operadora changes
+  useEffect(() => {
+    if (selectedOperadoraUpload) {
+      const activeMapeamento = mapeamentosDisponiveis.find(m => m.ativo);
+      if (activeMapeamento) {
+        setSelectedMapeamentoId(activeMapeamento.id);
+      } else if (mapeamentosDisponiveis.length > 0) {
+        setSelectedMapeamentoId(mapeamentosDisponiveis[0].id);
+      } else {
+        setSelectedMapeamentoId('');
+      }
+    }
+  }, [selectedOperadoraUpload, mapeamentos]);
 
   const fetchLinhas = async () => {
     try {
@@ -115,7 +155,20 @@ export default function LinhaOperadoraPage() {
     }
   };
 
-  // Get unique operadoras from linhas for filter
+  const fetchMapeamentos = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('mapeamento_colunas')
+        .select('*')
+        .order('nome');
+
+      if (error) throw error;
+      setMapeamentos(data as MapeamentoColunas[]);
+    } catch (error) {
+      console.error('Error fetching mapeamentos:', error);
+    }
+  };
+
   const operadorasFromLinhas = [...new Set(linhas.map(l => l.operadora))];
 
   const handleViewDetails = (linha: LinhaOperadora) => {
@@ -127,10 +180,12 @@ export default function LinhaOperadoraPage() {
     const lines = content.split('\n').filter(line => line.trim());
     if (lines.length < 2) return [];
 
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/"/g, ''));
+    // Support both comma and semicolon separators
+    const separator = lines[0].includes(';') ? ';' : ',';
+    const headers = lines[0].split(separator).map(h => h.trim().replace(/"/g, ''));
     
     return lines.slice(1).map(line => {
-      const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
+      const values = line.split(separator).map(v => v.trim().replace(/"/g, ''));
       const row: Record<string, string> = {};
       headers.forEach((header, index) => {
         row[header] = values[index] || '';
@@ -139,13 +194,104 @@ export default function LinhaOperadoraPage() {
     });
   };
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+  // Normalize CPF/CNPJ for grouping (remove dots, dashes, etc)
+  const normalizeCpfCnpj = (value: string | null): string => {
+    if (!value) return '';
+    return value.replace(/[^\d]/g, '');
+  };
+
+  // Group rows by CPF/CNPJ or protocol (for COMBO logic)
+  const agruparLinhas = (
+    rows: Record<string, string>[], 
+    mapeamento: Record<CampoSistema, string>
+  ): LinhaAgrupada[] => {
+    const grupos: Map<string, LinhaAgrupada> = new Map();
+
+    for (const row of rows) {
+      const cpf_cnpj = row[mapeamento.cpf_cnpj] || null;
+      const protocolo = row[mapeamento.protocolo_operadora] || null;
+      
+      // Key for grouping: prefer CPF/CNPJ, fallback to protocol
+      const key = normalizeCpfCnpj(cpf_cnpj) || protocolo || `row-${Math.random()}`;
+      
+      const valor = row[mapeamento.valor] 
+        ? parseFloat(row[mapeamento.valor].replace(',', '.').replace(/[^\d.-]/g, '')) 
+        : 0;
+      
+      const plano = row[mapeamento.plano] || null;
+
+      if (grupos.has(key)) {
+        // Add to existing group
+        const grupo = grupos.get(key)!;
+        grupo.valor_total += valor;
+        if (plano && !grupo.planos.includes(plano)) {
+          grupo.planos.push(plano);
+        }
+        grupo.linhas_originais.push(row);
+      } else {
+        // Create new group
+        grupos.set(key, {
+          key,
+          cliente_nome: row[mapeamento.cliente_nome] || null,
+          cpf_cnpj,
+          protocolo_operadora: protocolo,
+          telefone: row[mapeamento.telefone] || null,
+          planos: plano ? [plano] : [],
+          valor_total: valor,
+          data_status: row[mapeamento.data_status] || null,
+          status_operadora: (row[mapeamento.status_operadora] as StatusOperadora) || 'pendente',
+          quinzena_ref: row[mapeamento.quinzena_ref] || null,
+          linhas_originais: [row],
+        });
+      }
+    }
+
+    return Array.from(grupos.values());
+  };
+
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      setSelectedFile(file);
-      setUploadError(null);
+    if (!file) return;
+    
+    setSelectedFile(file);
+    setUploadError(null);
+    setShowPreview(false);
+    setPreviewData([]);
+
+    // If we have a mapping, show preview
+    if (selectedMapeamentoId) {
+      await generatePreview(file);
     }
   };
+
+  const generatePreview = async (file: File) => {
+    const mapeamento = mapeamentos.find(m => m.id === selectedMapeamentoId);
+    if (!mapeamento) return;
+
+    try {
+      const content = await file.text();
+      const rows = parseCSV(content);
+
+      if (rows.length === 0) {
+        setUploadError('Arquivo vazio ou formato inválido');
+        return;
+      }
+
+      const agrupadas = agruparLinhas(rows, mapeamento.mapeamento as Record<CampoSistema, string>);
+      setPreviewData(agrupadas.slice(0, 10)); // Show first 10 for preview
+      setShowPreview(true);
+    } catch (error) {
+      console.error('Error generating preview:', error);
+      setUploadError('Erro ao ler arquivo');
+    }
+  };
+
+  // Regenerate preview when mapping changes
+  useEffect(() => {
+    if (selectedFile && selectedMapeamentoId) {
+      generatePreview(selectedFile);
+    }
+  }, [selectedMapeamentoId]);
 
   const handleFileUpload = async () => {
     if (!selectedFile) {
@@ -158,9 +304,16 @@ export default function LinhaOperadoraPage() {
       return;
     }
 
+    if (!selectedMapeamentoId) {
+      setUploadError('Selecione ou crie um mapeamento de colunas');
+      return;
+    }
+
     const operadora = operadoras.find(o => o.id === selectedOperadoraUpload);
-    if (!operadora) {
-      setUploadError('Operadora inválida');
+    const mapeamento = mapeamentos.find(m => m.id === selectedMapeamentoId);
+    
+    if (!operadora || !mapeamento) {
+      setUploadError('Configuração inválida');
       return;
     }
 
@@ -175,19 +328,34 @@ export default function LinhaOperadoraPage() {
         throw new Error('Arquivo vazio ou formato inválido');
       }
 
-      const linhasToInsert = rows.map(row => ({
-        operadora: operadora.nome,
-        protocolo_operadora: row.protocolo_operadora || row.protocolo || null,
-        cpf_cnpj: row.cpf_cnpj || row.cpf || row.cnpj || null,
-        cliente_nome: row.cliente_nome || row.cliente || row.nome || null,
-        telefone: row.telefone || row.fone || null,
-        plano: row.plano || null,
-        valor: row.valor ? parseFloat(row.valor.replace(',', '.')) : null,
-        data_status: row.data_status || row.data || null,
-        status_operadora: (row.status_operadora || row.status || 'pendente') as StatusOperadora,
-        quinzena_ref: row.quinzena_ref || row.quinzena || null,
-        arquivo_origem: selectedFile.name,
-      }));
+      const map = mapeamento.mapeamento as Record<CampoSistema, string>;
+      const agrupadas = agruparLinhas(rows, map);
+
+      // Prepare records for insert
+      const linhasToInsert = agrupadas.map(grupo => {
+        const isCombo = grupo.planos.length > 1;
+        
+        return {
+          operadora: operadora.nome,
+          protocolo_operadora: grupo.protocolo_operadora,
+          cpf_cnpj: grupo.cpf_cnpj,
+          cliente_nome: grupo.cliente_nome,
+          telefone: grupo.telefone,
+          plano: isCombo ? grupo.planos.join(' + ') : grupo.planos[0] || null,
+          valor: grupo.linhas_originais.length === 1 
+            ? (grupo.linhas_originais[0][map.valor] 
+              ? parseFloat(grupo.linhas_originais[0][map.valor].replace(',', '.').replace(/[^\d.-]/g, '')) 
+              : null)
+            : null,
+          valor_lq: grupo.valor_total,
+          valor_make: null, // To be filled manually or by another process
+          tipo_plano: isCombo ? 'COMBO' : (grupo.planos[0] || null),
+          data_status: grupo.data_status,
+          status_operadora: grupo.status_operadora,
+          quinzena_ref: grupo.quinzena_ref,
+          arquivo_origem: selectedFile.name,
+        };
+      });
 
       const { error } = await supabase
         .from('linha_operadora')
@@ -195,10 +363,19 @@ export default function LinhaOperadoraPage() {
 
       if (error) throw error;
 
-      toast.success(`${linhasToInsert.length} registros importados com sucesso para ${operadora.nome}`);
+      const linhasOriginais = agrupadas.reduce((acc, g) => acc + g.linhas_originais.length, 0);
+      const combos = agrupadas.filter(g => g.planos.length > 1).length;
+      
+      toast.success(
+        `Importação concluída! ${linhasOriginais} linhas → ${agrupadas.length} registros (${combos} COMBOs)`
+      );
+      
       setIsUploadOpen(false);
       setSelectedFile(null);
       setSelectedOperadoraUpload('');
+      setSelectedMapeamentoId('');
+      setPreviewData([]);
+      setShowPreview(false);
       fetchLinhas();
     } catch (error: any) {
       console.error('Error uploading file:', error);
@@ -212,7 +389,7 @@ export default function LinhaOperadoraPage() {
   };
 
   const exportToCSV = () => {
-    const headers = ['Operadora', 'Protocolo', 'Cliente', 'CPF/CNPJ', 'Telefone', 'Plano', 'Valor', 'Status', 'Data'];
+    const headers = ['Operadora', 'Protocolo', 'Cliente', 'CPF/CNPJ', 'Telefone', 'Plano', 'Tipo Plano', 'Valor', 'Valor LQ', 'Status', 'Data'];
     const rows = filteredLinhas.map(l => [
       l.operadora,
       l.protocolo_operadora || '',
@@ -220,7 +397,9 @@ export default function LinhaOperadoraPage() {
       l.cpf_cnpj || '',
       l.telefone || '',
       l.plano || '',
+      l.tipo_plano || '',
       l.valor?.toString() || '',
+      l.valor_lq?.toString() || '',
       statusLabels[l.status_operadora],
       l.data_status ? format(new Date(l.data_status), 'dd/MM/yyyy') : '',
     ]);
@@ -253,7 +432,10 @@ export default function LinhaOperadoraPage() {
   const handleOpenUpload = () => {
     setSelectedFile(null);
     setSelectedOperadoraUpload('');
+    setSelectedMapeamentoId('');
     setUploadError(null);
+    setPreviewData([]);
+    setShowPreview(false);
     setIsUploadOpen(true);
   };
 
@@ -308,10 +490,18 @@ export default function LinhaOperadoraPage() {
                 </SelectContent>
               </Select>
               {isAdmin && (
-                <Button onClick={handleOpenUpload}>
-                  <Upload className="h-4 w-4 mr-2" />
-                  Importar CSV
-                </Button>
+                <>
+                  <Button onClick={handleOpenUpload}>
+                    <Upload className="h-4 w-4 mr-2" />
+                    Importar CSV
+                  </Button>
+                  <Button variant="outline" asChild>
+                    <Link to="/mapeamento-colunas">
+                      <Settings className="h-4 w-4 mr-2" />
+                      Mapeamentos
+                    </Link>
+                  </Button>
+                </>
               )}
               <Button variant="outline" onClick={exportToCSV}>
                 <Download className="h-4 w-4 mr-2" />
@@ -335,8 +525,8 @@ export default function LinhaOperadoraPage() {
                     <TableHead>Protocolo</TableHead>
                     <TableHead>Cliente</TableHead>
                     <TableHead>CPF/CNPJ</TableHead>
-                    <TableHead>Plano</TableHead>
-                    <TableHead>Valor</TableHead>
+                    <TableHead>Tipo Plano</TableHead>
+                    <TableHead>Valor LQ</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Data</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
@@ -358,11 +548,19 @@ export default function LinhaOperadoraPage() {
                         </TableCell>
                         <TableCell>{linha.cliente_nome || '-'}</TableCell>
                         <TableCell className="font-mono text-sm">{linha.cpf_cnpj || '-'}</TableCell>
-                        <TableCell>{linha.plano || '-'}</TableCell>
                         <TableCell>
-                          {linha.valor 
-                            ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(linha.valor)
-                            : '-'
+                          {linha.tipo_plano === 'COMBO' ? (
+                            <Badge variant="secondary">COMBO</Badge>
+                          ) : (
+                            linha.tipo_plano || '-'
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {linha.valor_lq 
+                            ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(linha.valor_lq)
+                            : (linha.valor 
+                              ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(linha.valor)
+                              : '-')
                           }
                         </TableCell>
                         <TableCell>
@@ -429,14 +627,42 @@ export default function LinhaOperadoraPage() {
                     <p className="font-medium">{selectedLinha.telefone || '-'}</p>
                   </div>
                   <div>
+                    <Label className="text-muted-foreground">Tipo Plano</Label>
+                    <p className="font-medium">
+                      {selectedLinha.tipo_plano === 'COMBO' ? (
+                        <Badge variant="secondary">COMBO</Badge>
+                      ) : (
+                        selectedLinha.tipo_plano || '-'
+                      )}
+                    </p>
+                  </div>
+                  <div>
                     <Label className="text-muted-foreground">Plano</Label>
                     <p className="font-medium">{selectedLinha.plano || '-'}</p>
                   </div>
                   <div>
-                    <Label className="text-muted-foreground">Valor</Label>
+                    <Label className="text-muted-foreground">Valor Original</Label>
                     <p className="font-medium">
                       {selectedLinha.valor 
                         ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(selectedLinha.valor)
+                        : '-'
+                      }
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Valor LQ (Somado)</Label>
+                    <p className="font-medium text-lg">
+                      {selectedLinha.valor_lq 
+                        ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(selectedLinha.valor_lq)
+                        : '-'
+                      }
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Valor Make</Label>
+                    <p className="font-medium">
+                      {selectedLinha.valor_make 
+                        ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(selectedLinha.valor_make)
                         : '-'
                       }
                     </p>
@@ -457,11 +683,11 @@ export default function LinhaOperadoraPage() {
 
         {/* Upload Dialog */}
         <Dialog open={isUploadOpen} onOpenChange={setIsUploadOpen}>
-          <DialogContent>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Importar Dados da Operadora</DialogTitle>
               <DialogDescription>
-                Selecione a operadora e faça upload do arquivo CSV
+                Selecione a operadora, o mapeamento de colunas e faça upload do arquivo CSV
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
@@ -472,18 +698,53 @@ export default function LinhaOperadoraPage() {
                 </Alert>
               )}
               
-              <div className="space-y-2">
-                <Label htmlFor="operadora">Operadora *</Label>
-                <Select value={selectedOperadoraUpload} onValueChange={setSelectedOperadoraUpload}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione a operadora" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {operadoras.map((op) => (
-                      <SelectItem key={op.id} value={op.id}>{op.nome}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="operadora">Operadora *</Label>
+                  <Select value={selectedOperadoraUpload} onValueChange={setSelectedOperadoraUpload}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione a operadora" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {operadoras.map((op) => (
+                        <SelectItem key={op.id} value={op.id}>{op.nome}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="mapeamento">Mapeamento de Colunas *</Label>
+                  <Select 
+                    value={selectedMapeamentoId} 
+                    onValueChange={setSelectedMapeamentoId}
+                    disabled={!selectedOperadoraUpload || mapeamentosDisponiveis.length === 0}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={
+                        !selectedOperadoraUpload 
+                          ? "Selecione uma operadora primeiro" 
+                          : mapeamentosDisponiveis.length === 0 
+                            ? "Nenhum mapeamento disponível"
+                            : "Selecione o mapeamento"
+                      } />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {mapeamentosDisponiveis.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.nome} {m.ativo && '(Padrão)'}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {selectedOperadoraUpload && mapeamentosDisponiveis.length === 0 && (
+                    <p className="text-xs text-destructive">
+                      <Link to="/mapeamento-colunas" className="underline">
+                        Crie um mapeamento
+                      </Link> para esta operadora antes de importar.
+                    </p>
+                  )}
+                </div>
               </div>
 
               <div className="border-2 border-dashed rounded-lg p-8 text-center">
@@ -500,20 +761,60 @@ export default function LinhaOperadoraPage() {
                   type="file"
                   accept=".csv"
                   onChange={handleFileSelect}
-                  disabled={isUploading}
+                  disabled={isUploading || !selectedMapeamentoId}
                   className="max-w-xs mx-auto"
                 />
               </div>
-              <div className="text-xs text-muted-foreground">
-                <p className="font-medium mb-1">Colunas esperadas:</p>
-                <p>protocolo_operadora, cpf_cnpj, cliente_nome, telefone, plano, valor, data_status, status_operadora, quinzena_ref</p>
-              </div>
+
+              {showPreview && previewData.length > 0 && (
+                <div className="space-y-2">
+                  <Label>Prévia da Importação (primeiros 10 registros)</Label>
+                  <div className="rounded-md border overflow-x-auto max-h-64">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Cliente</TableHead>
+                          <TableHead>CPF/CNPJ</TableHead>
+                          <TableHead>Tipo</TableHead>
+                          <TableHead>Planos</TableHead>
+                          <TableHead>Valor Total</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {previewData.map((grupo, i) => (
+                          <TableRow key={i}>
+                            <TableCell>{grupo.cliente_nome || '-'}</TableCell>
+                            <TableCell className="font-mono text-xs">{grupo.cpf_cnpj || '-'}</TableCell>
+                            <TableCell>
+                              {grupo.planos.length > 1 ? (
+                                <Badge variant="secondary">COMBO</Badge>
+                              ) : (
+                                <Badge variant="outline">Único</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-xs max-w-32 truncate">{grupo.planos.join(', ') || '-'}</TableCell>
+                            <TableCell className="font-medium">
+                              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(grupo.valor_total)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {previewData.filter(g => g.planos.length > 1).length} registros serão importados como COMBO
+                  </p>
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsUploadOpen(false)} disabled={isUploading}>
                 Cancelar
               </Button>
-              <Button onClick={handleFileUpload} disabled={isUploading || !selectedFile || !selectedOperadoraUpload}>
+              <Button 
+                onClick={handleFileUpload} 
+                disabled={isUploading || !selectedFile || !selectedOperadoraUpload || !selectedMapeamentoId}
+              >
                 {isUploading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />

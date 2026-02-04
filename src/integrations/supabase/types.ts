@@ -191,6 +191,44 @@ export type Database = {
         }
         Relationships: []
       }
+      mapeamento_colunas: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          id: string
+          mapeamento: Json
+          nome: string
+          operadora_id: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          mapeamento?: Json
+          nome: string
+          operadora_id: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          mapeamento?: Json
+          nome?: string
+          operadora_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mapeamento_colunas_operadora_id_fkey"
+            columns: ["operadora_id"]
+            isOneToOne: false
+            referencedRelation: "operadoras"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       operadoras: {
         Row: {
           ativa: boolean

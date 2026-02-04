@@ -10,6 +10,29 @@ export type TipoMatch = 'protocolo' | 'cpf' | 'telefone' | 'manual';
 
 export type StatusConciliacao = 'conciliado' | 'divergente' | 'nao_encontrado';
 
+// Campos do sistema que podem ser mapeados
+export type CampoSistema = 
+  | 'cliente_nome'
+  | 'cpf_cnpj'
+  | 'protocolo_operadora'
+  | 'telefone'
+  | 'plano'
+  | 'valor'
+  | 'data_status'
+  | 'status_operadora'
+  | 'quinzena_ref';
+
+export interface MapeamentoColunas {
+  id: string;
+  operadora_id: string;
+  nome: string;
+  mapeamento: Record<CampoSistema, string>;
+  ativo: boolean;
+  created_at: string;
+  updated_at: string;
+  operadora?: Operadora | null;
+}
+
 export interface Operadora {
   id: string;
   nome: string;
@@ -117,3 +140,19 @@ export interface AuditLog {
   usuario_id: string | null;
   created_at: string;
 }
+
+// Labels para campos do sistema (para UI)
+export const CAMPOS_SISTEMA_LABELS: Record<CampoSistema, string> = {
+  cliente_nome: 'Nome do Cliente',
+  cpf_cnpj: 'CPF/CNPJ',
+  protocolo_operadora: 'Protocolo',
+  telefone: 'Telefone',
+  plano: 'Plano/Produto',
+  valor: 'Valor',
+  data_status: 'Data do Status',
+  status_operadora: 'Status',
+  quinzena_ref: 'Quinzena de Referência',
+};
+
+// Campos obrigatórios para o mapeamento
+export const CAMPOS_OBRIGATORIOS: CampoSistema[] = ['cpf_cnpj', 'valor'];

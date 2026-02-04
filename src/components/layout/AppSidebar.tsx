@@ -11,7 +11,8 @@ import {
   ChevronDown,
   ClipboardList,
   Clock,
-  Radio
+  Radio,
+  Columns
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/contexts/AuthContext';
@@ -58,6 +59,7 @@ const gestaoItems = [
 // Submenu Admin - apenas admin
 const adminGestaoItems = [
   { title: 'Linha a Linha', url: '/linha-operadora', icon: FileText },
+  { title: 'Mapeamento Colunas', url: '/mapeamento-colunas', icon: Columns },
 ];
 
 export function AppSidebar() {
