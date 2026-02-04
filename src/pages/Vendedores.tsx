@@ -48,6 +48,7 @@ interface VendedorWithRelations {
   user_id: string | null;
   nome: string;
   email: string;
+  cpf: string | null;
   empresa_id: string | null;
   supervisor_id: string | null;
   ativo: boolean;
@@ -57,6 +58,35 @@ interface VendedorWithRelations {
   supervisor?: { nome: string }[] | null;
   role?: AppRole;
 }
+
+// Normalize CPF (remove non-digits)
+const normalizeCPF = (cpf: string): string => cpf.replace(/\D/g, '');
+
+// Format CPF for display
+const formatCPF = (cpf: string): string => {
+  const digits = normalizeCPF(cpf);
+  if (digits.length !== 11) return cpf;
+  return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+};
+
+// Validate CPF mathematically
+const isValidCPF = (cpf: string): boolean => {
+  const digits = normalizeCPF(cpf);
+  if (digits.length !== 11) return false;
+  if (/^(\d)\1+$/.test(digits)) return false;
+  
+  let sum = 0;
+  for (let i = 0; i < 9; i++) sum += parseInt(digits[i]) * (10 - i);
+  let remainder = (sum * 10) % 11;
+  if (remainder === 10 || remainder === 11) remainder = 0;
+  if (remainder !== parseInt(digits[9])) return false;
+  
+  sum = 0;
+  for (let i = 0; i < 10; i++) sum += parseInt(digits[i]) * (11 - i);
+  remainder = (sum * 10) % 11;
+  if (remainder === 10 || remainder === 11) remainder = 0;
+  return remainder === parseInt(digits[10]);
+};
 
 export default function VendedoresPage() {
   const [vendedores, setVendedores] = useState<VendedorWithRelations[]>([]);
@@ -68,6 +98,7 @@ export default function VendedoresPage() {
   const [formData, setFormData] = useState({
     nome: '',
     email: '',
+    cpf: '',
     empresa_id: '',
     supervisor_id: '',
     ativo: true,
@@ -133,6 +164,7 @@ export default function VendedoresPage() {
       setFormData({
         nome: vendedor.nome,
         email: vendedor.email,
+        cpf: vendedor.cpf ? formatCPF(vendedor.cpf) : '',
         empresa_id: vendedor.empresa_id || '',
         supervisor_id: vendedor.supervisor_id || '',
         ativo: vendedor.ativo,
@@ -144,6 +176,7 @@ export default function VendedoresPage() {
       setFormData({
         nome: '',
         email: '',
+        cpf: '',
         empresa_id: '',
         supervisor_id: '',
         ativo: true,
@@ -157,6 +190,17 @@ export default function VendedoresPage() {
   const handleSave = async () => {
     if (!formData.nome.trim() || !formData.email.trim()) {
       toast.error('Nome e email são obrigatórios');
+      return;
+    }
+
+    if (!formData.cpf.trim()) {
+      toast.error('CPF é obrigatório');
+      return;
+    }
+
+    const normalizedCPF = normalizeCPF(formData.cpf);
+    if (!isValidCPF(normalizedCPF)) {
+      toast.error('CPF inválido');
       return;
     }
 
@@ -175,6 +219,7 @@ export default function VendedoresPage() {
           .update({
             nome: formData.nome,
             email: formData.email,
+            cpf: normalizedCPF,
             empresa_id: formData.empresa_id || null,
             supervisor_id: formData.supervisor_id || null,
             ativo: formData.ativo,
@@ -216,6 +261,7 @@ export default function VendedoresPage() {
               user_id: authData.user.id,
               nome: formData.nome,
               email: formData.email,
+              cpf: normalizedCPF,
               empresa_id: formData.empresa_id || null,
               supervisor_id: formData.supervisor_id || null,
               ativo: formData.ativo,
@@ -392,6 +438,16 @@ export default function VendedoresPage() {
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   placeholder="email@exemplo.com"
                   disabled={!!selectedVendedor}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="cpf">CPF *</Label>
+                <Input
+                  id="cpf"
+                  value={formData.cpf}
+                  onChange={(e) => setFormData({ ...formData, cpf: e.target.value })}
+                  placeholder="000.000.000-00"
+                  maxLength={14}
                 />
               </div>
               {!selectedVendedor && (
