@@ -82,20 +82,20 @@ export default function NovaVenda() {
         if (empError) throw empError;
         setEmpresas(empData as Empresa[]);
 
-        // Fetch vendedor_id for current user
+        // Fetch usuario_id for current user
         if (user) {
-          const { data: vendedorData, error: vendedorError } = await supabase
-            .from('vendedores')
+          const { data: usuarioData, error: usuarioError } = await supabase
+            .from('usuarios')
             .select('id, empresa_id')
             .eq('user_id', user.id)
             .single();
 
-          if (vendedorError && vendedorError.code !== 'PGRST116') {
-            console.error('Error fetching vendedor:', vendedorError);
+          if (usuarioError && usuarioError.code !== 'PGRST116') {
+            console.error('Error fetching usuario:', usuarioError);
           }
 
-          if (vendedorData) {
-            setVendedorId(vendedorData.id);
+          if (usuarioData) {
+            setVendedorId(usuarioData.id);
           }
         }
       } catch (error) {
@@ -179,7 +179,7 @@ export default function NovaVenda() {
     }
 
     if (!vendedorId) {
-      toast.error('Você não está vinculado como vendedor. Contate o administrador.');
+      toast.error('Você não está vinculado como usuário. Contate o administrador.');
       return;
     }
 
@@ -197,7 +197,7 @@ export default function NovaVenda() {
       const { error } = await supabase
         .from('vendas_internas')
         .insert({
-          vendedor_id: vendedorId,
+          usuario_id: vendedorId,
           cliente_nome: formData.cliente_nome.trim(),
           cpf_cnpj: formData.cpf_cnpj?.replace(/\D/g, '') || null,
           telefone: formData.telefone?.replace(/\D/g, '') || null,

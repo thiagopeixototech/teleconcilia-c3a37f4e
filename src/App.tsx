@@ -15,7 +15,7 @@ import LinhaOperadora from "./pages/LinhaOperadora";
 import Conciliacao from "./pages/Conciliacao";
 import Divergencias from "./pages/Divergencias";
 import Empresas from "./pages/Empresas";
-import Vendedores from "./pages/Vendedores";
+import Usuarios from "./pages/Usuarios";
 import GestaoRoles from "./pages/GestaoRoles";
 import CadastrosPendentes from "./pages/CadastrosPendentes";
 import Operadoras from "./pages/Operadoras";
@@ -99,10 +99,10 @@ const App = () => (
             />
             
             <Route
-              path="/vendedores"
+              path="/usuarios"
               element={
                 <ProtectedRoute allowedRoles={['admin']}>
-                  <Vendedores />
+                  <Usuarios />
                 </ProtectedRoute>
               }
             />

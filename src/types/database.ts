@@ -50,7 +50,7 @@ export interface Empresa {
   updated_at: string;
 }
 
-export interface Vendedor {
+export interface Usuario {
   id: string;
   user_id: string | null;
   nome: string;
@@ -62,13 +62,16 @@ export interface Vendedor {
   created_at: string;
   updated_at: string;
   empresa?: Empresa | null;
-  supervisor?: Vendedor | null;
+  supervisor?: Usuario | null;
 }
+
+// Alias para compatibilidade
+export type Vendedor = Usuario;
 
 export interface VendaInterna {
   id: string;
   empresa_id: string | null;
-  vendedor_id: string;
+  usuario_id: string;
   operadora_id: string | null;
   protocolo_interno: string | null;
   cpf_cnpj: string | null;
@@ -83,7 +86,7 @@ export interface VendaInterna {
   observacoes: string | null;
   created_at: string;
   updated_at: string;
-  vendedor?: Vendedor | null;
+  usuario?: Usuario | null;
   empresa?: Empresa | null;
   operadora?: Operadora | null;
 }

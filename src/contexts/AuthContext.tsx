@@ -39,9 +39,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setRole(roleData.role as AppRole);
       }
 
-      // Fetch vendedor profile
-      const { data: vendedorData } = await supabase
-        .from('vendedores')
+      // Fetch usuario profile
+      const { data: usuarioData } = await supabase
+        .from('usuarios')
         .select(`
           *,
           empresa:empresas(*)
@@ -49,14 +49,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq('user_id', userId)
         .maybeSingle();
       
-      if (vendedorData) {
-        // Map the data to our Vendedor type
-        const vendedorMapped: Vendedor = {
-          ...vendedorData,
-          empresa: vendedorData.empresa || null,
+      if (usuarioData) {
+        // Map the data to our Usuario type
+        const usuarioMapped: Vendedor = {
+          ...usuarioData,
+          empresa: usuarioData.empresa || null,
           supervisor: null, // Will be fetched separately if needed
         };
-        setVendedor(vendedorMapped);
+        setVendedor(usuarioMapped);
       }
     } catch (error) {
       console.error('Error fetching user data:', error);

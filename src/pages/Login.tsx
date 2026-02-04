@@ -125,13 +125,13 @@ export default function Login() {
 
     try {
       // First check if CPF already exists
-      const { data: existingVendedor } = await supabase
-        .from('vendedores')
+      const { data: existingUsuario } = await supabase
+        .from('usuarios')
         .select('id')
         .eq('cpf', cleanCPF)
         .maybeSingle();
       
-      if (existingVendedor) {
+      if (existingUsuario) {
         setError('Este CPF já está cadastrado no sistema. Entre em contato com o administrador.');
         setIsLoading(false);
         return;
@@ -152,10 +152,10 @@ export default function Login() {
         return;
       }
 
-      // Create vendedor record with CPF
+      // Create usuario record with CPF
       if (authData.user) {
-        const { error: vendedorError } = await supabase
-          .from('vendedores')
+        const { error: usuarioError } = await supabase
+          .from('usuarios')
           .insert({
             user_id: authData.user.id,
             nome: nome.trim(),
@@ -163,10 +163,10 @@ export default function Login() {
             cpf: cleanCPF,
           });
         
-        if (vendedorError) {
-          console.error('Error creating vendedor:', vendedorError);
-          // If vendedor creation fails due to duplicate CPF
-          if (vendedorError.message.includes('duplicate') || vendedorError.message.includes('unique')) {
+        if (usuarioError) {
+          console.error('Error creating usuario:', usuarioError);
+          // If usuario creation fails due to duplicate CPF
+          if (usuarioError.message.includes('duplicate') || usuarioError.message.includes('unique')) {
             setError('Este CPF já está cadastrado no sistema.');
             setIsLoading(false);
             return;

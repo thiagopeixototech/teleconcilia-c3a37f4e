@@ -46,7 +46,7 @@ const cadastrosItems = [
   { title: 'Cadastros Pendentes', url: '/cadastros-pendentes', icon: Clock },
   { title: 'Empresas', url: '/empresas', icon: Building2 },
   { title: 'Operadoras', url: '/operadoras', icon: Radio },
-  { title: 'Usuários', url: '/vendedores', icon: Users },
+  { title: 'Usuários', url: '/usuarios', icon: Users },
   { title: 'Permissões', url: '/permissoes', icon: Shield },
 ];
 

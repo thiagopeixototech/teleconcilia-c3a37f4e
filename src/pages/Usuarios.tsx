@@ -113,27 +113,27 @@ export default function VendedoresPage() {
 
   const fetchData = async () => {
     try {
-      // Fetch vendedores with empresa relation only (supervisor fetched separately)
-      const { data: vendedoresData, error: vendedoresError } = await supabase
-        .from('vendedores')
+      // Fetch usuarios with empresa relation only (supervisor fetched separately)
+      const { data: usuariosData, error: usuariosError } = await supabase
+        .from('usuarios')
         .select(`
           *,
           empresa:empresas(*)
         `)
         .order('nome');
 
-      if (vendedoresError) throw vendedoresError;
+      if (usuariosError) throw usuariosError;
 
       // Fetch user roles
       const { data: rolesData } = await supabase
         .from('user_roles')
         .select('user_id, role');
 
-      // Map roles and supervisor names to vendedores
-      const vendedoresWithRoles = vendedoresData.map(v => {
+      // Map roles and supervisor names to usuarios
+      const usuariosWithRoles = (usuariosData as any[]).map(v => {
         const roleData = rolesData?.find(r => r.user_id === v.user_id);
         const supervisorData = v.supervisor_id 
-          ? vendedoresData.find(s => s.id === v.supervisor_id)
+          ? (usuariosData as any[]).find(s => s.id === v.supervisor_id)
           : null;
         return {
           ...v,
@@ -151,7 +151,7 @@ export default function VendedoresPage() {
 
       if (empresasError) throw empresasError;
 
-      setVendedores(vendedoresWithRoles as VendedorWithRelations[]);
+      setVendedores(usuariosWithRoles as VendedorWithRelations[]);
       setEmpresas(empresasData as Empresa[]);
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -216,9 +216,9 @@ export default function VendedoresPage() {
 
     try {
       if (selectedVendedor) {
-        // Update vendedor
-        const { error: vendedorError } = await supabase
-          .from('vendedores')
+        // Update usuario
+        const { error: usuarioError } = await supabase
+          .from('usuarios')
           .update({
             nome: formData.nome,
             email: formData.email,
@@ -229,7 +229,7 @@ export default function VendedoresPage() {
           })
           .eq('id', selectedVendedor.id);
 
-        if (vendedorError) throw vendedorError;
+        if (usuarioError) throw usuarioError;
 
         // Update role if user_id exists
         if (selectedVendedor.user_id) {
@@ -243,7 +243,7 @@ export default function VendedoresPage() {
           if (roleError) console.error('Error updating role:', roleError);
         }
 
-        toast.success('Vendedor atualizado com sucesso');
+        toast.success('Usuário atualizado com sucesso');
       } else {
         // Create new user in auth
         const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -257,9 +257,9 @@ export default function VendedoresPage() {
         if (authError) throw authError;
 
         if (authData.user) {
-          // Create vendedor record
-          const { error: vendedorError } = await supabase
-            .from('vendedores')
+          // Create usuario record
+          const { error: usuarioError } = await supabase
+            .from('usuarios')
             .insert({
               user_id: authData.user.id,
               nome: formData.nome,
@@ -270,7 +270,7 @@ export default function VendedoresPage() {
               ativo: formData.ativo,
             });
 
-          if (vendedorError) throw vendedorError;
+          if (usuarioError) throw usuarioError;
 
           // Create user role
           const { error: roleError } = await supabase
@@ -282,7 +282,7 @@ export default function VendedoresPage() {
 
           if (roleError) console.error('Error creating role:', roleError);
 
-          toast.success('Vendedor criado com sucesso. Um email de confirmação foi enviado.');
+          toast.success('Usuário criado com sucesso. Um email de confirmação foi enviado.');
         }
       }
 
@@ -316,7 +316,7 @@ export default function VendedoresPage() {
 
   if (isLoading) {
     return (
-      <AppLayout title="Vendedores">
+      <AppLayout title="Usuários">
         <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
@@ -325,7 +325,7 @@ export default function VendedoresPage() {
   }
 
   return (
-    <AppLayout title="Vendedores">
+    <AppLayout title="Usuários">
       <div className="space-y-6">
         {/* Header */}
         <Card>
@@ -342,7 +342,7 @@ export default function VendedoresPage() {
               </div>
               <Button onClick={() => handleOpenDialog()}>
                 <UserPlus className="h-4 w-4 mr-2" />
-                Novo Vendedor
+                Novo Usuário
               </Button>
             </div>
           </CardContent>
@@ -353,7 +353,7 @@ export default function VendedoresPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users className="h-5 w-5" />
-              Vendedores Cadastrados ({filteredVendedores.length})
+              Usuários Cadastrados ({filteredVendedores.length})
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -374,7 +374,7 @@ export default function VendedoresPage() {
                   {filteredVendedores.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                        Nenhum vendedor encontrado
+                        Nenhum usuário encontrado
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -413,12 +413,12 @@ export default function VendedoresPage() {
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>
-                {selectedVendedor ? 'Editar Vendedor' : 'Novo Vendedor'}
+                {selectedVendedor ? 'Editar Usuário' : 'Novo Usuário'}
               </DialogTitle>
               <DialogDescription>
                 {selectedVendedor 
-                  ? 'Atualize os dados do vendedor' 
-                  : 'Preencha os dados para cadastrar um novo vendedor'
+                  ? 'Atualize os dados do usuário' 
+                  : 'Preencha os dados para cadastrar um novo usuário'
                 }
               </DialogDescription>
             </DialogHeader>
