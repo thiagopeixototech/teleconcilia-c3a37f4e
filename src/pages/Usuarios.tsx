@@ -108,6 +108,7 @@ export default function VendedoresPage() {
   });
   const [isSaving, setIsSaving] = useState(false);
   const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
 
   useEffect(() => {
     fetchData();
@@ -306,20 +307,46 @@ export default function VendedoresPage() {
   };
 
   const handleResetPassword = async () => {
-    if (!selectedVendedor?.email) return;
+    if (!selectedVendedor?.user_id || !newPassword) {
+      toast.error('Digite a nova senha');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      toast.error('A senha deve ter pelo menos 6 caracteres');
+      return;
+    }
     
     setIsResettingPassword(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(selectedVendedor.email, {
-        redirectTo: `${window.location.origin}/reset-password`,
-      });
+      const { data: { session } } = await supabase.auth.getSession();
       
-      if (error) throw error;
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reset-user-password`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token}`,
+          },
+          body: JSON.stringify({
+            userId: selectedVendedor.user_id,
+            newPassword: newPassword,
+          }),
+        }
+      );
       
-      toast.success('Email de redefinição de senha enviado com sucesso');
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Erro ao redefinir senha');
+      }
+      
+      toast.success('Senha redefinida com sucesso');
+      setNewPassword('');
     } catch (error: any) {
       console.error('Error resetting password:', error);
-      toast.error(error.message || 'Erro ao enviar email de redefinição');
+      toast.error(error.message || 'Erro ao redefinir senha');
     } finally {
       setIsResettingPassword(false);
     }
@@ -594,22 +621,30 @@ export default function VendedoresPage() {
                 />
               </div>
               
-              {selectedVendedor && (
-                <div className="pt-2 border-t">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full"
-                    onClick={handleResetPassword}
-                    disabled={isResettingPassword}
-                  >
-                    {isResettingPassword ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <KeyRound className="mr-2 h-4 w-4" />
-                    )}
-                    Enviar Email de Redefinição de Senha
-                  </Button>
+              {selectedVendedor && selectedVendedor.user_id && (
+                <div className="pt-2 border-t space-y-3">
+                  <Label htmlFor="newPassword">Redefinir Senha</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="newPassword"
+                      type="password"
+                      placeholder="Nova senha (mín. 6 caracteres)"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleResetPassword}
+                      disabled={isResettingPassword || !newPassword}
+                    >
+                      {isResettingPassword ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <KeyRound className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>
