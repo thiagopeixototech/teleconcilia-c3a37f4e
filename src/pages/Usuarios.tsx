@@ -37,7 +37,8 @@ import {
   Plus, 
   Edit,
   Users,
-  UserPlus
+  UserPlus,
+  KeyRound
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -106,6 +107,7 @@ export default function VendedoresPage() {
     password: '',
   });
   const [isSaving, setIsSaving] = useState(false);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -300,6 +302,26 @@ export default function VendedoresPage() {
       toast.error(error.message || 'Erro ao salvar vendedor');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!selectedVendedor?.email) return;
+    
+    setIsResettingPassword(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(selectedVendedor.email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      
+      if (error) throw error;
+      
+      toast.success('Email de redefinição de senha enviado com sucesso');
+    } catch (error: any) {
+      console.error('Error resetting password:', error);
+      toast.error(error.message || 'Erro ao enviar email de redefinição');
+    } finally {
+      setIsResettingPassword(false);
     }
   };
 
@@ -571,6 +593,25 @@ export default function VendedoresPage() {
                   onCheckedChange={(checked) => setFormData({ ...formData, ativo: checked })}
                 />
               </div>
+              
+              {selectedVendedor && (
+                <div className="pt-2 border-t">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full"
+                    onClick={handleResetPassword}
+                    disabled={isResettingPassword}
+                  >
+                    {isResettingPassword ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <KeyRound className="mr-2 h-4 w-4" />
+                    )}
+                    Enviar Email de Redefinição de Senha
+                  </Button>
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
