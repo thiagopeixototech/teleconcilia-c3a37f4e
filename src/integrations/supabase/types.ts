@@ -145,8 +145,11 @@ export type Database = {
           quinzena_ref: string | null
           status_operadora: Database["public"]["Enums"]["status_operadora"]
           telefone: string | null
+          tipo_plano: string | null
           updated_at: string
           valor: number | null
+          valor_lq: number | null
+          valor_make: number | null
         }
         Insert: {
           arquivo_origem?: string | null
@@ -161,8 +164,11 @@ export type Database = {
           quinzena_ref?: string | null
           status_operadora?: Database["public"]["Enums"]["status_operadora"]
           telefone?: string | null
+          tipo_plano?: string | null
           updated_at?: string
           valor?: number | null
+          valor_lq?: number | null
+          valor_make?: number | null
         }
         Update: {
           arquivo_origem?: string | null
@@ -177,8 +183,11 @@ export type Database = {
           quinzena_ref?: string | null
           status_operadora?: Database["public"]["Enums"]["status_operadora"]
           telefone?: string | null
+          tipo_plano?: string | null
           updated_at?: string
           valor?: number | null
+          valor_lq?: number | null
+          valor_make?: number | null
         }
         Relationships: []
       }

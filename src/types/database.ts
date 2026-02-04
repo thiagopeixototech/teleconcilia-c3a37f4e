@@ -73,6 +73,9 @@ export interface LinhaOperadora {
   telefone: string | null;
   plano: string | null;
   valor: number | null;
+  valor_make: number | null;
+  valor_lq: number | null;
+  tipo_plano: string | null;
   data_status: string | null;
   status_operadora: StatusOperadora;
   quinzena_ref: string | null;
