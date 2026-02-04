@@ -257,18 +257,18 @@ export default function VendedoresPage() {
         if (authError) throw authError;
 
         if (authData.user) {
-          // Create usuario record
+          // O trigger handle_new_user cria o registro básico em usuarios
+          // Aqui fazemos UPDATE para adicionar os dados completos (CPF, empresa, etc)
           const { error: usuarioError } = await supabase
             .from('usuarios')
-            .insert({
-              user_id: authData.user.id,
+            .update({
               nome: formData.nome,
-              email: formData.email,
               cpf: normalizedCPF,
               empresa_id: formData.empresa_id || null,
               supervisor_id: formData.supervisor_id || null,
               ativo: formData.ativo,
-            });
+            })
+            .eq('user_id', authData.user.id);
 
           if (usuarioError) throw usuarioError;
 
