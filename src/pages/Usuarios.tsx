@@ -231,14 +231,21 @@ export default function VendedoresPage() {
 
         if (usuarioError) throw usuarioError;
 
-        // Update role if user_id exists
+        // Update role if user_id exists - delete old roles and insert new one
         if (selectedVendedor.user_id) {
+          // First delete all existing roles for this user
+          await supabase
+            .from('user_roles')
+            .delete()
+            .eq('user_id', selectedVendedor.user_id);
+
+          // Then insert the new role
           const { error: roleError } = await supabase
             .from('user_roles')
-            .upsert({
+            .insert({
               user_id: selectedVendedor.user_id,
               role: formData.role,
-            }, { onConflict: 'user_id,role' });
+            });
 
           if (roleError) console.error('Error updating role:', roleError);
         }
