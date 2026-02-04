@@ -55,6 +55,7 @@ export interface Vendedor {
   user_id: string | null;
   nome: string;
   email: string;
+  cpf: string | null;
   empresa_id: string | null;
   supervisor_id: string | null;
   ativo: boolean;

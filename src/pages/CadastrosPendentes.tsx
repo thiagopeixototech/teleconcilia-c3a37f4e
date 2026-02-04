@@ -40,10 +40,19 @@ interface PendingUser {
   user_id: string | null;
   nome: string;
   email: string;
+  cpf: string | null;
   created_at: string;
   empresa_id: string | null;
   hasRole: boolean;
 }
+
+// Format CPF for display
+const formatCPF = (cpf: string | null): string => {
+  if (!cpf) return '-';
+  const cleanCPF = cpf.replace(/[^\d]/g, '');
+  if (cleanCPF.length !== 11) return cpf;
+  return `${cleanCPF.slice(0, 3)}.${cleanCPF.slice(3, 6)}.${cleanCPF.slice(6, 9)}-${cleanCPF.slice(9)}`;
+};
 
 const ROLE_LABELS: Record<AppRole, string> = {
   admin: 'Administrador',
@@ -74,7 +83,7 @@ export default function CadastrosPendentes() {
       // Fetch vendedores that don't have roles yet
       const { data: vendedores, error: vendedoresError } = await supabase
         .from('vendedores')
-        .select('id, user_id, nome, email, created_at, empresa_id')
+        .select('id, user_id, nome, email, cpf, created_at, empresa_id')
         .order('created_at', { ascending: false });
 
       if (vendedoresError) throw vendedoresError;
@@ -243,6 +252,7 @@ export default function CadastrosPendentes() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Nome</TableHead>
+                    <TableHead>CPF</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Status da Conta</TableHead>
                     <TableHead>Pendência</TableHead>
@@ -254,6 +264,7 @@ export default function CadastrosPendentes() {
                   {pendingUsers.map((user) => (
                     <TableRow key={user.id}>
                       <TableCell className="font-medium">{user.nome}</TableCell>
+                      <TableCell className="font-mono text-sm">{formatCPF(user.cpf)}</TableCell>
                       <TableCell>{user.email}</TableCell>
                       <TableCell>
                         {user.user_id ? (

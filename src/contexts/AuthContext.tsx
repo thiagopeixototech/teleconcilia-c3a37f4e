@@ -10,8 +10,8 @@ interface AuthContextType {
   vendedor: Vendedor | null;
   isLoading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
-  signUp: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
+  refreshUserData: () => Promise<void>;
   isAdmin: boolean;
   isSupervisor: boolean;
   isVendedor: boolean;
@@ -103,15 +103,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error };
   };
 
-  const signUp = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: window.location.origin,
-      },
-    });
-    return { error };
+  const refreshUserData = async () => {
+    if (user) {
+      await fetchUserData(user.id);
+    }
   };
 
   const signOut = async () => {
@@ -129,8 +124,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     vendedor,
     isLoading,
     signIn,
-    signUp,
     signOut,
+    refreshUserData,
     isAdmin: role === 'admin',
     isSupervisor: role === 'supervisor',
     isVendedor: role === 'vendedor',

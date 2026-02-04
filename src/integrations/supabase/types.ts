@@ -359,6 +359,7 @@ export type Database = {
       vendedores: {
         Row: {
           ativo: boolean
+          cpf: string | null
           created_at: string
           email: string
           empresa_id: string | null
@@ -370,6 +371,7 @@ export type Database = {
         }
         Insert: {
           ativo?: boolean
+          cpf?: string | null
           created_at?: string
           email: string
           empresa_id?: string | null
@@ -381,6 +383,7 @@ export type Database = {
         }
         Update: {
           ativo?: boolean
+          cpf?: string | null
           created_at?: string
           email?: string
           empresa_id?: string | null
