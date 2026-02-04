@@ -19,6 +19,7 @@ import Vendedores from "./pages/Vendedores";
 import GestaoRoles from "./pages/GestaoRoles";
 import CadastrosPendentes from "./pages/CadastrosPendentes";
 import Operadoras from "./pages/Operadoras";
+import MapeamentoColunas from "./pages/MapeamentoColunas";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -129,6 +130,15 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={['admin']}>
                   <Operadoras />
+                </ProtectedRoute>
+              }
+            />
+            
+            <Route
+              path="/mapeamento-colunas"
+              element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <MapeamentoColunas />
                 </ProtectedRoute>
               }
             />
