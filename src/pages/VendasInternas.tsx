@@ -91,13 +91,13 @@ export default function VendasInternas() {
         .from('vendas_internas')
         .select(`
           *,
-          vendedor:vendedores(nome, email),
+          usuario:usuarios(nome, email),
           empresa:empresas(nome)
         `)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setVendas(data as VendaInterna[]);
+      setVendas(data as any);
     } catch (error) {
       console.error('Error fetching vendas:', error);
       toast.error('Erro ao carregar vendas');

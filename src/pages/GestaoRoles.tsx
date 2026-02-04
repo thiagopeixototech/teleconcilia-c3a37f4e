@@ -75,9 +75,9 @@ export default function GestaoRoles() {
 
   const fetchUsers = async () => {
     try {
-      // Fetch all vendedores (this is our source of users)
-      const { data: vendedores, error: vendedoresError } = await supabase
-        .from('vendedores')
+      // Fetch all usuarios (this is our source of users)
+      const { data: usuarios, error: usuariosError } = await supabase
+        .from('usuarios')
         .select(`
           id,
           user_id,
@@ -89,7 +89,7 @@ export default function GestaoRoles() {
         `)
         .order('nome');
 
-      if (vendedoresError) throw vendedoresError;
+      if (usuariosError) throw usuariosError;
 
       // Fetch user roles
       const { data: roles, error: rolesError } = await supabase
@@ -98,10 +98,10 @@ export default function GestaoRoles() {
 
       if (rolesError) throw rolesError;
 
-      // Map roles to vendedores
+      // Map roles to usuarios
       const roleMap = new Map(roles?.map(r => [r.user_id, { role: r.role as AppRole, id: r.id }]) || []);
 
-      const usersData: UserWithRole[] = (vendedores || []).map(v => ({
+      const usersData: UserWithRole[] = (usuarios || []).map(v => ({
         id: v.id,
         user_id: v.user_id,
         email: v.email,
@@ -140,7 +140,7 @@ export default function GestaoRoles() {
       if (!selectedUser.user_id) {
         toast({
           title: 'Erro',
-          description: 'Este vendedor ainda não tem uma conta vinculada. O usuário precisa fazer login primeiro.',
+          description: 'Este usuário ainda não tem uma conta vinculada. O usuário precisa fazer login primeiro.',
           variant: 'destructive',
         });
         setIsSaving(false);
@@ -263,7 +263,7 @@ export default function GestaoRoles() {
                 {users.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                      Nenhum vendedor encontrado. Cadastre vendedores na página de Vendedores.
+                      Nenhum usuário encontrado. Cadastre usuários na página de Usuários.
                     </TableCell>
                   </TableRow>
                 ) : (

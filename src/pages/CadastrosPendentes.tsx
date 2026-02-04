@@ -80,13 +80,13 @@ export default function CadastrosPendentes() {
 
   const fetchData = async () => {
     try {
-      // Fetch vendedores that don't have roles yet
-      const { data: vendedores, error: vendedoresError } = await supabase
-        .from('vendedores')
+      // Fetch usuarios that don't have roles yet
+      const { data: usuarios, error: usuariosError } = await supabase
+        .from('usuarios')
         .select('id, user_id, nome, email, cpf, created_at, empresa_id')
         .order('created_at', { ascending: false });
 
-      if (vendedoresError) throw vendedoresError;
+      if (usuariosError) throw usuariosError;
 
       // Fetch existing roles
       const { data: roles, error: rolesError } = await supabase
@@ -98,7 +98,7 @@ export default function CadastrosPendentes() {
       const roleUserIds = new Set(roles?.map(r => r.user_id) || []);
 
       // Filter to only show pending users (no role assigned yet or no empresa)
-      const pending = (vendedores || [])
+      const pending = (usuarios || [])
         .filter(v => {
           const hasRole = v.user_id ? roleUserIds.has(v.user_id) : false;
           const hasEmpresa = !!v.empresa_id;
@@ -147,14 +147,14 @@ export default function CadastrosPendentes() {
     setIsSaving(true);
     try {
       // Update empresa_id
-      const { error: vendedorError } = await supabase
-        .from('vendedores')
+      const { error: usuarioError } = await supabase
+        .from('usuarios')
         .update({ 
           empresa_id: selectedEmpresa === 'none' ? null : selectedEmpresa 
         })
         .eq('id', selectedUser.id);
 
-      if (vendedorError) throw vendedorError;
+      if (usuarioError) throw usuarioError;
 
       // If user has user_id, assign role
       if (selectedUser.user_id) {

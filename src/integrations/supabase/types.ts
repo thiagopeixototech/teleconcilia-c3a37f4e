@@ -274,89 +274,7 @@ export type Database = {
         }
         Relationships: []
       }
-      vendas_internas: {
-        Row: {
-          cep: string | null
-          cliente_nome: string
-          cpf_cnpj: string | null
-          created_at: string
-          data_venda: string
-          empresa_id: string | null
-          endereco: string | null
-          id: string
-          observacoes: string | null
-          operadora_id: string | null
-          plano: string | null
-          protocolo_interno: string | null
-          status_interno: Database["public"]["Enums"]["status_interno"]
-          telefone: string | null
-          updated_at: string
-          valor: number | null
-          vendedor_id: string
-        }
-        Insert: {
-          cep?: string | null
-          cliente_nome: string
-          cpf_cnpj?: string | null
-          created_at?: string
-          data_venda?: string
-          empresa_id?: string | null
-          endereco?: string | null
-          id?: string
-          observacoes?: string | null
-          operadora_id?: string | null
-          plano?: string | null
-          protocolo_interno?: string | null
-          status_interno?: Database["public"]["Enums"]["status_interno"]
-          telefone?: string | null
-          updated_at?: string
-          valor?: number | null
-          vendedor_id: string
-        }
-        Update: {
-          cep?: string | null
-          cliente_nome?: string
-          cpf_cnpj?: string | null
-          created_at?: string
-          data_venda?: string
-          empresa_id?: string | null
-          endereco?: string | null
-          id?: string
-          observacoes?: string | null
-          operadora_id?: string | null
-          plano?: string | null
-          protocolo_interno?: string | null
-          status_interno?: Database["public"]["Enums"]["status_interno"]
-          telefone?: string | null
-          updated_at?: string
-          valor?: number | null
-          vendedor_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "vendas_internas_empresa_id_fkey"
-            columns: ["empresa_id"]
-            isOneToOne: false
-            referencedRelation: "empresas"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "vendas_internas_operadora_id_fkey"
-            columns: ["operadora_id"]
-            isOneToOne: false
-            referencedRelation: "operadoras"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "vendas_internas_vendedor_id_fkey"
-            columns: ["vendedor_id"]
-            isOneToOne: false
-            referencedRelation: "vendedores"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      vendedores: {
+      usuarios: {
         Row: {
           ativo: boolean
           cpf: string | null
@@ -405,7 +323,89 @@ export type Database = {
             foreignKeyName: "vendedores_supervisor_id_fkey"
             columns: ["supervisor_id"]
             isOneToOne: false
-            referencedRelation: "vendedores"
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vendas_internas: {
+        Row: {
+          cep: string | null
+          cliente_nome: string
+          cpf_cnpj: string | null
+          created_at: string
+          data_venda: string
+          empresa_id: string | null
+          endereco: string | null
+          id: string
+          observacoes: string | null
+          operadora_id: string | null
+          plano: string | null
+          protocolo_interno: string | null
+          status_interno: Database["public"]["Enums"]["status_interno"]
+          telefone: string | null
+          updated_at: string
+          usuario_id: string
+          valor: number | null
+        }
+        Insert: {
+          cep?: string | null
+          cliente_nome: string
+          cpf_cnpj?: string | null
+          created_at?: string
+          data_venda?: string
+          empresa_id?: string | null
+          endereco?: string | null
+          id?: string
+          observacoes?: string | null
+          operadora_id?: string | null
+          plano?: string | null
+          protocolo_interno?: string | null
+          status_interno?: Database["public"]["Enums"]["status_interno"]
+          telefone?: string | null
+          updated_at?: string
+          usuario_id: string
+          valor?: number | null
+        }
+        Update: {
+          cep?: string | null
+          cliente_nome?: string
+          cpf_cnpj?: string | null
+          created_at?: string
+          data_venda?: string
+          empresa_id?: string | null
+          endereco?: string | null
+          id?: string
+          observacoes?: string | null
+          operadora_id?: string | null
+          plano?: string | null
+          protocolo_interno?: string | null
+          status_interno?: Database["public"]["Enums"]["status_interno"]
+          telefone?: string | null
+          updated_at?: string
+          usuario_id?: string
+          valor?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vendas_internas_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vendas_internas_operadora_id_fkey"
+            columns: ["operadora_id"]
+            isOneToOne: false
+            referencedRelation: "operadoras"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vendas_internas_usuario_id_fkey"
+            columns: ["usuario_id"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
             referencedColumns: ["id"]
           },
         ]
@@ -416,14 +416,14 @@ export type Database = {
     }
     Functions: {
       can_view_venda: {
-        Args: { _user_id: string; _vendedor_id: string }
+        Args: { _user_id: string; _usuario_id: string }
         Returns: boolean
       }
       get_subordinates_ids: {
         Args: { _supervisor_id: string }
         Returns: string[]
       }
-      get_user_vendedor_id: { Args: { _user_id: string }; Returns: string }
+      get_user_usuario_id: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -432,7 +432,7 @@ export type Database = {
         Returns: boolean
       }
       is_supervisor_of: {
-        Args: { _user_id: string; _vendedor_id: string }
+        Args: { _user_id: string; _usuario_id: string }
         Returns: boolean
       }
     }
