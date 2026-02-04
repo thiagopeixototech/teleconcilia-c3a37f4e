@@ -113,13 +113,12 @@ export default function VendedoresPage() {
 
   const fetchData = async () => {
     try {
-      // Fetch vendedores with relations
+      // Fetch vendedores with empresa relation only (supervisor fetched separately)
       const { data: vendedoresData, error: vendedoresError } = await supabase
         .from('vendedores')
         .select(`
           *,
-          empresa:empresas(*),
-          supervisor:vendedores!vendedores_supervisor_id_fkey(nome)
+          empresa:empresas(*)
         `)
         .order('nome');
 
@@ -130,12 +129,16 @@ export default function VendedoresPage() {
         .from('user_roles')
         .select('user_id, role');
 
-      // Map roles to vendedores
+      // Map roles and supervisor names to vendedores
       const vendedoresWithRoles = vendedoresData.map(v => {
         const roleData = rolesData?.find(r => r.user_id === v.user_id);
+        const supervisorData = v.supervisor_id 
+          ? vendedoresData.find(s => s.id === v.supervisor_id)
+          : null;
         return {
           ...v,
           role: roleData?.role as AppRole || undefined,
+          supervisor: supervisorData ? [{ nome: supervisorData.nome }] : null,
         };
       });
 
