@@ -313,6 +313,7 @@ export default function VendedoresPage() {
   );
 
   const supervisores = vendedores.filter(v => v.role === 'supervisor' || v.role === 'admin');
+  const vendedoresDisponiveis = vendedores.filter(v => v.role === 'vendedor' || !v.role);
 
   if (isLoading) {
     return (
@@ -482,38 +483,21 @@ export default function VendedoresPage() {
                       </SelectItem>
                     ))}
                   </SelectContent>
-                </Select>
+              </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="supervisor">Supervisor</Label>
-                <Select 
-                  value={formData.supervisor_id || "none"} 
-                  onValueChange={(v) => setFormData({ ...formData, supervisor_id: v === "none" ? "" : v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione um supervisor" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Nenhum</SelectItem>
-                    {supervisores
-                      .filter(s => s.id !== selectedVendedor?.id)
-                      .map((supervisor) => (
-                        <SelectItem key={supervisor.id} value={supervisor.id}>
-                          {supervisor.nome}
-                        </SelectItem>
-                      ))
-                    }
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="role">Perfil</Label>
+                <Label htmlFor="role">Perfil *</Label>
                 <Select 
                   value={formData.role} 
-                  onValueChange={(v) => setFormData({ ...formData, role: v as AppRole })}
+                  onValueChange={(v) => setFormData({ 
+                    ...formData, 
+                    role: v as AppRole,
+                    // Limpa supervisor_id se não for vendedor
+                    supervisor_id: v === 'vendedor' ? formData.supervisor_id : ''
+                  })}
                 >
                   <SelectTrigger>
-                    <SelectValue />
+                    <SelectValue placeholder="Selecione o perfil" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="vendedor">Vendedor</SelectItem>
@@ -522,6 +506,56 @@ export default function VendedoresPage() {
                   </SelectContent>
                 </Select>
               </div>
+              
+              {/* Se for Vendedor, mostra seleção de supervisor */}
+              {formData.role === 'vendedor' && (
+                <div className="space-y-2">
+                  <Label htmlFor="supervisor">Qual supervisor supervisiona este vendedor?</Label>
+                  <Select 
+                    value={formData.supervisor_id || "none"} 
+                    onValueChange={(v) => setFormData({ ...formData, supervisor_id: v === "none" ? "" : v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione um supervisor" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Nenhum</SelectItem>
+                      {supervisores
+                        .filter(s => s.id !== selectedVendedor?.id)
+                        .map((supervisor) => (
+                          <SelectItem key={supervisor.id} value={supervisor.id}>
+                            {supervisor.nome}
+                          </SelectItem>
+                        ))
+                      }
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              
+              {/* Se for Supervisor, mostra quais vendedores ele supervisiona (apenas leitura) */}
+              {formData.role === 'supervisor' && selectedVendedor && (
+                <div className="space-y-2">
+                  <Label>Vendedores sob supervisão</Label>
+                  <div className="text-sm text-muted-foreground border rounded-md p-3 bg-muted/50">
+                    {vendedoresDisponiveis.filter(v => v.supervisor_id === selectedVendedor.id).length > 0 ? (
+                      <ul className="space-y-1">
+                        {vendedoresDisponiveis
+                          .filter(v => v.supervisor_id === selectedVendedor.id)
+                          .map(v => (
+                            <li key={v.id}>• {v.nome}</li>
+                          ))
+                        }
+                      </ul>
+                    ) : (
+                      <span>Nenhum vendedor vinculado a este supervisor</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Para vincular vendedores, edite cada vendedor e selecione este supervisor.
+                  </p>
+                </div>
+              )}
               <div className="flex items-center justify-between">
                 <Label htmlFor="ativo">Usuário Ativo</Label>
                 <Switch
