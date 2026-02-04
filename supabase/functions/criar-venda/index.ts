@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 interface VendaPayload {
-  vendedor_email: string;
+  vendedor_cpf: string;
   cliente_nome: string;
   cpf_cnpj?: string;
   telefone?: string;
@@ -19,6 +19,11 @@ interface VendaPayload {
   protocolo_interno?: string;
   observacoes?: string;
 }
+
+// Normalize CPF (remove non-digits)
+const normalizeCPF = (cpf: string): string => {
+  return cpf.replace(/\D/g, '');
+};
 
 Deno.serve(async (req) => {
   // Handle CORS preflight
@@ -49,9 +54,9 @@ Deno.serve(async (req) => {
       );
     }
 
-    if (!body.vendedor_email || body.vendedor_email.trim().length === 0) {
+    if (!body.vendedor_cpf || body.vendedor_cpf.trim().length === 0) {
       return new Response(
-        JSON.stringify({ error: "vendedor_email é obrigatório" }),
+        JSON.stringify({ error: "vendedor_cpf é obrigatório" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -59,6 +64,15 @@ Deno.serve(async (req) => {
     if (!body.operadora_nome || body.operadora_nome.trim().length === 0) {
       return new Response(
         JSON.stringify({ error: "operadora_nome é obrigatório" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Normalize and validate vendedor CPF
+    const vendedorCPF = normalizeCPF(body.vendedor_cpf);
+    if (vendedorCPF.length !== 11) {
+      return new Response(
+        JSON.stringify({ error: "vendedor_cpf inválido (deve ter 11 dígitos)" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -71,23 +85,23 @@ Deno.serve(async (req) => {
       );
     }
 
-    if (body.cpf_cnpj && body.cpf_cnpj.replace(/\D/g, '').length > 14) {
+    if (body.cpf_cnpj && normalizeCPF(body.cpf_cnpj).length > 14) {
       return new Response(
         JSON.stringify({ error: "cpf_cnpj inválido" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Find vendedor by email
+    // Find vendedor by CPF
     const { data: vendedor, error: vendedorError } = await supabase
       .from("vendedores")
-      .select("id, ativo")
-      .eq("email", body.vendedor_email.trim().toLowerCase())
+      .select("id, nome, ativo")
+      .eq("cpf", vendedorCPF)
       .single();
 
     if (vendedorError || !vendedor) {
       return new Response(
-        JSON.stringify({ error: "Vendedor não encontrado com este email" }),
+        JSON.stringify({ error: "Vendedor não encontrado com este CPF" }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -125,7 +139,7 @@ Deno.serve(async (req) => {
       vendedor_id: vendedor.id,
       operadora_id: operadora.id,
       cliente_nome: body.cliente_nome.trim(),
-      cpf_cnpj: body.cpf_cnpj?.replace(/\D/g, '') || null,
+      cpf_cnpj: body.cpf_cnpj ? normalizeCPF(body.cpf_cnpj) : null,
       telefone: body.telefone?.replace(/\D/g, '') || null,
       cep: body.cep?.replace(/\D/g, '') || null,
       endereco: body.endereco?.trim() || null,
@@ -158,6 +172,7 @@ Deno.serve(async (req) => {
         venda: {
           id: venda.id,
           cliente_nome: venda.cliente_nome,
+          vendedor_nome: vendedor.nome,
           protocolo_interno: venda.protocolo_interno,
           status_interno: venda.status_interno,
           created_at: venda.created_at,
