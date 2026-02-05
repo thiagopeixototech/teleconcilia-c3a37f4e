@@ -1,1 +1,13 @@
 project_id = "pihtkoidgsgayrikjcws"
+
+[functions.criar-venda]
+verify_jwt = false
+
+[functions.consultar-venda]
+verify_jwt = false
+
+[functions.atualizar-venda]
+verify_jwt = false
+
+[functions.reset-user-password]
+verify_jwt = false
