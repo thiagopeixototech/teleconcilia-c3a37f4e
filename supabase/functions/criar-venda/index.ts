@@ -92,21 +92,22 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Find vendedor by CPF
-    const { data: vendedor, error: vendedorError } = await supabase
-      .from("vendedores")
+    // Find usuario by CPF
+    const { data: usuario, error: usuarioError } = await supabase
+      .from("usuarios")
       .select("id, nome, ativo")
       .eq("cpf", vendedorCPF)
       .single();
 
-    if (vendedorError || !vendedor) {
+    if (usuarioError || !usuario) {
+      console.error("Usuario lookup error:", usuarioError, "CPF searched:", vendedorCPF);
       return new Response(
-        JSON.stringify({ error: "Vendedor não encontrado com este CPF" }),
+        JSON.stringify({ error: "Vendedor não encontrado com este CPF", cpf_buscado: vendedorCPF }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    if (!vendedor.ativo) {
+    if (!usuario.ativo) {
       return new Response(
         JSON.stringify({ error: "Vendedor está inativo" }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -136,7 +137,7 @@ Deno.serve(async (req) => {
 
     // Prepare venda data
     const vendaData = {
-      vendedor_id: vendedor.id,
+      usuario_id: usuario.id,
       operadora_id: operadora.id,
       cliente_nome: body.cliente_nome.trim(),
       cpf_cnpj: body.cpf_cnpj ? normalizeCPF(body.cpf_cnpj) : null,
@@ -172,7 +173,7 @@ Deno.serve(async (req) => {
         venda: {
           id: venda.id,
           cliente_nome: venda.cliente_nome,
-          vendedor_nome: vendedor.nome,
+          vendedor_nome: usuario.nome,
           protocolo_interno: venda.protocolo_interno,
           status_interno: venda.status_interno,
           created_at: venda.created_at,
