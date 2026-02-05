@@ -16,13 +16,17 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { identificador_make } = await req.json();
+    // Extrair identificador_make da URL (path parameter)
+    const url = new URL(req.url);
+    const pathParts = url.pathname.split("/").filter(Boolean);
+    const identificador_make = pathParts[pathParts.length - 1];
 
-    if (!identificador_make) {
+    // Se o último segmento for "consultar-venda", significa que não foi passado o identificador
+    if (!identificador_make || identificador_make === "consultar-venda") {
       return new Response(
         JSON.stringify({
           encontrada: false,
-          error: "identificador_make é obrigatório",
+          error: "identificador_make é obrigatório na URL. Ex: /consultar-venda/CRM-ID-56789",
         }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -54,7 +58,7 @@ Deno.serve(async (req) => {
           encontrada: false,
           mensagem: "Venda não encontrada com o identificador_make informado",
         }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
