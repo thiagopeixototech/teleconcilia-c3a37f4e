@@ -100,7 +100,7 @@ export default function ConciliacaoPage() {
         .from('vendas_internas')
         .select(`
           *,
-          vendedor:vendedores(nome)
+          vendedor:usuarios!vendas_internas_usuario_id_fkey(nome)
         `)
         .order('created_at', { ascending: false });
 
