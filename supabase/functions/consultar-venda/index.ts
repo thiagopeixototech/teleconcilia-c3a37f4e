@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
           encontrada: false,
           mensagem: "Venda não encontrada com o identificador_make informado",
         }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
