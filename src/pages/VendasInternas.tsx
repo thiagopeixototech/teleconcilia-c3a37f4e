@@ -282,7 +282,7 @@ export default function VendasInternas() {
                     <TableHead>CPF/CNPJ</TableHead>
                     <TableHead>Operadora</TableHead>
                     <TableHead>Valor</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>Confirmada</TableHead>
                     <TableHead>Status Make</TableHead>
                     <TableHead>Data Venda</TableHead>
                     <TableHead>Data Instalação</TableHead>
