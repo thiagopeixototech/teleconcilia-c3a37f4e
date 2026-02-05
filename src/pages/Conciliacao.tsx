@@ -199,6 +199,12 @@ export default function ConciliacaoPage() {
         if (error) throw error;
       }
 
+      // Update venda status to confirmada
+      await supabase
+        .from('vendas_internas')
+        .update({ status_interno: 'confirmada' })
+        .eq('id', selectedVenda.id);
+
       toast.success('Conciliação realizada com sucesso');
       setIsMatchOpen(false);
       fetchData();
@@ -328,6 +334,11 @@ export default function ConciliacaoPage() {
             console.error('Error matching venda:', venda.id, error);
             errorCount++;
           } else {
+            // Update venda status to confirmada
+            await supabase
+              .from('vendas_internas')
+              .update({ status_interno: 'confirmada' })
+              .eq('id', venda.id);
             successCount++;
           }
         }

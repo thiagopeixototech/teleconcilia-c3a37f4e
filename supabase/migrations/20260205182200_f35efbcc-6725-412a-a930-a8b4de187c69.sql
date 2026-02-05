@@ -1,0 +1,1 @@
+ALTER TABLE public.vendas_internas ALTER COLUMN status_interno SET DEFAULT 'aguardando'::status_interno;

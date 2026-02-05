@@ -154,7 +154,7 @@ Deno.serve(async (req) => {
       identificador_make: body.identificador_make?.trim() || null,
       data_instalacao: body.data_instalacao || null,
       status_make: body.status_make?.trim() || null,
-      status_interno: 'nova' as const,
+      status_interno: 'aguardando' as const,
     };
 
     // Insert venda
