@@ -3,24 +3,16 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { MapeamentoColunasManager } from '@/components/mapeamento/MapeamentoColunas';
 import { supabase } from '@/integrations/supabase/client';
 import { Operadora } from '@/types/database';
-import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
-import { Loader2, ShieldAlert } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Loader2 } from 'lucide-react';
 
 export default function MapeamentoColunasPage() {
-  const { isAdmin } = useAuth();
-  const navigate = useNavigate();
   const [operadoras, setOperadoras] = useState<Operadora[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (!isAdmin) {
-      navigate('/');
-      return;
-    }
     fetchOperadoras();
-  }, [isAdmin, navigate]);
+  }, []);
 
   const fetchOperadoras = async () => {
     try {
@@ -38,20 +30,6 @@ export default function MapeamentoColunasPage() {
       setIsLoading(false);
     }
   };
-
-  if (!isAdmin) {
-    return (
-      <AppLayout title="Mapeamento de Colunas">
-        <Card>
-          <CardContent className="py-8 text-center">
-            <ShieldAlert className="h-12 w-12 mx-auto mb-4 text-destructive" />
-            <p className="text-lg font-medium">Acesso Restrito</p>
-            <p className="text-muted-foreground">Apenas administradores podem acessar esta página</p>
-          </CardContent>
-        </Card>
-      </AppLayout>
-    );
-  }
 
   if (isLoading) {
     return (
