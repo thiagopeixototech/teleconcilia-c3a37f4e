@@ -82,6 +82,8 @@ export interface VendaInterna {
   plano: string | null;
   valor: number | null;
   data_venda: string;
+  data_instalacao: string | null;
+  identificador_make: string | null;
   status_interno: StatusInterno;
   observacoes: string | null;
   created_at: string;

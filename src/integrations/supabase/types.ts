@@ -334,6 +334,7 @@ export type Database = {
           cliente_nome: string
           cpf_cnpj: string | null
           created_at: string
+          data_instalacao: string | null
           data_venda: string
           empresa_id: string | null
           endereco: string | null
@@ -354,6 +355,7 @@ export type Database = {
           cliente_nome: string
           cpf_cnpj?: string | null
           created_at?: string
+          data_instalacao?: string | null
           data_venda?: string
           empresa_id?: string | null
           endereco?: string | null
@@ -374,6 +376,7 @@ export type Database = {
           cliente_nome?: string
           cpf_cnpj?: string | null
           created_at?: string
+          data_instalacao?: string | null
           data_venda?: string
           empresa_id?: string | null
           endereco?: string | null
