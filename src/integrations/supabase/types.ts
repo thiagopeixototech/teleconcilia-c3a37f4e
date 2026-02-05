@@ -345,6 +345,7 @@ export type Database = {
           plano: string | null
           protocolo_interno: string | null
           status_interno: Database["public"]["Enums"]["status_interno"]
+          status_make: string | null
           telefone: string | null
           updated_at: string
           usuario_id: string
@@ -366,6 +367,7 @@ export type Database = {
           plano?: string | null
           protocolo_interno?: string | null
           status_interno?: Database["public"]["Enums"]["status_interno"]
+          status_make?: string | null
           telefone?: string | null
           updated_at?: string
           usuario_id: string
@@ -387,6 +389,7 @@ export type Database = {
           plano?: string | null
           protocolo_interno?: string | null
           status_interno?: Database["public"]["Enums"]["status_interno"]
+          status_make?: string | null
           telefone?: string | null
           updated_at?: string
           usuario_id?: string
