@@ -1,0 +1,1 @@
+ALTER TABLE public.vendas_internas ADD COLUMN status_make text;

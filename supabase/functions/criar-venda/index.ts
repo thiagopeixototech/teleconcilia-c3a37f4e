@@ -20,6 +20,7 @@ interface VendaPayload {
   observacoes?: string;
   data_instalacao?: string;
   identificador_make?: string;
+  status_make?: string;
 }
 
 // Normalize CPF (remove non-digits)
@@ -152,6 +153,7 @@ Deno.serve(async (req) => {
       observacoes: body.observacoes?.trim() || null,
       identificador_make: body.identificador_make?.trim() || null,
       data_instalacao: body.data_instalacao || null,
+      status_make: body.status_make?.trim() || null,
       status_interno: 'nova' as const,
     };
 
