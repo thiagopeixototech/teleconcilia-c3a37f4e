@@ -120,7 +120,7 @@ export function MapeamentoColunasManager({ operadoras, onMapeamentoChange }: Map
         return;
       }
 
-      const headers = lines[0].split(/[,;]/).map(h => h.trim().replace(/"/g, ''));
+      const headers = lines[0].split(/[,;]/).map(h => h.trim().replace(/"/g, '')).filter(h => h !== '');
       setCsvHeaders(headers);
       
       // Get first 3 rows for preview
@@ -521,15 +521,15 @@ export function MapeamentoColunasManager({ operadoras, onMapeamentoChange }: Map
                           </div>
                           <ArrowRight className="h-4 w-4 text-muted-foreground" />
                           <Select 
-                            value={formMapeamento[campo] || ''} 
-                            onValueChange={(v) => setFormMapeamento(prev => ({ ...prev, [campo]: v }))}
+                            value={formMapeamento[campo] || '__none__'} 
+                            onValueChange={(v) => setFormMapeamento(prev => ({ ...prev, [campo]: v === '__none__' ? '' : v }))}
                           >
                             <SelectTrigger className="flex-1">
                               <SelectValue placeholder="Selecione a coluna do CSV" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="">Não mapear</SelectItem>
-                              {csvHeaders.map((header) => (
+                              <SelectItem value="__none__">Não mapear</SelectItem>
+                              {csvHeaders.filter(h => h.trim() !== '').map((header) => (
                                 <SelectItem key={header} value={header}>{header}</SelectItem>
                               ))}
                             </SelectContent>
