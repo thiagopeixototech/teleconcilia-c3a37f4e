@@ -2,7 +2,7 @@
 
 export type AppRole = 'admin' | 'supervisor' | 'vendedor';
 
-export type StatusInterno = 'nova' | 'enviada' | 'aguardando' | 'confirmada' | 'cancelada';
+export type StatusInterno = 'nova' | 'enviada' | 'aguardando' | 'confirmada' | 'cancelada' | 'contestacao_enviada' | 'contestacao_procedente' | 'contestacao_improcedente';
 
 export type StatusOperadora = 'aprovado' | 'instalado' | 'cancelado' | 'pendente';
 

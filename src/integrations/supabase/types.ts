@@ -454,6 +454,9 @@ export type Database = {
         | "aguardando"
         | "confirmada"
         | "cancelada"
+        | "contestacao_enviada"
+        | "contestacao_procedente"
+        | "contestacao_improcedente"
       status_operadora: "aprovado" | "instalado" | "cancelado" | "pendente"
       tipo_match: "protocolo" | "cpf" | "telefone" | "manual"
     }
@@ -591,6 +594,9 @@ export const Constants = {
         "aguardando",
         "confirmada",
         "cancelada",
+        "contestacao_enviada",
+        "contestacao_procedente",
+        "contestacao_improcedente",
       ],
       status_operadora: ["aprovado", "instalado", "cancelado", "pendente"],
       tipo_match: ["protocolo", "cpf", "telefone", "manual"],

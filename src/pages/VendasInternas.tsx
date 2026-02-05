@@ -54,6 +54,9 @@ const statusColors: Record<StatusInterno, string> = {
   aguardando: 'bg-warning text-warning-foreground',
   confirmada: 'bg-success text-success-foreground',
   cancelada: 'bg-destructive text-destructive-foreground',
+  contestacao_enviada: 'bg-orange-500 text-white',
+  contestacao_procedente: 'bg-emerald-600 text-white',
+  contestacao_improcedente: 'bg-red-600 text-white',
 };
 
 const statusLabels: Record<StatusInterno, string> = {
@@ -62,6 +65,9 @@ const statusLabels: Record<StatusInterno, string> = {
   aguardando: 'Aguardando',
   confirmada: 'Confirmada',
   cancelada: 'Cancelada',
+  contestacao_enviada: 'Enviada p/ Contestação',
+  contestacao_procedente: 'Contestação Procedente',
+  contestacao_improcedente: 'Contestação Improcedente',
 };
 
 export default function VendasInternas() {
