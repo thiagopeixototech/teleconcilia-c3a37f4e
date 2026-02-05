@@ -338,6 +338,7 @@ export type Database = {
           empresa_id: string | null
           endereco: string | null
           id: string
+          identificador_make: string | null
           observacoes: string | null
           operadora_id: string | null
           plano: string | null
@@ -357,6 +358,7 @@ export type Database = {
           empresa_id?: string | null
           endereco?: string | null
           id?: string
+          identificador_make?: string | null
           observacoes?: string | null
           operadora_id?: string | null
           plano?: string | null
@@ -376,6 +378,7 @@ export type Database = {
           empresa_id?: string | null
           endereco?: string | null
           id?: string
+          identificador_make?: string | null
           observacoes?: string | null
           operadora_id?: string | null
           plano?: string | null
