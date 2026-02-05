@@ -277,6 +277,7 @@ export default function VendasInternas() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Protocolo</TableHead>
+                    <TableHead>ID Make</TableHead>
                     <TableHead>Cliente</TableHead>
                     <TableHead>CPF/CNPJ</TableHead>
                     <TableHead>Operadora</TableHead>
@@ -284,7 +285,6 @@ export default function VendasInternas() {
                     <TableHead>Status</TableHead>
                     <TableHead>Data Venda</TableHead>
                     <TableHead>Data Instalação</TableHead>
-                    <TableHead>ID Make</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -300,6 +300,9 @@ export default function VendasInternas() {
                       <TableRow key={venda.id}>
                         <TableCell className="font-mono text-sm">
                           {venda.protocolo_interno || '-'}
+                        </TableCell>
+                        <TableCell className="font-mono text-sm">
+                          {venda.identificador_make || '-'}
                         </TableCell>
                         <TableCell className="font-medium">{venda.cliente_nome}</TableCell>
                         <TableCell className="font-mono text-sm">{venda.cpf_cnpj || '-'}</TableCell>
@@ -319,13 +322,10 @@ export default function VendasInternas() {
                           {format(new Date(venda.data_venda), 'dd/MM/yyyy', { locale: ptBR })}
                         </TableCell>
                         <TableCell>
-                          {(venda as any).data_instalacao 
-                            ? format(new Date((venda as any).data_instalacao), 'dd/MM/yyyy', { locale: ptBR })
+                          {venda.data_instalacao 
+                            ? format(new Date(venda.data_instalacao), 'dd/MM/yyyy', { locale: ptBR })
                             : '-'
                           }
-                        </TableCell>
-                        <TableCell className="font-mono text-sm">
-                          {(venda as any).identificador_make || '-'}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
