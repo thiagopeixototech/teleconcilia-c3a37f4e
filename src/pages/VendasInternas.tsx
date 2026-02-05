@@ -283,6 +283,7 @@ export default function VendasInternas() {
                     <TableHead>Operadora</TableHead>
                     <TableHead>Valor</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Status Make</TableHead>
                     <TableHead>Data Venda</TableHead>
                     <TableHead>Data Instalação</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
@@ -291,7 +292,7 @@ export default function VendasInternas() {
                 <TableBody>
                   {filteredVendas.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
                         Nenhuma venda encontrada
                       </TableCell>
                     </TableRow>
@@ -317,6 +318,9 @@ export default function VendasInternas() {
                           <Badge className={statusColors[venda.status_interno]}>
                             {statusLabels[venda.status_interno]}
                           </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {venda.status_make || '-'}
                         </TableCell>
                         <TableCell>
                           {format(new Date(venda.data_venda), 'dd/MM/yyyy', { locale: ptBR })}
