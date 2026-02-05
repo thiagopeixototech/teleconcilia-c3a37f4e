@@ -18,6 +18,7 @@ interface VendaPayload {
   valor?: number;
   protocolo_interno?: string;
   observacoes?: string;
+  data_instalacao?: string;
   identificador_make?: string;
 }
 
@@ -150,6 +151,7 @@ Deno.serve(async (req) => {
       protocolo_interno: body.protocolo_interno?.trim() || null,
       observacoes: body.observacoes?.trim() || null,
       identificador_make: body.identificador_make?.trim() || null,
+      data_instalacao: body.data_instalacao || null,
       status_interno: 'nova' as const,
     };
 

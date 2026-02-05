@@ -280,10 +280,11 @@ export default function VendasInternas() {
                     <TableHead>Cliente</TableHead>
                     <TableHead>CPF/CNPJ</TableHead>
                     <TableHead>Operadora</TableHead>
-                    <TableHead>Plano</TableHead>
                     <TableHead>Valor</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Data</TableHead>
+                    <TableHead>Data Venda</TableHead>
+                    <TableHead>Data Instalação</TableHead>
+                    <TableHead>ID Make</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -303,7 +304,6 @@ export default function VendasInternas() {
                         <TableCell className="font-medium">{venda.cliente_nome}</TableCell>
                         <TableCell className="font-mono text-sm">{venda.cpf_cnpj || '-'}</TableCell>
                         <TableCell>{getOperadoraNome(venda.operadora_id)}</TableCell>
-                        <TableCell>{venda.plano || '-'}</TableCell>
                         <TableCell>
                           {venda.valor 
                             ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(venda.valor)
@@ -317,6 +317,15 @@ export default function VendasInternas() {
                         </TableCell>
                         <TableCell>
                           {format(new Date(venda.data_venda), 'dd/MM/yyyy', { locale: ptBR })}
+                        </TableCell>
+                        <TableCell>
+                          {(venda as any).data_instalacao 
+                            ? format(new Date((venda as any).data_instalacao), 'dd/MM/yyyy', { locale: ptBR })
+                            : '-'
+                          }
+                        </TableCell>
+                        <TableCell className="font-mono text-sm">
+                          {(venda as any).identificador_make || '-'}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
