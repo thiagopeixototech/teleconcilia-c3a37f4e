@@ -157,6 +157,26 @@ Deno.serve(async (req) => {
       status_interno: 'aguardando' as const,
     };
 
+    // Verificar duplicidade do identificador_make antes de inserir
+    if (vendaData.identificador_make) {
+      const { data: vendaExistente } = await supabase
+        .from("vendas_internas")
+        .select("id, identificador_make")
+        .eq("identificador_make", vendaData.identificador_make)
+        .maybeSingle();
+
+      if (vendaExistente) {
+        return new Response(
+          JSON.stringify({
+            error: "Já existe uma venda com este identificador_make",
+            identificador_make: vendaData.identificador_make,
+            venda_existente_id: vendaExistente.id,
+          }),
+          { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     // Insert venda
     const { data: venda, error: insertError } = await supabase
       .from("vendas_internas")
@@ -166,6 +186,18 @@ Deno.serve(async (req) => {
 
     if (insertError) {
       console.error("Error inserting venda:", insertError);
+
+      // Tratar erro de constraint unique (caso race condition)
+      if (insertError.code === "23505") {
+        return new Response(
+          JSON.stringify({
+            error: "Já existe uma venda com este identificador_make",
+            identificador_make: vendaData.identificador_make,
+          }),
+          { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       return new Response(
         JSON.stringify({ error: "Erro ao criar venda", details: insertError.message }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
