@@ -22,11 +22,15 @@ export type CampoSistema =
   | 'status_operadora'
   | 'quinzena_ref';
 
+export interface MapeamentoData extends Partial<Record<CampoSistema, string>> {
+  _match_columns?: CampoSistema[];
+}
+
 export interface MapeamentoColunas {
   id: string;
   operadora_id: string;
   nome: string;
-  mapeamento: Record<CampoSistema, string>;
+  mapeamento: MapeamentoData;
   ativo: boolean;
   created_at: string;
   updated_at: string;
