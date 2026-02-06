@@ -88,6 +88,7 @@ export default function ConciliacaoPage() {
   const [arquivoFilter, setArquivoFilter] = useState<string>('all');
   const [arquivosDisponiveis, setArquivosDisponiveis] = useState<string[]>([]);
   const [isAutoMatchRunning, setIsAutoMatchRunning] = useState(false);
+  const [matchCriteria, setMatchCriteria] = useState<'protocolo' | 'cpf' | 'todos'>('todos');
 
   useEffect(() => {
     fetchData();
@@ -199,10 +200,15 @@ export default function ConciliacaoPage() {
         if (error) throw error;
       }
 
-      // Update venda status to confirmada
+      // Update venda status to confirmada and set valor from linha operadora
+      const linhaMatch = linhasOperadora.find(l => l.id === selectedLinha);
+      const valorLinha = linhaMatch?.valor_lq ?? linhaMatch?.valor ?? null;
       await supabase
         .from('vendas_internas')
-        .update({ status_interno: 'confirmada' })
+        .update({ 
+          status_interno: 'confirmada',
+          ...(valorLinha !== null ? { valor: valorLinha } : {})
+        })
         .eq('id', selectedVenda.id);
 
       toast.success('Conciliação realizada com sucesso');
@@ -276,19 +282,16 @@ export default function ConciliacaoPage() {
   const findMatchingLinha = (venda: VendaInterna): { linha: LinhaOperadora; tipoMatch: TipoMatch } | null => {
     for (const linha of linhasDoArquivo) {
       // Match by protocolo
-      if (venda.protocolo_interno && linha.protocolo_operadora && 
+      if ((matchCriteria === 'protocolo' || matchCriteria === 'todos') &&
+          venda.protocolo_interno && linha.protocolo_operadora && 
           venda.protocolo_interno === linha.protocolo_operadora) {
         return { linha, tipoMatch: 'protocolo' };
       }
       // Match by CPF/CNPJ
-      if (venda.cpf_cnpj && linha.cpf_cnpj && 
+      if ((matchCriteria === 'cpf' || matchCriteria === 'todos') &&
+          venda.cpf_cnpj && linha.cpf_cnpj && 
           normalizeDoc(venda.cpf_cnpj) === normalizeDoc(linha.cpf_cnpj)) {
         return { linha, tipoMatch: 'cpf' };
-      }
-      // Match by telefone
-      if (venda.telefone && linha.telefone && 
-          normalizeTelefone(venda.telefone) === normalizeTelefone(linha.telefone)) {
-        return { linha, tipoMatch: 'telefone' };
       }
     }
     return null;
@@ -334,10 +337,14 @@ export default function ConciliacaoPage() {
             console.error('Error matching venda:', venda.id, error);
             errorCount++;
           } else {
-            // Update venda status to confirmada
+            // Update venda status to confirmada and set valor from linha operadora
+            const valorLinha = match.linha.valor_lq ?? match.linha.valor ?? null;
             await supabase
               .from('vendas_internas')
-              .update({ status_interno: 'confirmada' })
+              .update({ 
+                status_interno: 'confirmada',
+                ...(valorLinha !== null ? { valor: valorLinha } : {})
+              })
               .eq('id', venda.id);
             successCount++;
           }
@@ -487,6 +494,19 @@ export default function ConciliacaoPage() {
                       {arquivosDisponiveis.map((arquivo) => (
                         <SelectItem key={arquivo} value={arquivo}>{arquivo}</SelectItem>
                       ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="w-full md:w-52">
+                  <Label className="text-sm font-medium mb-2 block">Critério de Match</Label>
+                  <Select value={matchCriteria} onValueChange={(v) => setMatchCriteria(v as 'protocolo' | 'cpf' | 'todos')}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Protocolo + CPF</SelectItem>
+                      <SelectItem value="protocolo">Apenas Protocolo</SelectItem>
+                      <SelectItem value="cpf">Apenas CPF/CNPJ</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
