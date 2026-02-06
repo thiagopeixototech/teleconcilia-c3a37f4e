@@ -228,7 +228,7 @@ export default function ConciliacaoPage() {
       return (
         <Badge variant="outline" className="gap-1">
           <AlertTriangle className="h-3 w-3" />
-          Pendente
+          Aguardando
         </Badge>
       );
     }
@@ -432,7 +432,7 @@ export default function ConciliacaoPage() {
                   <p className="text-2xl font-bold">
                     {vendas.filter(v => !v.conciliacao).length}
                   </p>
-                  <p className="text-sm text-muted-foreground">Pendentes</p>
+                  <p className="text-sm text-muted-foreground">Aguardando</p>
                 </div>
               </div>
             </CardContent>
@@ -473,7 +473,7 @@ export default function ConciliacaoPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todos</SelectItem>
-                    <SelectItem value="pendente">Pendentes</SelectItem>
+                    <SelectItem value="pendente">Aguardando</SelectItem>
                     {Object.entries(statusLabels).map(([value, label]) => (
                       <SelectItem key={value} value={value}>{label}</SelectItem>
                     ))}
