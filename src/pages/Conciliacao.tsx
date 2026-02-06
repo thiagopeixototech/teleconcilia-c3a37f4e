@@ -103,6 +103,7 @@ export default function ConciliacaoPage() {
           *,
           vendedor:usuarios!vendas_internas_usuario_id_fkey(nome)
         `)
+        .eq('status_make', 'instalado')
         .order('created_at', { ascending: false });
 
       if (vendasError) throw vendasError;
@@ -118,7 +119,6 @@ export default function ConciliacaoPage() {
       const { data: linhasData, error: linhasError } = await supabase
         .from('linha_operadora')
         .select('*')
-        .eq('status_operadora', 'instalado')
         .order('created_at', { ascending: false });
 
       if (linhasError) throw linhasError;
