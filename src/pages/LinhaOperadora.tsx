@@ -41,8 +41,19 @@ import {
   FileSpreadsheet,
   AlertCircle,
   Radio,
-  Settings
+  Settings,
+  Trash2
 } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
@@ -97,6 +108,9 @@ export default function LinhaOperadoraPage() {
   const [previewData, setPreviewData] = useState<LinhaAgrupada[]>([]);
   const [showPreview, setShowPreview] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isManageImportsOpen, setIsManageImportsOpen] = useState(false);
+  const [deleteImportTarget, setDeleteImportTarget] = useState<string | null>(null);
+  const [isDeletingImport, setIsDeletingImport] = useState(false);
 
   useEffect(() => {
     fetchLinhas();
@@ -439,6 +453,55 @@ export default function LinhaOperadoraPage() {
     setIsUploadOpen(true);
   };
 
+  // Get distinct imports grouped by arquivo_origem
+  const importacoes = linhas.reduce((acc, linha) => {
+    const arquivo = linha.arquivo_origem || 'Sem arquivo';
+    if (!acc[arquivo]) {
+      acc[arquivo] = { count: 0, operadora: linha.operadora, createdAt: linha.created_at };
+    }
+    acc[arquivo].count += 1;
+    if (linha.created_at < acc[arquivo].createdAt) {
+      acc[arquivo].createdAt = linha.created_at;
+    }
+    return acc;
+  }, {} as Record<string, { count: number; operadora: string; createdAt: string }>);
+
+  const handleDeleteImport = async () => {
+    if (!deleteImportTarget) return;
+    setIsDeletingImport(true);
+    try {
+      const { data: linhasToDelete } = await supabase
+        .from('linha_operadora')
+        .select('id')
+        .eq('arquivo_origem', deleteImportTarget);
+
+      if (linhasToDelete && linhasToDelete.length > 0) {
+        const linhaIds = linhasToDelete.map(l => l.id);
+        await supabase
+          .from('conciliacoes')
+          .delete()
+          .in('linha_operadora_id', linhaIds);
+      }
+
+      const { error } = await supabase
+        .from('linha_operadora')
+        .delete()
+        .eq('arquivo_origem', deleteImportTarget);
+
+      if (error) throw error;
+
+      toast.success(`Importação "${deleteImportTarget}" excluída com sucesso`);
+      setDeleteImportTarget(null);
+      setIsManageImportsOpen(false);
+      fetchLinhas();
+    } catch (error: any) {
+      console.error('Error deleting import:', error);
+      toast.error(error.message || 'Erro ao excluir importação');
+    } finally {
+      setIsDeletingImport(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <AppLayout title="Linha a Linha Operadora">
@@ -494,6 +557,14 @@ export default function LinhaOperadoraPage() {
                   <Button onClick={handleOpenUpload}>
                     <Upload className="h-4 w-4 mr-2" />
                     Importar CSV
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setIsManageImportsOpen(true)}
+                    className="text-destructive hover:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Excluir Importação
                   </Button>
                   <Button variant="outline" asChild>
                     <Link to="/mapeamento-colunas">
@@ -830,6 +901,68 @@ export default function LinhaOperadoraPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Manage Imports Dialog */}
+        <Dialog open={isManageImportsOpen} onOpenChange={setIsManageImportsOpen}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Excluir Importação</DialogTitle>
+              <DialogDescription>
+                Selecione uma importação para excluir todos os registros associados
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2 max-h-80 overflow-y-auto">
+              {Object.keys(importacoes).length === 0 ? (
+                <p className="text-center text-muted-foreground py-4">Nenhuma importação encontrada</p>
+              ) : (
+                Object.entries(importacoes)
+                  .sort(([, a], [, b]) => b.createdAt.localeCompare(a.createdAt))
+                  .map(([arquivo, info]) => (
+                    <div key={arquivo} className="flex items-center justify-between p-3 rounded-md border">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-sm truncate">{arquivo}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {info.operadora} · {info.count} registros · {format(new Date(info.createdAt), 'dd/MM/yyyy', { locale: ptBR })}
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-destructive hover:text-destructive ml-2 shrink-0"
+                        onClick={() => setDeleteImportTarget(arquivo)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Import Confirmation */}
+        <AlertDialog open={!!deleteImportTarget} onOpenChange={(open) => !open && setDeleteImportTarget(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Excluir Importação</AlertDialogTitle>
+              <AlertDialogDescription>
+                Tem certeza que deseja excluir todos os <strong>{deleteImportTarget && importacoes[deleteImportTarget]?.count}</strong> registros 
+                da importação <strong>"{deleteImportTarget}"</strong>? As conciliações vinculadas também serão removidas. Esta ação não pode ser desfeita.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isDeletingImport}>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteImport}
+                disabled={isDeletingImport}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {isDeletingImport && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Excluir
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </AppLayout>
   );
