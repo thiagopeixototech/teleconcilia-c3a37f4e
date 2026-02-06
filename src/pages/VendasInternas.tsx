@@ -91,6 +91,7 @@ export default function VendasInternas() {
   const [protocoloSearch, setProtocoloSearch] = useState('');
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [statusMakeOptions, setStatusMakeOptions] = useState<string[]>([]);
+  const [visibleCount, setVisibleCount] = useState(50);
   const [selectedVenda, setSelectedVenda] = useState<VendaInterna | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -228,7 +229,13 @@ export default function VendasInternas() {
     setDataFim('');
     setIdMakeSearch('');
     setProtocoloSearch('');
+    setVisibleCount(50);
   };
+
+  // Reset visible count when any filter changes
+  useEffect(() => {
+    setVisibleCount(50);
+  }, [searchTerm, statusFilter, operadoraFilter, statusMakeFilter, confirmadaFilter, dataInicio, dataFim, idMakeSearch, protocoloSearch]);
 
   const filteredVendas = vendas.filter(venda => {
     const matchesSearch = 
@@ -419,6 +426,11 @@ export default function VendasInternas() {
         <Card>
           <CardHeader>
             <CardTitle>Vendas Registradas ({filteredVendas.length})</CardTitle>
+            {filteredVendas.length > visibleCount && (
+              <p className="text-sm text-muted-foreground">
+                Mostrando {Math.min(visibleCount, filteredVendas.length)} de {filteredVendas.length}
+              </p>
+            )}
           </CardHeader>
           <CardContent>
             <div className="rounded-md border">
@@ -446,7 +458,7 @@ export default function VendasInternas() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredVendas.map((venda) => (
+                    filteredVendas.slice(0, visibleCount).map((venda) => (
                       <TableRow key={venda.id}>
                         <TableCell className="font-mono text-sm">
                           {venda.protocolo_interno || '-'}
@@ -504,6 +516,17 @@ export default function VendasInternas() {
                 </TableBody>
               </Table>
             </div>
+            {filteredVendas.length > visibleCount && (
+              <div className="flex justify-center pt-4">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setVisibleCount(prev => prev + 50)}
+                  className="w-full md:w-auto"
+                >
+                  Mostrar mais ({filteredVendas.length - visibleCount} restantes)
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
 
