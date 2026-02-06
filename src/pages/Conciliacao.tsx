@@ -118,6 +118,7 @@ export default function ConciliacaoPage() {
       const { data: linhasData, error: linhasError } = await supabase
         .from('linha_operadora')
         .select('*')
+        .eq('status_operadora', 'instalado')
         .order('created_at', { ascending: false });
 
       if (linhasError) throw linhasError;
