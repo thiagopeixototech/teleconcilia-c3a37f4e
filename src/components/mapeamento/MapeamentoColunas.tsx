@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { MapeamentoColunas, Operadora, CampoSistema, CAMPOS_SISTEMA_LABELS, CAMPOS_OBRIGATORIOS } from '@/types/database';
+import { MapeamentoColunas, Operadora, CampoSistema, CAMPOS_SISTEMA_LABELS, CAMPOS_OBRIGATORIOS, CAMPOS_MATCH } from '@/types/database';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -220,6 +220,13 @@ export function MapeamentoColunasManager({ operadoras, onMapeamentoChange }: Map
     
     if (missingRequired.length > 0) {
       setFormError(`Campos obrigatórios não mapeados: ${missingRequired.map(c => CAMPOS_SISTEMA_LABELS[c]).join(', ')}`);
+      return false;
+    }
+
+    // Check at least one match column is mapped
+    const hasMatchColumn = CAMPOS_MATCH.some(campo => !!formMapeamento[campo]);
+    if (!hasMatchColumn) {
+      setFormError(`Mapeie pelo menos uma coluna de match: ${CAMPOS_MATCH.map(c => CAMPOS_SISTEMA_LABELS[c]).join(', ')}`);
       return false;
     }
     
