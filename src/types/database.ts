@@ -162,4 +162,7 @@ export const CAMPOS_SISTEMA_LABELS: Record<CampoSistema, string> = {
 };
 
 // Campos obrigatórios para o mapeamento
-export const CAMPOS_OBRIGATORIOS: CampoSistema[] = ['cpf_cnpj', 'valor'];
+export const CAMPOS_OBRIGATORIOS: CampoSistema[] = ['valor'];
+
+// Pelo menos um destes campos de match deve ser mapeado
+export const CAMPOS_MATCH: CampoSistema[] = ['cpf_cnpj', 'protocolo_operadora', 'telefone'];
