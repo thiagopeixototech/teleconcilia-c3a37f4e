@@ -26,6 +26,7 @@ import {
 
 interface DashboardStats {
   totalVendas: number;
+  vendasInstaladas: number;
   vendasConfirmadas: number;
   vendasCanceladas: number;
   valorTotal: number;
@@ -61,9 +62,14 @@ export default function Dashboard() {
       if (error) throw error;
 
       const totalVendas = vendas?.length || 0;
+      const vendasInstaladas = vendas?.filter(v => 
+        v.status_make?.toLowerCase().startsWith('instalad')
+      ).length || 0;
       const vendasConfirmadas = vendas?.filter(v => v.status_interno === 'confirmada').length || 0;
       const vendasCanceladas = vendas?.filter(v => v.status_interno === 'cancelada').length || 0;
-      const valorTotal = vendas?.reduce((sum, v) => sum + (Number(v.valor) || 0), 0) || 0;
+      const valorTotal = vendas?.filter(v => 
+        v.status_make?.toLowerCase().startsWith('instalad')
+      ).reduce((sum, v) => sum + (Number(v.valor) || 0), 0) || 0;
 
       // Fetch conciliacoes
       const { data: conciliacoes } = await supabase
@@ -71,10 +77,11 @@ export default function Dashboard() {
         .select('*');
 
       const conciliadas = conciliacoes?.filter(c => c.status_final === 'conciliado').length || 0;
-      const percentualConciliacao = totalVendas > 0 ? (conciliadas / totalVendas) * 100 : 0;
+      const percentualConciliacao = vendasInstaladas > 0 ? (conciliadas / vendasInstaladas) * 100 : 0;
 
       setStats({
         totalVendas,
+        vendasInstaladas,
         vendasConfirmadas,
         vendasCanceladas,
         valorTotal,
@@ -130,14 +137,14 @@ export default function Dashboard() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Total de Vendas
+                Vendas Instaladas
               </CardTitle>
               <ShoppingCart className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{stats?.totalVendas || 0}</div>
+              <div className="text-2xl font-bold">{stats?.vendasInstaladas || 0}</div>
               <p className="text-xs text-muted-foreground">
-                vendas registradas
+                de {stats?.totalVendas || 0} vendas totais
               </p>
             </CardContent>
           </Card>
@@ -169,7 +176,7 @@ export default function Dashboard() {
                 {stats?.percentualConciliacao.toFixed(1) || 0}%
               </div>
               <p className="text-xs text-muted-foreground">
-                taxa de conciliação
+                sobre vendas instaladas
               </p>
             </CardContent>
           </Card>
@@ -189,7 +196,7 @@ export default function Dashboard() {
                 }).format(stats?.valorTotal || 0)}
               </div>
               <p className="text-xs text-muted-foreground">
-                em vendas
+                em vendas instaladas
               </p>
             </CardContent>
           </Card>
@@ -260,7 +267,7 @@ export default function Dashboard() {
                     <span className="text-sm font-medium">Não Encontradas</span>
                   </div>
                   <span className="text-lg font-bold">
-                    {(stats?.totalVendas || 0) - (stats?.vendasConfirmadas || 0)}
+                    {(stats?.vendasInstaladas || 0) - (stats?.vendasConfirmadas || 0)}
                   </span>
                 </div>
               </div>
