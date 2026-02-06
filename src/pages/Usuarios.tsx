@@ -36,10 +36,21 @@ import {
   Search, 
   Plus, 
   Edit,
+  Trash2,
   Users,
   UserPlus,
   KeyRound
 } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
@@ -109,6 +120,8 @@ export default function VendedoresPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [newPassword, setNewPassword] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<VendedorWithRelations | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -365,6 +378,37 @@ export default function VendedoresPage() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    try {
+      // Delete user role first if user_id exists
+      if (deleteTarget.user_id) {
+        await supabase
+          .from('user_roles')
+          .delete()
+          .eq('user_id', deleteTarget.user_id);
+      }
+
+      // Delete usuario record
+      const { error } = await supabase
+        .from('usuarios')
+        .delete()
+        .eq('id', deleteTarget.id);
+
+      if (error) throw error;
+
+      toast.success('Usuário excluído com sucesso');
+      setDeleteTarget(null);
+      fetchData();
+    } catch (error: any) {
+      console.error('Error deleting usuario:', error);
+      toast.error(error.message || 'Erro ao excluir usuário');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const getRoleBadge = (role?: AppRole) => {
     switch (role) {
       case 'admin':
@@ -460,13 +504,21 @@ export default function VendedoresPage() {
                             {vendedor.ativo ? 'Ativo' : 'Inativo'}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-right space-x-1">
                           <Button 
                             variant="ghost" 
                             size="icon"
                             onClick={() => handleOpenDialog(vendedor)}
                           >
                             <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="icon"
+                            onClick={() => setDeleteTarget(vendedor)}
+                            className="text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -672,6 +724,29 @@ export default function VendedoresPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Delete Confirmation */}
+        <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Excluir Usuário</AlertDialogTitle>
+              <AlertDialogDescription>
+                Tem certeza que deseja excluir o usuário <strong>{deleteTarget?.nome}</strong>? Esta ação não pode ser desfeita.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Excluir
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </AppLayout>
   );
