@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { MapeamentoColunas, Operadora, CampoSistema, CAMPOS_SISTEMA_LABELS, CAMPOS_OBRIGATORIOS, CAMPOS_MATCH } from '@/types/database';
+import { MapeamentoColunas, Operadora, CampoSistema, CAMPOS_SISTEMA_LABELS, CAMPOS_OBRIGATORIOS, CAMPOS_MATCH, MapeamentoData } from '@/types/database';
+import type { Json } from '@/integrations/supabase/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -29,6 +30,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { 
   Loader2, 
@@ -72,6 +74,7 @@ export function MapeamentoColunasManager({ operadoras, onMapeamentoChange }: Map
   const [formOperadoraId, setFormOperadoraId] = useState('');
   const [formNome, setFormNome] = useState('');
   const [formMapeamento, setFormMapeamento] = useState<Record<string, string>>({});
+  const [formMatchColumns, setFormMatchColumns] = useState<CampoSistema[]>([]);
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [csvPreviewData, setCsvPreviewData] = useState<Record<string, string>[]>([]);
   const [previewFile, setPreviewFile] = useState<File | null>(null);
@@ -183,6 +186,7 @@ export function MapeamentoColunasManager({ operadoras, onMapeamentoChange }: Map
     setFormOperadoraId('');
     setFormNome('');
     setFormMapeamento({});
+    setFormMatchColumns([]);
     setCsvHeaders([]);
     setCsvPreviewData([]);
     setPreviewFile(null);
@@ -195,8 +199,18 @@ export function MapeamentoColunasManager({ operadoras, onMapeamentoChange }: Map
     setSelectedMapeamento(mapeamento);
     setFormOperadoraId(mapeamento.operadora_id);
     setFormNome(mapeamento.nome);
-    setFormMapeamento(mapeamento.mapeamento as Record<string, string>);
-    setCsvHeaders(Object.values(mapeamento.mapeamento as Record<string, string>).filter(Boolean));
+    const mapData = mapeamento.mapeamento as MapeamentoData;
+    setFormMapeamento(
+      Object.fromEntries(
+        Object.entries(mapData).filter(([k]) => k !== '_match_columns')
+      ) as Record<string, string>
+    );
+    setFormMatchColumns(mapData._match_columns || []);
+    setCsvHeaders(
+      Object.entries(mapData)
+        .filter(([k, v]) => k !== '_match_columns' && Boolean(v))
+        .map(([, v]) => v as string)
+    );
     setCsvPreviewData([]);
     setPreviewFile(null);
     setFormError(null);
@@ -223,10 +237,15 @@ export function MapeamentoColunasManager({ operadoras, onMapeamentoChange }: Map
       return false;
     }
 
-    // Check at least one match column is mapped
-    const hasMatchColumn = CAMPOS_MATCH.some(campo => !!formMapeamento[campo]);
-    if (!hasMatchColumn) {
-      setFormError(`Mapeie pelo menos uma coluna de match: ${CAMPOS_MATCH.map(c => CAMPOS_SISTEMA_LABELS[c]).join(', ')}`);
+    // Check at least one match column is selected and mapped
+    if (formMatchColumns.length === 0) {
+      setFormError('Selecione pelo menos uma coluna de cruzamento (match)');
+      return false;
+    }
+
+    const unmappedMatchColumns = formMatchColumns.filter(campo => !formMapeamento[campo]);
+    if (unmappedMatchColumns.length > 0) {
+      setFormError(`Colunas de cruzamento selecionadas mas não mapeadas: ${unmappedMatchColumns.map(c => CAMPOS_SISTEMA_LABELS[c]).join(', ')}`);
       return false;
     }
     
@@ -240,10 +259,15 @@ export function MapeamentoColunasManager({ operadoras, onMapeamentoChange }: Map
     setFormError(null);
     
     try {
+      const mapeamentoToSave: MapeamentoData = {
+        ...formMapeamento,
+        _match_columns: formMatchColumns,
+      };
+
       const mapeamentoData = {
         operadora_id: formOperadoraId,
         nome: formNome.trim(),
-        mapeamento: formMapeamento,
+        mapeamento: mapeamentoToSave as unknown as Json,
         ativo: false,
       };
 
@@ -359,21 +383,35 @@ export function MapeamentoColunasManager({ operadoras, onMapeamentoChange }: Map
                 <TableHead>Nome</TableHead>
                 <TableHead>Operadora</TableHead>
                 <TableHead>Campos Mapeados</TableHead>
+                <TableHead>Cruzamento</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {mapeamentos.map((mapeamento) => {
-                const camposMapeados = Object.keys(mapeamento.mapeamento || {}).filter(
-                  k => (mapeamento.mapeamento as Record<string, string>)[k]
+                const mapData = mapeamento.mapeamento as MapeamentoData;
+                const camposMapeados = Object.keys(mapData || {}).filter(
+                  k => k !== '_match_columns' && !!(mapData as Record<string, unknown>)[k]
                 ).length;
+                const matchCols = mapData._match_columns || [];
                 
                 return (
                   <TableRow key={mapeamento.id}>
                     <TableCell className="font-medium">{mapeamento.nome}</TableCell>
                     <TableCell>{mapeamento.operadora?.nome || '-'}</TableCell>
                     <TableCell>{camposMapeados} campos</TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1">
+                        {matchCols.length > 0 ? matchCols.map(col => (
+                          <Badge key={col} variant="secondary" className="text-xs">
+                            {CAMPOS_SISTEMA_LABELS[col]}
+                          </Badge>
+                        )) : (
+                          <span className="text-xs text-muted-foreground">Não definido</span>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell>
                       {mapeamento.ativo ? (
                         <Badge className="bg-success text-success-foreground">Padrão</Badge>
@@ -515,21 +553,50 @@ export function MapeamentoColunasManager({ operadoras, onMapeamentoChange }: Map
                 <div className="space-y-2">
                   <Label>Mapeamento de Campos</Label>
                   <p className="text-sm text-muted-foreground mb-2">
-                    Associe cada campo do sistema a uma coluna do CSV. Campos com * são obrigatórios.
+                    Associe cada campo do sistema a uma coluna do CSV. Campos com * são obrigatórios. Marque ✓ nos campos que serão usados para cruzamento.
                   </p>
                   <div className="grid gap-3">
                     {CAMPOS_SISTEMA.map((campo) => {
                       const isRequired = CAMPOS_OBRIGATORIOS.includes(campo);
+                      const isMatchEligible = CAMPOS_MATCH.includes(campo);
+                      const isMapped = !!formMapeamento[campo];
+                      const isMatchSelected = formMatchColumns.includes(campo);
                       return (
                         <div key={campo} className="flex items-center gap-3">
-                          <div className="w-48 text-sm">
+                          {isMatchEligible ? (
+                            <div className="w-8 flex justify-center">
+                              <Checkbox
+                                checked={isMatchSelected}
+                                disabled={!isMapped}
+                                onCheckedChange={(checked) => {
+                                  if (checked) {
+                                    setFormMatchColumns(prev => [...prev, campo]);
+                                  } else {
+                                    setFormMatchColumns(prev => prev.filter(c => c !== campo));
+                                  }
+                                }}
+                                title="Usar para cruzamento"
+                              />
+                            </div>
+                          ) : (
+                            <div className="w-8" />
+                          )}
+                          <div className="w-44 text-sm">
                             {CAMPOS_SISTEMA_LABELS[campo]}
                             {isRequired && <span className="text-destructive ml-1">*</span>}
+                            {isMatchEligible && <span className="text-xs text-muted-foreground ml-1">(match)</span>}
                           </div>
                           <ArrowRight className="h-4 w-4 text-muted-foreground" />
                           <Select 
                             value={formMapeamento[campo] || '__none__'} 
-                            onValueChange={(v) => setFormMapeamento(prev => ({ ...prev, [campo]: v === '__none__' ? '' : v }))}
+                            onValueChange={(v) => {
+                              const newVal = v === '__none__' ? '' : v;
+                              setFormMapeamento(prev => ({ ...prev, [campo]: newVal }));
+                              // If unmapping, also remove from match columns
+                              if (!newVal && formMatchColumns.includes(campo)) {
+                                setFormMatchColumns(prev => prev.filter(c => c !== campo));
+                              }
+                            }}
                           >
                             <SelectTrigger className="flex-1">
                               <SelectValue placeholder="Selecione a coluna do CSV" />
@@ -553,22 +620,49 @@ export function MapeamentoColunasManager({ operadoras, onMapeamentoChange }: Map
               <div className="space-y-2">
                 <Label>Mapeamento de Campos</Label>
                 <p className="text-sm text-muted-foreground mb-2">
-                  Você pode editar as colunas manualmente ou fazer upload de um novo arquivo CSV.
+                  Você pode editar as colunas manualmente ou fazer upload de um novo arquivo CSV. Marque ✓ nos campos que serão usados para cruzamento.
                 </p>
                 <div className="grid gap-3">
                   {CAMPOS_SISTEMA.map((campo) => {
                     const isRequired = CAMPOS_OBRIGATORIOS.includes(campo);
+                    const isMatchEligible = CAMPOS_MATCH.includes(campo);
+                    const isMapped = !!formMapeamento[campo];
+                    const isMatchSelected = formMatchColumns.includes(campo);
                     return (
                       <div key={campo} className="flex items-center gap-3">
-                        <div className="w-48 text-sm">
+                        {isMatchEligible ? (
+                          <div className="w-8 flex justify-center">
+                            <Checkbox
+                              checked={isMatchSelected}
+                              disabled={!isMapped}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setFormMatchColumns(prev => [...prev, campo]);
+                                } else {
+                                  setFormMatchColumns(prev => prev.filter(c => c !== campo));
+                                }
+                              }}
+                              title="Usar para cruzamento"
+                            />
+                          </div>
+                        ) : (
+                          <div className="w-8" />
+                        )}
+                        <div className="w-44 text-sm">
                           {CAMPOS_SISTEMA_LABELS[campo]}
                           {isRequired && <span className="text-destructive ml-1">*</span>}
+                          {isMatchEligible && <span className="text-xs text-muted-foreground ml-1">(match)</span>}
                         </div>
                         <ArrowRight className="h-4 w-4 text-muted-foreground" />
                         <Input
                           placeholder="Nome da coluna no CSV"
                           value={formMapeamento[campo] || ''}
-                          onChange={(e) => setFormMapeamento(prev => ({ ...prev, [campo]: e.target.value }))}
+                          onChange={(e) => {
+                            setFormMapeamento(prev => ({ ...prev, [campo]: e.target.value }));
+                            if (!e.target.value && formMatchColumns.includes(campo)) {
+                              setFormMatchColumns(prev => prev.filter(c => c !== campo));
+                            }
+                          }}
                           className="flex-1"
                         />
                       </div>
