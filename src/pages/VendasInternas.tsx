@@ -76,7 +76,7 @@ const statusLabels: Record<StatusInterno, string> = {
 
 export default function VendasInternas() {
   const navigate = useNavigate();
-  const { isAdmin } = useAuth();
+  const { isAdmin, isSupervisor } = useAuth();
   const [vendas, setVendas] = useState<VendaInterna[]>([]);
   const [operadoras, setOperadoras] = useState<Operadora[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -505,13 +505,15 @@ export default function VendasInternas() {
                             >
                               <Eye className="h-4 w-4" />
                             </Button>
-                            <Button 
-                              variant="ghost" 
-                              size="icon"
-                              onClick={() => handleEditStatus(venda)}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
+                            {(isAdmin || isSupervisor) && (
+                              <Button 
+                                variant="ghost" 
+                                size="icon"
+                                onClick={() => handleEditStatus(venda)}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
