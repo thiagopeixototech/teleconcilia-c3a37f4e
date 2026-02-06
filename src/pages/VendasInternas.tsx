@@ -42,7 +42,11 @@ import {
   Edit, 
   Download,
   Filter,
-  Radio
+  Radio,
+  CalendarIcon,
+  X,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -79,6 +83,14 @@ export default function VendasInternas() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [operadoraFilter, setOperadoraFilter] = useState<string>('all');
+  const [statusMakeFilter, setStatusMakeFilter] = useState<string>('all');
+  const [confirmadaFilter, setConfirmadaFilter] = useState<string>('all');
+  const [dataInicio, setDataInicio] = useState<string>('');
+  const [dataFim, setDataFim] = useState<string>('');
+  const [idMakeSearch, setIdMakeSearch] = useState('');
+  const [protocoloSearch, setProtocoloSearch] = useState('');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [statusMakeOptions, setStatusMakeOptions] = useState<string[]>([]);
   const [selectedVenda, setSelectedVenda] = useState<VendaInterna | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -104,6 +116,14 @@ export default function VendasInternas() {
 
       if (error) throw error;
       setVendas(data as any);
+      
+      // Extract unique status_make values
+      const uniqueStatusMake = [...new Set(
+        (data as any[])
+          .map((v: any) => v.status_make)
+          .filter((s: string | null): s is string => s !== null && s !== undefined && s !== '')
+      )].sort();
+      setStatusMakeOptions(uniqueStatusMake);
     } catch (error) {
       console.error('Error fetching vendas:', error);
       toast.error('Erro ao carregar vendas');
@@ -198,16 +218,47 @@ export default function VendasInternas() {
     URL.revokeObjectURL(url);
   };
 
+  const hasActiveFilters = statusMakeFilter !== 'all' || confirmadaFilter !== 'all' || 
+    dataInicio !== '' || dataFim !== '' || idMakeSearch !== '' || protocoloSearch !== '';
+
+  const clearAdvancedFilters = () => {
+    setStatusMakeFilter('all');
+    setConfirmadaFilter('all');
+    setDataInicio('');
+    setDataFim('');
+    setIdMakeSearch('');
+    setProtocoloSearch('');
+  };
+
   const filteredVendas = vendas.filter(venda => {
     const matchesSearch = 
       venda.cliente_nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
       venda.cpf_cnpj?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      venda.protocolo_interno?.toLowerCase().includes(searchTerm.toLowerCase());
+      venda.protocolo_interno?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      venda.identificador_make?.toLowerCase().includes(searchTerm.toLowerCase());
     
     const matchesStatus = statusFilter === 'all' || venda.status_interno === statusFilter;
     const matchesOperadora = operadoraFilter === 'all' || venda.operadora_id === operadoraFilter;
     
-    return matchesSearch && matchesStatus && matchesOperadora;
+    // Advanced filters
+    const matchesStatusMake = statusMakeFilter === 'all' || 
+      (statusMakeFilter === '_empty_' ? (!venda.status_make || venda.status_make === '') : venda.status_make === statusMakeFilter);
+    
+    const matchesConfirmada = confirmadaFilter === 'all' || 
+      (confirmadaFilter === 'confirmada' ? venda.status_interno === 'confirmada' : venda.status_interno !== 'confirmada');
+    
+    const matchesDataInicio = !dataInicio || venda.data_venda >= dataInicio;
+    const matchesDataFim = !dataFim || venda.data_venda <= dataFim;
+    
+    const matchesIdMake = !idMakeSearch || 
+      venda.identificador_make?.toLowerCase().includes(idMakeSearch.toLowerCase());
+    
+    const matchesProtocolo = !protocoloSearch || 
+      venda.protocolo_interno?.toLowerCase().includes(protocoloSearch.toLowerCase());
+    
+    return matchesSearch && matchesStatus && matchesOperadora && 
+      matchesStatusMake && matchesConfirmada && matchesDataInicio && matchesDataFim &&
+      matchesIdMake && matchesProtocolo;
   });
 
   if (isLoading) {
@@ -226,48 +277,140 @@ export default function VendasInternas() {
         {/* Filters */}
         <Card>
           <CardContent className="pt-6">
-            <div className="flex flex-col md:flex-row gap-4">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar por cliente, CPF/CNPJ ou protocolo..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-9"
-                />
+            <div className="flex flex-col gap-4">
+              {/* Main filters row */}
+              <div className="flex flex-col md:flex-row gap-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar por cliente, CPF/CNPJ, protocolo ou ID Make..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-full md:w-48">
+                    <Filter className="h-4 w-4 mr-2" />
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos os Status</SelectItem>
+                    {Object.entries(statusLabels).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={operadoraFilter} onValueChange={setOperadoraFilter}>
+                  <SelectTrigger className="w-full md:w-48">
+                    <Radio className="h-4 w-4 mr-2" />
+                    <SelectValue placeholder="Operadora" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas Operadoras</SelectItem>
+                    {operadoras.map((op) => (
+                      <SelectItem key={op.id} value={op.id}>{op.nome}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button 
+                  variant={showAdvancedFilters ? "secondary" : "outline"} 
+                  onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+                  className="gap-2"
+                >
+                  {showAdvancedFilters ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  Filtros {hasActiveFilters && `(${[statusMakeFilter !== 'all', confirmadaFilter !== 'all', dataInicio, dataFim, idMakeSearch, protocoloSearch].filter(Boolean).length})`}
+                </Button>
+                <Button variant="outline" onClick={exportToCSV}>
+                  <Download className="h-4 w-4 mr-2" />
+                  CSV
+                </Button>
+                <Button onClick={() => navigate('/vendas/nova')}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Nova Venda
+                </Button>
               </div>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-full md:w-48">
-                  <Filter className="h-4 w-4 mr-2" />
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos os Status</SelectItem>
-                  {Object.entries(statusLabels).map(([value, label]) => (
-                    <SelectItem key={value} value={value}>{label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={operadoraFilter} onValueChange={setOperadoraFilter}>
-                <SelectTrigger className="w-full md:w-48">
-                  <Radio className="h-4 w-4 mr-2" />
-                  <SelectValue placeholder="Operadora" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas Operadoras</SelectItem>
-                  {operadoras.map((op) => (
-                    <SelectItem key={op.id} value={op.id}>{op.nome}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button variant="outline" onClick={exportToCSV}>
-                <Download className="h-4 w-4 mr-2" />
-                Exportar CSV
-              </Button>
-              <Button onClick={() => navigate('/vendas/nova')}>
-                <Plus className="h-4 w-4 mr-2" />
-                Nova Venda
-              </Button>
+
+              {/* Advanced filters */}
+              {showAdvancedFilters && (
+                <div className="border-t pt-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-muted-foreground">Filtros Avançados</p>
+                    {hasActiveFilters && (
+                      <Button variant="ghost" size="sm" onClick={clearAdvancedFilters} className="gap-1 text-xs">
+                        <X className="h-3 w-3" />
+                        Limpar filtros
+                      </Button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                    <div>
+                      <Label className="text-xs mb-1.5 block">Confirmada</Label>
+                      <Select value={confirmadaFilter} onValueChange={setConfirmadaFilter}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todas</SelectItem>
+                          <SelectItem value="confirmada">Confirmadas</SelectItem>
+                          <SelectItem value="nao_confirmada">Não Confirmadas</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs mb-1.5 block">Status Make</Label>
+                      <Select value={statusMakeFilter} onValueChange={setStatusMakeFilter}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todos</SelectItem>
+                          <SelectItem value="_empty_">Sem Status</SelectItem>
+                          {statusMakeOptions.map((s) => (
+                            <SelectItem key={s} value={s}>{s}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs mb-1.5 block">Data Início</Label>
+                      <Input
+                        type="date"
+                        value={dataInicio}
+                        onChange={(e) => setDataInicio(e.target.value)}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs mb-1.5 block">Data Fim</Label>
+                      <Input
+                        type="date"
+                        value={dataFim}
+                        onChange={(e) => setDataFim(e.target.value)}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs mb-1.5 block">ID Make</Label>
+                      <Input
+                        placeholder="Buscar ID Make..."
+                        value={idMakeSearch}
+                        onChange={(e) => setIdMakeSearch(e.target.value)}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs mb-1.5 block">Protocolo</Label>
+                      <Input
+                        placeholder="Buscar protocolo..."
+                        value={protocoloSearch}
+                        onChange={(e) => setProtocoloSearch(e.target.value)}
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
