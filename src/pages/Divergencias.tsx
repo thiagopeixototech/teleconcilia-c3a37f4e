@@ -90,7 +90,7 @@ export default function Divergencias() {
           *,
           vendedor:usuarios!vendas_internas_usuario_id_fkey(nome)
         `)
-        .eq('status_make', 'instalado')
+        .ilike('status_make', 'instalad%')
         .order('created_at', { ascending: false });
 
       if (vendasError) throw vendasError;
