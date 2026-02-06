@@ -218,6 +218,19 @@ export default function VendedoresPage() {
     setIsSaving(true);
 
     try {
+      // Check CPF uniqueness before saving
+      const { data: existingCPF } = await supabase
+        .from('usuarios')
+        .select('id')
+        .eq('cpf', normalizedCPF)
+        .maybeSingle();
+
+      if (existingCPF && (!selectedVendedor || existingCPF.id !== selectedVendedor.id)) {
+        toast.error('Já existe um usuário cadastrado com este CPF');
+        setIsSaving(false);
+        return;
+      }
+
       if (selectedVendedor) {
         // Update usuario
         const { error: usuarioError } = await supabase
