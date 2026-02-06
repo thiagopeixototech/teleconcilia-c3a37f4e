@@ -437,6 +437,7 @@ export default function VendasInternas() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead>Vendedor</TableHead>
                     <TableHead>Protocolo</TableHead>
                     <TableHead>ID Make</TableHead>
                     <TableHead>Cliente</TableHead>
@@ -453,13 +454,16 @@ export default function VendasInternas() {
                 <TableBody>
                   {filteredVendas.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">
                         Nenhuma venda encontrada
                       </TableCell>
                     </TableRow>
                   ) : (
                     filteredVendas.slice(0, visibleCount).map((venda) => (
                       <TableRow key={venda.id}>
+                        <TableCell className="text-sm">
+                          {(venda as any).usuario?.nome || '-'}
+                        </TableCell>
                         <TableCell className="font-mono text-sm">
                           {venda.protocolo_interno || '-'}
                         </TableCell>
