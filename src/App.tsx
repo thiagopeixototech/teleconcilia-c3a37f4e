@@ -22,6 +22,7 @@ import Operadoras from "./pages/Operadoras";
 import MapeamentoColunas from "./pages/MapeamentoColunas";
 import PerformanceConsultor from "./pages/PerformanceConsultor";
 import ImportacaoVendas from "./pages/ImportacaoVendas";
+import ImportacaoEstornos from "./pages/ImportacaoEstornos";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -159,6 +160,15 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={['admin']}>
                   <ImportacaoVendas />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/importacao-estornos"
+              element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <ImportacaoEstornos />
                 </ProtectedRoute>
               }
             />

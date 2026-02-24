@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
@@ -6,25 +6,25 @@ import { useAuth } from '@/contexts/AuthContext';
 import { PendingAccessMessage } from '@/components/PendingAccessMessage';
 import { PeriodFilter } from '@/components/PeriodFilter';
 import { usePeriodFilter } from '@/hooks/usePeriodFilter';
+import { Badge } from '@/components/ui/badge';
 import { 
   ShoppingCart, 
   CheckCircle, 
   XCircle, 
   TrendingUp,
-  Loader2 
+  Loader2,
+  RotateCcw,
+  DollarSign,
 } from 'lucide-react';
 import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
+  PieChart, 
+  Pie, 
+  Cell,
+  Tooltip,
   ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell
 } from 'recharts';
+import { cn } from '@/lib/utils';
+import { format } from 'date-fns';
 
 interface DashboardStats {
   totalVendas: number;
@@ -38,15 +38,24 @@ interface DashboardStats {
 
 const COLORS = ['hsl(215, 70%, 45%)', 'hsl(142, 70%, 45%)', 'hsl(38, 92%, 50%)', 'hsl(0, 72%, 51%)'];
 
+const formatBRL = (value: number) =>
+  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+
+function irlColor(irl: number): string {
+  if (irl >= 90) return 'text-success';
+  if (irl >= 75) return 'text-warning';
+  return 'text-destructive';
+}
+
 export default function Dashboard() {
   const { vendedor, isAdmin, isSupervisor, role } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [vendasPorStatus, setVendasPorStatus] = useState<{ name: string; value: number }[]>([]);
+  const [totalEstornos, setTotalEstornos] = useState(0);
 
   const period = usePeriodFilter('dashboard');
 
-  // Usuário sem role e sem vendedor vinculado = acesso pendente
   const isPendingAccess = !role && !vendedor && !isAdmin;
 
   useEffect(() => {
@@ -60,7 +69,6 @@ export default function Dashboard() {
   const fetchDashboardData = async () => {
     try {
       setIsLoading(true);
-      // Fetch vendas internas filtered by period
       const { data: vendas, error } = await supabase
         .from('vendas_internas')
         .select('*')
@@ -79,13 +87,11 @@ export default function Dashboard() {
         v.status_make?.toLowerCase().startsWith('instalad')
       ).reduce((sum, v) => sum + (Number(v.valor) || 0), 0) || 0;
 
-      // Fetch conciliacoes for vendas in the period
       const vendaIds = vendas?.map(v => v.id) || [];
       let conciliadas = 0;
       let valorConciliado = 0;
 
       if (vendaIds.length > 0) {
-        // Batch fetch conciliacoes
         for (let i = 0; i < vendaIds.length; i += 500) {
           const batch = vendaIds.slice(i, i + 500);
           const { data: conciliacoes } = await supabase
@@ -111,7 +117,18 @@ export default function Dashboard() {
         percentualConciliacao,
       });
 
-      // Status distribution for pie chart
+      // Fetch estornos for the period
+      const startMonth = format(period.dataInicio, 'yyyy-MM');
+      const endMonth = format(period.dataFim, 'yyyy-MM');
+      const { data: estornosData } = await (supabase as any)
+        .from('estornos')
+        .select('valor_estornado')
+        .gte('referencia_desconto', startMonth)
+        .lte('referencia_desconto', endMonth);
+      
+      const estTotal = (estornosData || []).reduce((s: number, e: any) => s + Number(e.valor_estornado), 0);
+      setTotalEstornos(estTotal);
+
       const statusCount = {
         nova: vendas?.filter(v => v.status_interno === 'nova').length || 0,
         enviada: vendas?.filter(v => v.status_interno === 'enviada').length || 0,
@@ -133,7 +150,9 @@ export default function Dashboard() {
     }
   };
 
-  // Mostrar mensagem para usuários sem acesso
+  const receitaLiquida = (stats?.valorConciliado || 0) - totalEstornos;
+  const irl = (stats?.valorConciliado || 0) > 0 ? (receitaLiquida / stats!.valorConciliado) * 100 : 0;
+
   if (isPendingAccess) {
     return (
       <AppLayout title="Dashboard">
@@ -216,10 +235,7 @@ export default function Dashboard() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">
-                    {new Intl.NumberFormat('pt-BR', { 
-                      style: 'currency', 
-                      currency: 'BRL' 
-                    }).format(stats?.valorTotal || 0)}
+                    {formatBRL(stats?.valorTotal || 0)}
                   </div>
                   <p className="text-xs text-muted-foreground">
                     em vendas instaladas
@@ -236,10 +252,7 @@ export default function Dashboard() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold text-success">
-                    {new Intl.NumberFormat('pt-BR', { 
-                      style: 'currency', 
-                      currency: 'BRL' 
-                    }).format(stats?.valorConciliado || 0)}
+                    {formatBRL(stats?.valorConciliado || 0)}
                   </div>
                   <p className="text-xs text-muted-foreground">
                     em vendas conciliadas
@@ -247,6 +260,46 @@ export default function Dashboard() {
                 </CardContent>
               </Card>
             </div>
+
+            {/* Financial Summary */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <DollarSign className="h-5 w-5" />
+                  Resumo Financeiro
+                  {period.preset === 'comissao' && (
+                    <Badge variant="outline" className="text-xs ml-2">Comissão a Receber</Badge>
+                  )}
+                </CardTitle>
+                <CardDescription>Receita conciliada, estornos e receita líquida prevista</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-4 sm:grid-cols-4">
+                  <div className="p-4 rounded-lg bg-muted/50 text-center">
+                    <p className="text-xs text-muted-foreground mb-1">Receita Conciliada</p>
+                    <p className="text-xl font-bold text-success">{formatBRL(stats?.valorConciliado || 0)}</p>
+                  </div>
+                  <div className="p-4 rounded-lg bg-muted/50 text-center">
+                    <div className="flex items-center justify-center gap-1 mb-1">
+                      <RotateCcw className="h-3 w-3 text-destructive" />
+                      <p className="text-xs text-muted-foreground">Estornos</p>
+                    </div>
+                    <p className="text-xl font-bold text-destructive">{formatBRL(totalEstornos)}</p>
+                  </div>
+                  <div className="p-4 rounded-lg bg-muted/50 text-center">
+                    <p className="text-xs text-muted-foreground mb-1">Receita Líquida</p>
+                    <p className={cn("text-xl font-bold", irlColor(irl))}>{formatBRL(receitaLiquida)}</p>
+                  </div>
+                  <div className="p-4 rounded-lg bg-muted/50 text-center">
+                    <p className="text-xs text-muted-foreground mb-1">IRL</p>
+                    <p className={cn("text-xl font-bold", irlColor(irl))}>{irl.toFixed(1)}%</p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {irl >= 90 ? '🟢 Ótimo' : irl >= 75 ? '🟡 Atenção' : '🔴 Crítico'}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
             {/* Charts */}
             <div className="grid gap-6 md:grid-cols-2">
