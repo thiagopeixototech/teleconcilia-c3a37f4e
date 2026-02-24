@@ -11,6 +11,7 @@ import { Loader2, ArrowUpDown, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { PeriodFilter } from '@/components/PeriodFilter';
 import { usePeriodFilter } from '@/hooks/usePeriodFilter';
+import { Badge } from '@/components/ui/badge';
 
 interface ConsultorPerformance {
   usuario_id: string;
@@ -23,64 +24,158 @@ interface ConsultorPerformance {
   ticket_medio: number;
 }
 
-type SortField = keyof ConsultorPerformance;
+interface Estorno {
+  venda_id: string | null;
+  valor_estornado: number;
+  // joined
+  venda_usuario_id?: string;
+}
+
+type SortField = 'consultor_nome' | 'total_vendas' | 'vendas_instaladas' | 'vendas_conciliadas' | 'receita_conciliada' | 'taxa_conciliacao' | 'ticket_medio' | 'valor_estornado' | 'receita_liquida' | 'taxa_estorno' | 'irl';
 
 const formatBRL = (value: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
+function irlColor(irl: number): string {
+  if (irl >= 90) return 'text-success';
+  if (irl >= 75) return 'text-warning';
+  return 'text-destructive';
+}
+
+function irlBadge(irl: number) {
+  if (irl >= 90) return <Badge variant="outline" className="border-success text-success text-xs">{irl.toFixed(1)}%</Badge>;
+  if (irl >= 75) return <Badge variant="outline" className="border-warning text-warning text-xs">{irl.toFixed(1)}%</Badge>;
+  return <Badge variant="outline" className="border-destructive text-destructive text-xs">{irl.toFixed(1)}%</Badge>;
+}
+
 export default function PerformanceConsultor() {
   const { role } = useAuth();
   const period = usePeriodFilter('performance');
-  const { dataInicio, dataFim } = period;
+  const { dataInicio, dataFim, dataInicioStr, dataFimStr } = period;
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortField, setSortField] = useState<SortField>('consultor_nome');
-  const [sortAsc, setSortAsc] = useState(true);
+  const [sortField, setSortField] = useState<SortField>('receita_liquida');
+  const [sortAsc, setSortAsc] = useState(false);
 
   const { data: rows = [], isLoading } = useQuery({
-    queryKey: ['performance-consultores', dataInicio.toISOString(), dataFim.toISOString()],
+    queryKey: ['performance-consultores', dataInicioStr, dataFimStr],
     queryFn: async () => {
       const { data, error } = await supabase.rpc('get_performance_consultores', {
-        _data_inicio: format(dataInicio, 'yyyy-MM-dd'),
-        _data_fim: format(dataFim, 'yyyy-MM-dd'),
+        _data_inicio: dataInicioStr,
+        _data_fim: dataFimStr,
       });
       if (error) throw error;
       return (data || []) as ConsultorPerformance[];
     },
   });
 
+  // Fetch estornos for the period reference
+  const { data: estornos = [] } = useQuery({
+    queryKey: ['estornos-performance', dataInicioStr, dataFimStr],
+    queryFn: async () => {
+      // Derive referencia_desconto from period (YYYY-MM format)
+      // We need to get estornos where referencia_desconto matches the period months
+      const startMonth = format(dataInicio, 'yyyy-MM');
+      const endMonth = format(dataFim, 'yyyy-MM');
+      
+      const { data, error } = await (supabase as any)
+        .from('estornos')
+        .select('venda_id, valor_estornado')
+        .gte('referencia_desconto', startMonth)
+        .lte('referencia_desconto', endMonth);
+      if (error) throw error;
+      return (data || []) as { venda_id: string | null; valor_estornado: number }[];
+    },
+  });
+
+  // Map estornos by venda_id -> need to know which usuario_id each venda belongs to
+  const vendaIds = useMemo(() => {
+    return [...new Set(estornos.filter(e => e.venda_id).map(e => e.venda_id!))];
+  }, [estornos]);
+
+  const { data: vendaUsuarioMap = {} } = useQuery({
+    queryKey: ['venda-usuario-map', vendaIds],
+    queryFn: async () => {
+      if (vendaIds.length === 0) return {};
+      const map: Record<string, string> = {};
+      for (let i = 0; i < vendaIds.length; i += 500) {
+        const batch = vendaIds.slice(i, i + 500);
+        const { data } = await supabase
+          .from('vendas_internas')
+          .select('id, usuario_id')
+          .in('id', batch);
+        data?.forEach(v => { map[v.id] = v.usuario_id; });
+      }
+      return map;
+    },
+    enabled: vendaIds.length > 0,
+  });
+
+  // Aggregate estornos by usuario_id
+  const estornosPorUsuario = useMemo(() => {
+    const map: Record<string, number> = {};
+    estornos.forEach(e => {
+      if (e.venda_id && vendaUsuarioMap[e.venda_id]) {
+        const uid = vendaUsuarioMap[e.venda_id];
+        map[uid] = (map[uid] || 0) + Number(e.valor_estornado);
+      }
+    });
+    return map;
+  }, [estornos, vendaUsuarioMap]);
+
+  // Unmatched estornos total
+  const estornosUnmatched = useMemo(() => {
+    return estornos.filter(e => !e.venda_id).reduce((s, e) => s + Number(e.valor_estornado), 0);
+  }, [estornos]);
+
+  // Enriched rows
+  const enrichedRows = useMemo(() => {
+    return rows.map(r => {
+      const receita = Number(r.receita_conciliada);
+      const estorno = estornosPorUsuario[r.usuario_id] || 0;
+      const liquida = receita - estorno;
+      const taxaEstorno = receita > 0 ? (estorno / receita) * 100 : 0;
+      const irl = receita > 0 ? (liquida / receita) * 100 : 0;
+      return { ...r, valor_estornado: estorno, receita_liquida: liquida, taxa_estorno: taxaEstorno, irl };
+    });
+  }, [rows, estornosPorUsuario]);
+
   const filtered = useMemo(() => {
-    let result = rows;
+    let result = enrichedRows;
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       result = result.filter(r => r.consultor_nome.toLowerCase().includes(term));
     }
     result = [...result].sort((a, b) => {
-      const aVal = a[sortField];
-      const bVal = b[sortField];
+      const aVal = (a as any)[sortField];
+      const bVal = (b as any)[sortField];
       if (typeof aVal === 'string') return sortAsc ? aVal.localeCompare(bVal as string) : (bVal as string).localeCompare(aVal);
       return sortAsc ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number);
     });
     return result;
-  }, [rows, searchTerm, sortField, sortAsc]);
+  }, [enrichedRows, searchTerm, sortField, sortAsc]);
 
   const totals = useMemo(() => {
     const totalVendas = filtered.reduce((s, r) => s + r.total_vendas, 0);
     const instaladas = filtered.reduce((s, r) => s + r.vendas_instaladas, 0);
     const conciliadas = filtered.reduce((s, r) => s + r.vendas_conciliadas, 0);
     const receita = filtered.reduce((s, r) => s + Number(r.receita_conciliada), 0);
+    const estornos = filtered.reduce((s, r) => s + r.valor_estornado, 0);
+    const liquida = receita - estornos;
     const taxa = instaladas > 0 ? (conciliadas / instaladas) * 100 : 0;
     const ticket = conciliadas > 0 ? receita / conciliadas : 0;
-    return { totalVendas, instaladas, conciliadas, receita, taxa, ticket };
+    const taxaEstorno = receita > 0 ? (estornos / receita) * 100 : 0;
+    const irl = receita > 0 ? (liquida / receita) * 100 : 0;
+    return { totalVendas, instaladas, conciliadas, receita, estornos, liquida, taxa, ticket, taxaEstorno, irl };
   }, [filtered]);
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) setSortAsc(!sortAsc);
-    else { setSortField(field); setSortAsc(true); }
+    else { setSortField(field); setSortAsc(field === 'consultor_nome'); }
   };
 
-  const SortHeader = ({ field, children }: { field: SortField; children: React.ReactNode }) => (
+  const SortHeader = ({ field, children, className }: { field: SortField; children: React.ReactNode; className?: string }) => (
     <TableHead
-      className="cursor-pointer select-none hover:bg-muted/50 transition-colors"
+      className={cn("cursor-pointer select-none hover:bg-muted/50 transition-colors", className)}
       onClick={() => toggleSort(field)}
     >
       <div className="flex items-center gap-1">
@@ -112,6 +207,48 @@ export default function PerformanceConsultor() {
           </CardContent>
         </Card>
 
+        {/* Summary Cards */}
+        {!isLoading && filtered.length > 0 && (
+          <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
+            <Card>
+              <CardContent className="pt-4 pb-3 text-center">
+                <div className="text-lg font-bold">{totals.totalVendas}</div>
+                <p className="text-xs text-muted-foreground">Registradas</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-4 pb-3 text-center">
+                <div className="text-lg font-bold">{totals.instaladas}</div>
+                <p className="text-xs text-muted-foreground">Instaladas</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-4 pb-3 text-center">
+                <div className="text-lg font-bold text-success">{formatBRL(totals.receita)}</div>
+                <p className="text-xs text-muted-foreground">Receita Conciliada</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-4 pb-3 text-center">
+                <div className="text-lg font-bold text-destructive">{formatBRL(totals.estornos)}</div>
+                <p className="text-xs text-muted-foreground">Estornos</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-4 pb-3 text-center">
+                <div className={cn("text-lg font-bold", irlColor(totals.irl))}>{formatBRL(totals.liquida)}</div>
+                <p className="text-xs text-muted-foreground">Receita Líquida</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-4 pb-3 text-center">
+                <div className={cn("text-lg font-bold", irlColor(totals.irl))}>{totals.irl.toFixed(1)}%</div>
+                <p className="text-xs text-muted-foreground">IRL Geral</p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
         {/* Table */}
         <Card>
           <CardContent className="p-0">
@@ -129,12 +266,15 @@ export default function PerformanceConsultor() {
                   <TableHeader>
                     <TableRow>
                       <SortHeader field="consultor_nome">Consultor</SortHeader>
-                      <SortHeader field="total_vendas">Vendas Registradas</SortHeader>
-                      <SortHeader field="vendas_instaladas">Vendas Instaladas</SortHeader>
-                      <SortHeader field="vendas_conciliadas">Vendas Conciliadas</SortHeader>
-                      <SortHeader field="receita_conciliada">Receita Conciliada</SortHeader>
-                      <SortHeader field="taxa_conciliacao">Taxa Conciliação</SortHeader>
-                      <SortHeader field="ticket_medio">Ticket Médio</SortHeader>
+                      <SortHeader field="total_vendas" className="text-center">Registradas</SortHeader>
+                      <SortHeader field="vendas_instaladas" className="text-center">Instaladas</SortHeader>
+                      <SortHeader field="vendas_conciliadas" className="text-center">Conciliadas</SortHeader>
+                      <SortHeader field="receita_conciliada" className="text-right">Receita</SortHeader>
+                      <SortHeader field="valor_estornado" className="text-right">Estornos</SortHeader>
+                      <SortHeader field="receita_liquida" className="text-right">Rec. Líquida</SortHeader>
+                      <SortHeader field="taxa_estorno" className="text-right">% Estorno</SortHeader>
+                      <SortHeader field="irl" className="text-right">IRL</SortHeader>
+                      <SortHeader field="taxa_conciliacao" className="text-right">% Conc.</SortHeader>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -145,8 +285,11 @@ export default function PerformanceConsultor() {
                         <TableCell className="text-center">{row.vendas_instaladas}</TableCell>
                         <TableCell className="text-center">{row.vendas_conciliadas}</TableCell>
                         <TableCell className="text-right">{formatBRL(Number(row.receita_conciliada))}</TableCell>
+                        <TableCell className="text-right text-destructive">{formatBRL(row.valor_estornado)}</TableCell>
+                        <TableCell className={cn("text-right font-medium", irlColor(row.irl))}>{formatBRL(row.receita_liquida)}</TableCell>
+                        <TableCell className="text-right">{row.taxa_estorno.toFixed(1)}%</TableCell>
+                        <TableCell className="text-right">{irlBadge(row.irl)}</TableCell>
                         <TableCell className="text-right">{Number(row.taxa_conciliacao).toFixed(1)}%</TableCell>
-                        <TableCell className="text-right">{formatBRL(Number(row.ticket_medio))}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -157,8 +300,11 @@ export default function PerformanceConsultor() {
                       <TableCell className="text-center">{totals.instaladas}</TableCell>
                       <TableCell className="text-center">{totals.conciliadas}</TableCell>
                       <TableCell className="text-right">{formatBRL(totals.receita)}</TableCell>
+                      <TableCell className="text-right text-destructive">{formatBRL(totals.estornos)}</TableCell>
+                      <TableCell className={cn("text-right", irlColor(totals.irl))}>{formatBRL(totals.liquida)}</TableCell>
+                      <TableCell className="text-right">{totals.taxaEstorno.toFixed(1)}%</TableCell>
+                      <TableCell className="text-right">{irlBadge(totals.irl)}</TableCell>
                       <TableCell className="text-right">{totals.taxa.toFixed(1)}%</TableCell>
-                      <TableCell className="text-right">{formatBRL(totals.ticket)}</TableCell>
                     </TableRow>
                   </TableFooter>
                 </Table>

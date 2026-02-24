@@ -173,6 +173,59 @@ export type Database = {
         }
         Relationships: []
       }
+      estornos: {
+        Row: {
+          cpf_cnpj: string | null
+          created_at: string
+          created_by: string
+          id: string
+          identificador_make: string | null
+          importacao_id: string
+          match_status: Database["public"]["Enums"]["match_status"]
+          protocolo: string | null
+          referencia_desconto: string
+          telefone: string | null
+          valor_estornado: number
+          venda_id: string | null
+        }
+        Insert: {
+          cpf_cnpj?: string | null
+          created_at?: string
+          created_by: string
+          id?: string
+          identificador_make?: string | null
+          importacao_id?: string
+          match_status?: Database["public"]["Enums"]["match_status"]
+          protocolo?: string | null
+          referencia_desconto: string
+          telefone?: string | null
+          valor_estornado: number
+          venda_id?: string | null
+        }
+        Update: {
+          cpf_cnpj?: string | null
+          created_at?: string
+          created_by?: string
+          id?: string
+          identificador_make?: string | null
+          importacao_id?: string
+          match_status?: Database["public"]["Enums"]["match_status"]
+          protocolo?: string | null
+          referencia_desconto?: string
+          telefone?: string | null
+          valor_estornado?: number
+          venda_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "estornos_venda_id_fkey"
+            columns: ["venda_id"]
+            isOneToOne: false
+            referencedRelation: "vendas_internas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       linha_operadora: {
         Row: {
           arquivo_origem: string | null
@@ -544,6 +597,7 @@ export type Database = {
         | "IMPORTACAO_REMOVIDA"
         | "CONCILIAR_LOTE"
       app_role: "admin" | "supervisor" | "vendedor"
+      match_status: "MATCHED" | "NO_MATCH"
       status_conciliacao: "conciliado" | "divergente" | "nao_encontrado"
       status_interno:
         | "nova"
@@ -697,6 +751,7 @@ export const Constants = {
         "CONCILIAR_LOTE",
       ],
       app_role: ["admin", "supervisor", "vendedor"],
+      match_status: ["MATCHED", "NO_MATCH"],
       status_conciliacao: ["conciliado", "divergente", "nao_encontrado"],
       status_interno: [
         "nova",

@@ -15,7 +15,8 @@ import {
   Columns,
   BarChart3,
   Upload,
-  PackageOpen
+  PackageOpen,
+  RotateCcw,
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/contexts/AuthContext';
@@ -64,6 +65,7 @@ const gestaoItems = [
 const importacoesItems = [
   { title: 'Vendas', url: '/importacao-vendas', icon: Upload },
   { title: 'Linha a Linha', url: '/linha-operadora', icon: FileText },
+  { title: 'Estornos', url: '/importacao-estornos', icon: RotateCcw },
   { title: 'Mapeamento Colunas', url: '/mapeamento-colunas', icon: Columns },
 ];
 
