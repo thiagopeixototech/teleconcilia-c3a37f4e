@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { VendaInterna, LinhaOperadora, Conciliacao, TipoMatch, StatusConciliacao } from '@/types/database';
 import { useAuth } from '@/contexts/AuthContext';
+import { registrarAuditoriaBatch, AuditLogEntry } from '@/services/auditService';
+import { AuditLogPanel } from '@/components/audit/AuditLogPanel';
 import { 
   Table, 
   TableBody, 
@@ -69,10 +71,11 @@ const tipoMatchLabels: Record<TipoMatch, string> = {
 interface VendaWithConciliacao extends VendaInterna {
   conciliacao?: Conciliacao | null;
   linhaOperadoraVinculada?: LinhaOperadora | null;
+  vendedor?: { nome: string } | null;
 }
 
 export default function ConciliacaoPage() {
-  const { user, isAdmin } = useAuth();
+  const { user, vendedor: currentUser, isAdmin } = useAuth();
   const [vendas, setVendas] = useState<VendaWithConciliacao[]>([]);
   const [linhasOperadora, setLinhasOperadora] = useState<LinhaOperadora[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -89,7 +92,7 @@ export default function ConciliacaoPage() {
   const [arquivosDisponiveis, setArquivosDisponiveis] = useState<string[]>([]);
   const [isAutoMatchRunning, setIsAutoMatchRunning] = useState(false);
   const [matchCriteria, setMatchCriteria] = useState<'protocolo' | 'cpf' | 'todos'>('todos');
-
+  const [vendedorFilter, setVendedorFilter] = useState<string>('all');
   useEffect(() => {
     fetchData();
   }, []);
@@ -204,6 +207,9 @@ export default function ConciliacaoPage() {
       // Update venda status to confirmada and set valor from linha operadora
       const linhaMatch = linhasOperadora.find(l => l.id === selectedLinha);
       const valorLinha = linhaMatch?.valor_lq ?? linhaMatch?.valor ?? null;
+      const oldValor = selectedVenda.valor;
+      const oldStatus = selectedVenda.status_interno;
+      
       await supabase
         .from('vendas_internas')
         .update({ 
@@ -211,6 +217,48 @@ export default function ConciliacaoPage() {
           ...(valorLinha !== null ? { valor: valorLinha } : {})
         })
         .eq('id', selectedVenda.id);
+
+      // Registrar auditoria
+      const auditEntries: AuditLogEntry[] = [
+        {
+          venda_id: selectedVenda.id,
+          user_id: user?.id,
+          user_nome: currentUser?.nome,
+          acao: 'CONCILIAR',
+          campo: null,
+          valor_anterior: null,
+          valor_novo: { linha_operadora_id: selectedLinha, tipo_match: tipoMatch },
+          metadata: { observacao, operadora: linhaMatch?.operadora },
+        },
+      ];
+
+      if (oldStatus !== 'confirmada') {
+        auditEntries.push({
+          venda_id: selectedVenda.id,
+          user_id: user?.id,
+          user_nome: currentUser?.nome,
+          acao: 'MUDAR_STATUS_INTERNO',
+          campo: 'status_interno',
+          valor_anterior: oldStatus,
+          valor_novo: 'confirmada',
+          metadata: { motivo: 'Conciliação' },
+        });
+      }
+
+      if (valorLinha !== null && valorLinha !== oldValor) {
+        auditEntries.push({
+          venda_id: selectedVenda.id,
+          user_id: user?.id,
+          user_nome: currentUser?.nome,
+          acao: 'ALTERAR_VALOR',
+          campo: 'valor',
+          valor_anterior: oldValor,
+          valor_novo: valorLinha,
+          metadata: { motivo: 'Valor atualizado pela conciliação (valor_lq)' },
+        });
+      }
+
+      await registrarAuditoriaBatch(auditEntries as any);
 
       toast.success('Conciliação realizada com sucesso');
       setIsMatchOpen(false);
@@ -244,18 +292,30 @@ export default function ConciliacaoPage() {
     ? linhasOperadora.filter(l => l.arquivo_origem === arquivoFilter)
     : linhasOperadora;
 
+  // Extract unique vendedores from vendas
+  const vendedoresUnicos = useMemo(() => {
+    const map = new Map<string, string>();
+    vendas.forEach(v => {
+      const nome = (v as any).vendedor?.nome;
+      if (nome) map.set(nome, nome);
+    });
+    return [...map.values()].sort();
+  }, [vendas]);
+
   const filteredVendas = vendas.filter(venda => {
     const matchesSearch = 
       venda.cliente_nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
       venda.cpf_cnpj?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      venda.protocolo_interno?.toLowerCase().includes(searchTerm.toLowerCase());
+      venda.protocolo_interno?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (venda as any).vendedor?.nome?.toLowerCase().includes(searchTerm.toLowerCase());
     
+    // Filter by vendedor
+    const matchesVendedor = vendedorFilter === 'all' || 
+      (venda as any).vendedor?.nome === vendedorFilter;
+
     // Filter by arquivo - show only vendas that have a match in the selected arquivo
     let matchesArquivo = true;
     if (arquivoFilter !== 'all') {
-      // Show vendas that either:
-      // 1. Are already linked to a linha from this arquivo
-      // 2. Have potential matches (CPF or protocolo) in this arquivo
       const hasLinkInArquivo = venda.linhaOperadoraVinculada?.arquivo_origem === arquivoFilter;
       const hasPotentialMatch = linhasDoArquivo.some(linha => 
         (venda.cpf_cnpj && linha.cpf_cnpj && normalizeDoc(venda.cpf_cnpj) === normalizeDoc(linha.cpf_cnpj)) ||
@@ -265,9 +325,9 @@ export default function ConciliacaoPage() {
       matchesArquivo = hasLinkInArquivo || hasPotentialMatch;
     }
     
-    if (statusFilter === 'all') return matchesSearch && matchesArquivo;
-    if (statusFilter === 'pendente') return matchesSearch && matchesArquivo && !venda.conciliacao;
-    return matchesSearch && matchesArquivo && venda.conciliacao?.status_final === statusFilter;
+    if (statusFilter === 'all') return matchesSearch && matchesArquivo && matchesVendedor;
+    if (statusFilter === 'pendente') return matchesSearch && matchesArquivo && matchesVendedor && !venda.conciliacao;
+    return matchesSearch && matchesArquivo && matchesVendedor && venda.conciliacao?.status_final === statusFilter;
   });
 
   // Helper functions for matching
@@ -317,6 +377,7 @@ export default function ConciliacaoPage() {
     setIsAutoMatchRunning(true);
     let successCount = 0;
     let errorCount = 0;
+    const auditEntries: any[] = [];
 
     try {
       for (const venda of vendasToMatch) {
@@ -348,8 +409,37 @@ export default function ConciliacaoPage() {
               })
               .eq('id', venda.id);
             successCount++;
+
+            auditEntries.push({
+              venda_id: venda.id,
+              user_id: user?.id,
+              user_nome: currentUser?.nome,
+              acao: 'CONCILIAR_LOTE',
+              campo: null,
+              valor_anterior: null,
+              valor_novo: { linha_operadora_id: match.linha.id, tipo_match: match.tipoMatch },
+              metadata: { arquivo: arquivoFilter, operadora: match.linha.operadora },
+            });
+
+            if (valorLinha !== null && valorLinha !== venda.valor) {
+              auditEntries.push({
+                venda_id: venda.id,
+                user_id: user?.id,
+                user_nome: currentUser?.nome,
+                acao: 'ALTERAR_VALOR',
+                campo: 'valor',
+                valor_anterior: venda.valor,
+                valor_novo: valorLinha,
+                metadata: { motivo: 'Conciliação em lote (valor_lq)' },
+              });
+            }
           }
         }
+      }
+
+      // Registrar todos os logs de auditoria em batch
+      if (auditEntries.length > 0) {
+        await registrarAuditoriaBatch(auditEntries);
       }
 
       if (successCount > 0) {
@@ -460,7 +550,7 @@ export default function ConciliacaoPage() {
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder="Buscar por cliente, CPF/CNPJ ou protocolo..."
+                    placeholder="Buscar por cliente, CPF/CNPJ, protocolo ou vendedor..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="pl-9"
@@ -476,6 +566,17 @@ export default function ConciliacaoPage() {
                     <SelectItem value="pendente">Aguardando</SelectItem>
                     {Object.entries(statusLabels).map(([value, label]) => (
                       <SelectItem key={value} value={value}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={vendedorFilter} onValueChange={setVendedorFilter}>
+                  <SelectTrigger className="w-full md:w-48">
+                    <SelectValue placeholder="Vendedor" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos Vendedores</SelectItem>
+                    {vendedoresUnicos.map((nome) => (
+                      <SelectItem key={nome} value={nome}>{nome}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -554,6 +655,7 @@ export default function ConciliacaoPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead>Vendedor</TableHead>
                     <TableHead>Protocolo</TableHead>
                     <TableHead>Cliente</TableHead>
                     <TableHead>CPF/CNPJ</TableHead>
@@ -568,13 +670,16 @@ export default function ConciliacaoPage() {
                 <TableBody>
                   {filteredVendas.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
                         Nenhuma venda encontrada
                       </TableCell>
                     </TableRow>
                   ) : (
                     filteredVendas.map((venda) => (
                       <TableRow key={venda.id}>
+                        <TableCell className="text-sm">
+                          {(venda as any).vendedor?.nome || '-'}
+                        </TableCell>
                         <TableCell className="font-mono text-sm">
                           {venda.protocolo_interno || '-'}
                         </TableCell>
@@ -720,6 +825,13 @@ export default function ConciliacaoPage() {
                   rows={2}
                 />
               </div>
+
+              {/* Histórico de Auditoria da venda selecionada */}
+              {selectedVenda && (
+                <div className="border-t pt-4">
+                  <AuditLogPanel vendaId={selectedVenda.id} isOpen={isMatchOpen} />
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsMatchOpen(false)}>

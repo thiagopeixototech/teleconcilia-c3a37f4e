@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/supabase/client';
+import { registrarAuditoria } from '@/services/auditService';
+import { AuditLogPanel } from '@/components/audit/AuditLogPanel';
 import { VendaInterna, StatusInterno, Operadora } from '@/types/database';
 import { useAuth } from '@/contexts/AuthContext';
 import { 
@@ -76,7 +78,7 @@ const statusLabels: Record<StatusInterno, string> = {
 
 export default function VendasInternas() {
   const navigate = useNavigate();
-  const { isAdmin, isSupervisor } = useAuth();
+  const { user, vendedor, isAdmin, isSupervisor } = useAuth();
   const [vendas, setVendas] = useState<VendaInterna[]>([]);
   const [operadoras, setOperadoras] = useState<Operadora[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -181,6 +183,32 @@ export default function VendasInternas() {
         .eq('id', selectedVenda.id);
 
       if (error) throw error;
+
+      // Registrar auditoria para mudança de status
+      if (editStatus !== selectedVenda.status_interno) {
+        await registrarAuditoria({
+          venda_id: selectedVenda.id,
+          user_id: user?.id,
+          user_nome: vendedor?.nome,
+          acao: 'MUDAR_STATUS_INTERNO',
+          campo: 'status_interno',
+          valor_anterior: selectedVenda.status_interno,
+          valor_novo: editStatus,
+        });
+      }
+
+      // Registrar auditoria para mudança de observações
+      if (editObservacoes !== (selectedVenda.observacoes || '')) {
+        await registrarAuditoria({
+          venda_id: selectedVenda.id,
+          user_id: user?.id,
+          user_nome: vendedor?.nome,
+          acao: 'EDITAR_CAMPO',
+          campo: 'observacoes',
+          valor_anterior: selectedVenda.observacoes,
+          valor_novo: editObservacoes,
+        });
+      }
 
       toast.success('Status atualizado com sucesso');
       setIsEditOpen(false);
@@ -538,7 +566,7 @@ export default function VendasInternas() {
 
         {/* Detail Dialog */}
         <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-auto">
             <DialogHeader>
               <DialogTitle>Detalhes da Venda</DialogTitle>
               <DialogDescription>
@@ -546,53 +574,60 @@ export default function VendasInternas() {
               </DialogDescription>
             </DialogHeader>
             {selectedVenda && (
-              <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label className="text-muted-foreground">Cliente</Label>
-                    <p className="font-medium">{selectedVenda.cliente_nome}</p>
+              <div className="space-y-6">
+                <div className="grid gap-4 py-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-muted-foreground">Cliente</Label>
+                      <p className="font-medium">{selectedVenda.cliente_nome}</p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground">CPF/CNPJ</Label>
+                      <p className="font-medium font-mono">{selectedVenda.cpf_cnpj || '-'}</p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground">Telefone</Label>
+                      <p className="font-medium">{selectedVenda.telefone || '-'}</p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground">Operadora</Label>
+                      <p className="font-medium">{getOperadoraNome(selectedVenda.operadora_id)}</p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground">Plano</Label>
+                      <p className="font-medium">{selectedVenda.plano || '-'}</p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground">Valor</Label>
+                      <p className="font-medium">
+                        {selectedVenda.valor 
+                          ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(selectedVenda.valor)
+                          : '-'
+                        }
+                      </p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground">Status</Label>
+                      <Badge className={statusColors[selectedVenda.status_interno]}>
+                        {statusLabels[selectedVenda.status_interno]}
+                      </Badge>
+                    </div>
+                    <div className="col-span-2">
+                      <Label className="text-muted-foreground">Endereço</Label>
+                      <p className="font-medium">
+                        {selectedVenda.endereco || '-'} {selectedVenda.cep ? `- CEP: ${selectedVenda.cep}` : ''}
+                      </p>
+                    </div>
+                    <div className="col-span-2">
+                      <Label className="text-muted-foreground">Observações</Label>
+                      <p className="font-medium">{selectedVenda.observacoes || 'Nenhuma observação'}</p>
+                    </div>
                   </div>
-                  <div>
-                    <Label className="text-muted-foreground">CPF/CNPJ</Label>
-                    <p className="font-medium font-mono">{selectedVenda.cpf_cnpj || '-'}</p>
-                  </div>
-                  <div>
-                    <Label className="text-muted-foreground">Telefone</Label>
-                    <p className="font-medium">{selectedVenda.telefone || '-'}</p>
-                  </div>
-                  <div>
-                    <Label className="text-muted-foreground">Operadora</Label>
-                    <p className="font-medium">{getOperadoraNome(selectedVenda.operadora_id)}</p>
-                  </div>
-                  <div>
-                    <Label className="text-muted-foreground">Plano</Label>
-                    <p className="font-medium">{selectedVenda.plano || '-'}</p>
-                  </div>
-                  <div>
-                    <Label className="text-muted-foreground">Valor</Label>
-                    <p className="font-medium">
-                      {selectedVenda.valor 
-                        ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(selectedVenda.valor)
-                        : '-'
-                      }
-                    </p>
-                  </div>
-                  <div>
-                    <Label className="text-muted-foreground">Status</Label>
-                    <Badge className={statusColors[selectedVenda.status_interno]}>
-                      {statusLabels[selectedVenda.status_interno]}
-                    </Badge>
-                  </div>
-                  <div className="col-span-2">
-                    <Label className="text-muted-foreground">Endereço</Label>
-                    <p className="font-medium">
-                      {selectedVenda.endereco || '-'} {selectedVenda.cep ? `- CEP: ${selectedVenda.cep}` : ''}
-                    </p>
-                  </div>
-                  <div className="col-span-2">
-                    <Label className="text-muted-foreground">Observações</Label>
-                    <p className="font-medium">{selectedVenda.observacoes || 'Nenhuma observação'}</p>
-                  </div>
+                </div>
+
+                {/* Histórico de Auditoria */}
+                <div className="border-t pt-4">
+                  <AuditLogPanel vendaId={selectedVenda.id} isOpen={isDetailOpen} />
                 </div>
               </div>
             )}

@@ -21,7 +21,6 @@ Deno.serve(async (req) => {
     const pathParts = url.pathname.split("/").filter(Boolean);
     const identificador_make = pathParts[pathParts.length - 1];
 
-    // Se o último segmento for "atualizar-venda", significa que não foi passado o identificador
     if (!identificador_make || identificador_make === "atualizar-venda") {
       return new Response(
         JSON.stringify({
@@ -34,10 +33,10 @@ Deno.serve(async (req) => {
 
     const dadosAtualizacao = await req.json();
 
-    // Verificar se a venda existe
+    // Verificar se a venda existe e buscar dados atuais para auditoria
     const { data: vendaExistente, error: erroConsulta } = await supabase
       .from("vendas_internas")
-      .select("id")
+      .select("*")
       .eq("identificador_make", identificador_make)
       .maybeSingle();
 
@@ -62,22 +61,11 @@ Deno.serve(async (req) => {
 
     // Campos permitidos para atualização
     const camposPermitidos = [
-      "cliente_nome",
-      "cpf_cnpj",
-      "telefone",
-      "cep",
-      "endereco",
-      "plano",
-      "valor",
-      "data_venda",
-      "data_instalacao",
-      "protocolo_interno",
-      "status_interno",
-      "status_make",
-      "observacoes",
+      "cliente_nome", "cpf_cnpj", "telefone", "cep", "endereco",
+      "plano", "valor", "data_venda", "data_instalacao",
+      "protocolo_interno", "status_interno", "status_make", "observacoes",
     ];
 
-    // Filtrar apenas os campos permitidos
     const dadosFiltrados: Record<string, unknown> = {};
     for (const campo of camposPermitidos) {
       if (dadosAtualizacao[campo] !== undefined) {
@@ -99,14 +87,8 @@ Deno.serve(async (req) => {
     // Validar status_interno se enviado
     if (dadosFiltrados.status_interno) {
       const statusValidos = [
-        "nova",
-        "enviada",
-        "aguardando",
-        "confirmada",
-        "cancelada",
-        "contestacao_enviada",
-        "contestacao_procedente",
-        "contestacao_improcedente",
+        "nova", "enviada", "aguardando", "confirmada", "cancelada",
+        "contestacao_enviada", "contestacao_procedente", "contestacao_improcedente",
       ];
       if (!statusValidos.includes(dadosFiltrados.status_interno as string)) {
         return new Response(
@@ -138,6 +120,43 @@ Deno.serve(async (req) => {
         JSON.stringify({ sucesso: false, error: erroAtualizacao.message }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // Registrar auditoria para cada campo alterado
+    const auditLogs = [];
+    for (const campo of Object.keys(dadosFiltrados)) {
+      const valorAnterior = (vendaExistente as Record<string, unknown>)[campo];
+      const valorNovo = dadosFiltrados[campo];
+      
+      // Só registrar se o valor realmente mudou
+      if (JSON.stringify(valorAnterior) !== JSON.stringify(valorNovo)) {
+        let acao = 'EDITAR_CAMPO';
+        if (campo === 'status_interno') acao = 'MUDAR_STATUS_INTERNO';
+        else if (campo === 'status_make') acao = 'MUDAR_STATUS_MAKE';
+        else if (campo === 'valor') acao = 'ALTERAR_VALOR';
+
+        auditLogs.push({
+          venda_id: vendaExistente.id,
+          user_id: null,
+          user_nome: 'API',
+          acao,
+          campo,
+          valor_anterior: JSON.stringify(valorAnterior),
+          valor_novo: JSON.stringify(valorNovo),
+          origem: 'API',
+          metadata: { identificador_make },
+        });
+      }
+    }
+
+    if (auditLogs.length > 0) {
+      const { error: auditError } = await supabase
+        .from("audit_log_vendas")
+        .insert(auditLogs);
+
+      if (auditError) {
+        console.error("Erro ao registrar auditoria:", auditError);
+      }
     }
 
     return new Response(
