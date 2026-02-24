@@ -13,7 +13,9 @@ import {
   Clock,
   Radio,
   Columns,
-  BarChart3
+  BarChart3,
+  Upload,
+  PackageOpen
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/contexts/AuthContext';
@@ -58,8 +60,9 @@ const gestaoItems = [
   { title: 'Performance', url: '/performance', icon: BarChart3 },
 ];
 
-// Submenu Admin - apenas admin
-const adminGestaoItems = [
+// Submenu Importações - apenas admin
+const importacoesItems = [
+  { title: 'Vendas', url: '/importacao-vendas', icon: Upload },
   { title: 'Linha a Linha', url: '/linha-operadora', icon: FileText },
   { title: 'Mapeamento Colunas', url: '/mapeamento-colunas', icon: Columns },
 ];
@@ -142,8 +145,32 @@ export function AppSidebar() {
                         </SidebarMenuButton>
                       </SidebarMenuItem>
                     ))}
-                    {/* Linha a Linha - apenas admin */}
-                    {isAdmin && adminGestaoItems.map((item) => (
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </CollapsibleContent>
+            </Collapsible>
+          </SidebarGroup>
+        )}
+
+        {/* Importações - apenas admin */}
+        {isAdmin && (
+          <SidebarGroup>
+            <Collapsible defaultOpen className="group/collapsible-importacoes">
+              <CollapsibleTrigger asChild>
+                <SidebarGroupLabel className="flex items-center justify-between cursor-pointer text-sidebar-foreground/50 uppercase text-xs tracking-wider hover:text-sidebar-foreground/80 transition-colors">
+                  <span className="flex items-center gap-2">
+                    <PackageOpen className="h-4 w-4" />
+                    {!collapsed && 'Importações'}
+                  </span>
+                  {!collapsed && (
+                    <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]/collapsible-importacoes:rotate-180" />
+                  )}
+                </SidebarGroupLabel>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {importacoesItems.map((item) => (
                       <SidebarMenuItem key={item.title}>
                         <SidebarMenuButton asChild>
                           <NavLink 
