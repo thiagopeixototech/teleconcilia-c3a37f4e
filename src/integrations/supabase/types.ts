@@ -47,6 +47,48 @@ export type Database = {
         }
         Relationships: []
       }
+      audit_log_vendas: {
+        Row: {
+          acao: string
+          campo: string | null
+          created_at: string
+          id: string
+          metadata: Json | null
+          origem: string
+          user_id: string | null
+          user_nome: string | null
+          valor_anterior: Json | null
+          valor_novo: Json | null
+          venda_id: string
+        }
+        Insert: {
+          acao: string
+          campo?: string | null
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          origem?: string
+          user_id?: string | null
+          user_nome?: string | null
+          valor_anterior?: Json | null
+          valor_novo?: Json | null
+          venda_id: string
+        }
+        Update: {
+          acao?: string
+          campo?: string | null
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          origem?: string
+          user_id?: string | null
+          user_nome?: string | null
+          valor_anterior?: Json | null
+          valor_novo?: Json | null
+          venda_id?: string
+        }
+        Relationships: []
+      }
       conciliacoes: {
         Row: {
           created_at: string
@@ -446,6 +488,18 @@ export type Database = {
       }
     }
     Enums: {
+      acao_auditoria:
+        | "EDITAR_CAMPO"
+        | "CONCILIAR"
+        | "DESCONCILIAR"
+        | "CONFIRMAR"
+        | "ESTORNAR"
+        | "REABRIR_CONTESTACAO"
+        | "MUDAR_STATUS_INTERNO"
+        | "MUDAR_STATUS_MAKE"
+        | "ALTERAR_VALOR"
+        | "IMPORTACAO_REMOVIDA"
+        | "CONCILIAR_LOTE"
       app_role: "admin" | "supervisor" | "vendedor"
       status_conciliacao: "conciliado" | "divergente" | "nao_encontrado"
       status_interno:
@@ -586,6 +640,19 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      acao_auditoria: [
+        "EDITAR_CAMPO",
+        "CONCILIAR",
+        "DESCONCILIAR",
+        "CONFIRMAR",
+        "ESTORNAR",
+        "REABRIR_CONTESTACAO",
+        "MUDAR_STATUS_INTERNO",
+        "MUDAR_STATUS_MAKE",
+        "ALTERAR_VALOR",
+        "IMPORTACAO_REMOVIDA",
+        "CONCILIAR_LOTE",
+      ],
       app_role: ["admin", "supervisor", "vendedor"],
       status_conciliacao: ["conciliado", "divergente", "nao_encontrado"],
       status_interno: [
