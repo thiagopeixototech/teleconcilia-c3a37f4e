@@ -21,6 +21,7 @@ import CadastrosPendentes from "./pages/CadastrosPendentes";
 import Operadoras from "./pages/Operadoras";
 import MapeamentoColunas from "./pages/MapeamentoColunas";
 import PerformanceConsultor from "./pages/PerformanceConsultor";
+import ImportacaoVendas from "./pages/ImportacaoVendas";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -149,6 +150,15 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={['admin', 'supervisor']}>
                   <PerformanceConsultor />
+                </ProtectedRoute>
+              }
+            />
+            
+            <Route
+              path="/importacao-vendas"
+              element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <ImportacaoVendas />
                 </ProtectedRoute>
               }
             />

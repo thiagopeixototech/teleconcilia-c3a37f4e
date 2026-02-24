@@ -271,6 +271,36 @@ export type Database = {
           },
         ]
       }
+      mapeamento_vendas: {
+        Row: {
+          ativo: boolean
+          config: Json
+          created_at: string
+          id: string
+          mapeamento: Json
+          nome: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          config?: Json
+          created_at?: string
+          id?: string
+          mapeamento?: Json
+          nome: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          config?: Json
+          created_at?: string
+          id?: string
+          mapeamento?: Json
+          nome?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       operadoras: {
         Row: {
           ativa: boolean
