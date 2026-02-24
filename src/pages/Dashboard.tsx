@@ -30,6 +30,7 @@ interface DashboardStats {
   vendasConfirmadas: number;
   vendasCanceladas: number;
   valorTotal: number;
+  valorConciliado: number;
   percentualConciliacao: number;
 }
 
@@ -71,12 +72,15 @@ export default function Dashboard() {
         v.status_make?.toLowerCase().startsWith('instalad')
       ).reduce((sum, v) => sum + (Number(v.valor) || 0), 0) || 0;
 
-      // Fetch conciliacoes
+      // Fetch conciliacoes with venda values
       const { data: conciliacoes } = await supabase
         .from('conciliacoes')
-        .select('*');
+        .select('*, venda:vendas_internas(valor)');
 
       const conciliadas = conciliacoes?.filter(c => c.status_final === 'conciliado').length || 0;
+      const valorConciliado = conciliacoes
+        ?.filter(c => c.status_final === 'conciliado')
+        .reduce((sum, c) => sum + (Number((c as any).venda?.valor) || 0), 0) || 0;
       const percentualConciliacao = vendasInstaladas > 0 ? (conciliadas / vendasInstaladas) * 100 : 0;
 
       setStats({
@@ -85,6 +89,7 @@ export default function Dashboard() {
         vendasConfirmadas,
         vendasCanceladas,
         valorTotal,
+        valorConciliado,
         percentualConciliacao,
       });
 
@@ -133,7 +138,7 @@ export default function Dashboard() {
     <AppLayout title="Dashboard">
       <div className="space-y-6">
         {/* KPI Cards */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -197,6 +202,26 @@ export default function Dashboard() {
               </div>
               <p className="text-xs text-muted-foreground">
                 em vendas instaladas
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Valor Conciliado
+              </CardTitle>
+              <CheckCircle className="h-4 w-4 text-success" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-success">
+                {new Intl.NumberFormat('pt-BR', { 
+                  style: 'currency', 
+                  currency: 'BRL' 
+                }).format(stats?.valorConciliado || 0)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                em vendas conciliadas
               </p>
             </CardContent>
           </Card>
