@@ -81,7 +81,7 @@ type Step = 'upload' | 'mapping' | 'preview' | 'result';
 interface ImportResult {
   total: number;
   success: number;
-  duplicates: number;
+  updated: number;
   errors: { line: number; reason: string; data: Record<string, string> }[];
 }
 
@@ -284,26 +284,28 @@ export default function ImportacaoVendas() {
   // Process import
   const processImport = async () => {
     setIsProcessing(true);
-    const importResult: ImportResult = { total: csvRows.length, success: 0, duplicates: 0, errors: [] };
+    const importResult: ImportResult = { total: csvRows.length, success: 0, updated: 0, errors: [] };
 
     try {
-      // Fetch existing identificadores to check duplicates
+      // Fetch existing identificadores to detect updates
       const idsToCheck = csvRows
         .map(r => r[mapping.identificador_make]?.trim())
         .filter(Boolean);
 
       // Batch check in groups of 500
-      const existingIds = new Set<string>();
+      const existingMap = new Map<string, string>(); // identificador_make -> venda id
       for (let i = 0; i < idsToCheck.length; i += 500) {
         const batch = idsToCheck.slice(i, i + 500);
         const { data } = await supabase
           .from('vendas_internas')
-          .select('identificador_make')
+          .select('id, identificador_make')
           .in('identificador_make', batch);
-        data?.forEach(d => { if (d.identificador_make) existingIds.add(d.identificador_make); });
+        data?.forEach(d => { if (d.identificador_make) existingMap.set(d.identificador_make, d.id); });
       }
 
       const rowsToInsert: any[] = [];
+      const rowsToUpdate: { id: string; data: any }[] = [];
+      const seenIds = new Set<string>();
 
       for (let i = 0; i < csvRows.length; i++) {
         const row = csvRows[i];
@@ -315,10 +317,12 @@ export default function ImportacaoVendas() {
           continue;
         }
 
-        if (existingIds.has(identificador)) {
-          importResult.duplicates++;
+        // Prevent intra-file duplicates
+        if (seenIds.has(identificador)) {
+          importResult.errors.push({ line: lineNum, reason: `Duplicado dentro do próprio arquivo: "${identificador}"`, data: row });
           continue;
         }
+        seenIds.add(identificador);
 
         const dataVenda = parseDate(row[mapping.data_venda]?.trim() || '');
         if (!dataVenda) {
@@ -339,7 +343,7 @@ export default function ImportacaoVendas() {
         const valor = valorStr ? parseFloat(valorStr) : null;
         const dataInstalacao = mapping.data_instalacao ? parseDate(row[mapping.data_instalacao]?.trim() || '') : null;
 
-        rowsToInsert.push({
+        const rowData = {
           identificador_make: identificador,
           status_make: row[mapping.status_make]?.trim() || null,
           data_venda: dataVenda,
@@ -356,33 +360,45 @@ export default function ImportacaoVendas() {
           operadora_id: operadoraId,
           empresa_id: empresaId,
           usuario_id: vendedor.id,
-          status_interno: 'aguardando',
-        });
+        };
 
-        // Add to existing set to prevent intra-file duplicates
-        existingIds.add(identificador);
+        if (existingMap.has(identificador)) {
+          // Update existing record (don't overwrite status_interno)
+          const existingId = existingMap.get(identificador)!;
+          rowsToUpdate.push({ id: existingId, data: rowData });
+        } else {
+          rowsToInsert.push({ ...rowData, status_interno: 'aguardando' });
+        }
       }
 
-      // Insert in batches of 200
+      // Insert new records in batches of 200
       for (let i = 0; i < rowsToInsert.length; i += 200) {
         const batch = rowsToInsert.slice(i, i + 200);
         const { error } = await supabase.from('vendas_internas').insert(batch);
         if (error) {
-          // Try one by one for this batch to find exact failures
           for (const row of batch) {
             const { error: singleError } = await supabase.from('vendas_internas').insert(row);
             if (singleError) {
-              importResult.errors.push({
-                line: 0,
-                reason: singleError.message,
-                data: row,
-              });
+              importResult.errors.push({ line: 0, reason: singleError.message, data: row });
             } else {
               importResult.success++;
             }
           }
         } else {
           importResult.success += batch.length;
+        }
+      }
+
+      // Update existing records one by one
+      for (const item of rowsToUpdate) {
+        const { error } = await supabase
+          .from('vendas_internas')
+          .update(item.data)
+          .eq('id', item.id);
+        if (error) {
+          importResult.errors.push({ line: 0, reason: `Erro ao atualizar: ${error.message}`, data: item.data });
+        } else {
+          importResult.updated++;
         }
       }
 
@@ -396,8 +412,8 @@ export default function ImportacaoVendas() {
           dados_novos: {
             arquivo: file?.name,
             total: importResult.total,
-            sucesso: importResult.success,
-            duplicados: importResult.duplicates,
+            novos: importResult.success,
+            atualizados: importResult.updated,
             erros: importResult.errors.length,
             operadora_id: operadoraId,
             empresa_id: empresaId,
@@ -407,7 +423,7 @@ export default function ImportacaoVendas() {
 
       setResult(importResult);
       setStep('result');
-      toast.success(`Importação concluída: ${importResult.success} vendas importadas`);
+      toast.success(`Importação concluída: ${importResult.success} novas, ${importResult.updated} atualizadas`);
     } catch (err: any) {
       toast.error(err.message || 'Erro ao processar importação');
     } finally {
@@ -846,11 +862,11 @@ export default function ImportacaoVendas() {
                 </div>
                 <div className="bg-primary/10 rounded-lg p-4 text-center">
                   <div className="text-3xl font-bold text-primary">{result.success}</div>
-                  <div className="text-sm text-muted-foreground">Importadas</div>
+                  <div className="text-sm text-muted-foreground">Novas</div>
                 </div>
                 <div className="bg-accent rounded-lg p-4 text-center">
-                  <div className="text-3xl font-bold text-accent-foreground">{result.duplicates}</div>
-                  <div className="text-sm text-muted-foreground">Duplicadas</div>
+                  <div className="text-3xl font-bold text-accent-foreground">{result.updated}</div>
+                  <div className="text-sm text-muted-foreground">Atualizadas</div>
                 </div>
                 <div className="bg-destructive/10 rounded-lg p-4 text-center">
                   <div className="text-3xl font-bold text-destructive">{result.errors.length}</div>
