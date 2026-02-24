@@ -853,7 +853,7 @@ export default function ImportacaoVendas() {
               </div>
 
               {/* Preview table */}
-              <div className="overflow-x-auto max-h-72 border rounded-md">
+              <div className="overflow-x-auto max-h-[500px] border rounded-md">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -866,9 +866,11 @@ export default function ImportacaoVendas() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {csvRows.slice(0, 10).map((row, i) => {
+                    {csvRows.slice(0, 100).map((row, i) => {
                       const vendedor = findVendedor(row);
                       const operadora = findOperadora(row);
+                      const vendedorRawValue = vendedorMode === 'fixed' ? '' : (row[vendedorColumn]?.trim() || '');
+                      const operadoraRawValue = operadoraMode === 'fixed' ? '' : (row[operadoraColumn]?.trim() || '');
                       return (
                         <TableRow key={i}>
                           <TableCell className="text-xs">{i + 1}</TableCell>
@@ -881,14 +883,18 @@ export default function ImportacaoVendas() {
                             {operadora ? (
                               <Badge variant="outline" className="text-xs">{operadora.nome}</Badge>
                             ) : (
-                              <Badge variant="destructive" className="text-xs">Não encontrada</Badge>
+                              <Badge variant="destructive" className="text-xs">
+                                Não encontrada{operadoraRawValue ? ` ("${operadoraRawValue}")` : ''}
+                              </Badge>
                             )}
                           </TableCell>
                           <TableCell className="text-xs">
                             {vendedor ? (
                               <Badge variant="outline" className="text-xs">{vendedor.nome}</Badge>
                             ) : (
-                              <Badge variant="destructive" className="text-xs">Não encontrado</Badge>
+                              <Badge variant="destructive" className="text-xs">
+                                Não encontrado{vendedorRawValue ? ` ("${vendedorRawValue}")` : ''}
+                              </Badge>
                             )}
                           </TableCell>
                         </TableRow>
@@ -897,9 +903,9 @@ export default function ImportacaoVendas() {
                   </TableBody>
                 </Table>
               </div>
-              {csvRows.length > 10 && (
+              {csvRows.length > 100 && (
                 <p className="text-xs text-muted-foreground text-center">
-                  Mostrando 10 de {csvRows.length} linhas
+                  Mostrando 100 de {csvRows.length} linhas
                 </p>
               )}
 
