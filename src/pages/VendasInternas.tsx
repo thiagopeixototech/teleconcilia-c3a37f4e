@@ -6,6 +6,8 @@ import { registrarAuditoria } from '@/services/auditService';
 import { AuditLogPanel } from '@/components/audit/AuditLogPanel';
 import { VendaInterna, StatusInterno, Operadora } from '@/types/database';
 import { useAuth } from '@/contexts/AuthContext';
+import { PeriodFilter } from '@/components/PeriodFilter';
+import { usePeriodFilter } from '@/hooks/usePeriodFilter';
 import { 
   Table, 
   TableBody, 
@@ -88,8 +90,6 @@ export default function VendasInternas() {
   const [operadoraFilter, setOperadoraFilter] = useState<string>('all');
   const [statusMakeFilter, setStatusMakeFilter] = useState<string>('all');
   const [confirmadaFilter, setConfirmadaFilter] = useState<string>('all');
-  const [dataInicio, setDataInicio] = useState<string>('');
-  const [dataFim, setDataFim] = useState<string>('');
   const [idMakeSearch, setIdMakeSearch] = useState('');
   const [protocoloSearch, setProtocoloSearch] = useState('');
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
@@ -102,22 +102,16 @@ export default function VendasInternas() {
   const [editObservacoes, setEditObservacoes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
+  const period = usePeriodFilter('vendas');
+
   useEffect(() => {
     fetchVendas();
     fetchOperadoras();
-  }, []);
+  }, [period.dataInicioStr, period.dataFimStr]);
 
   const fetchVendas = async () => {
     try {
-      // Fetch total count first
-      const { count, error: countError } = await supabase
-        .from('vendas_internas')
-        .select('*', { count: 'exact', head: true });
-
-      if (countError) throw countError;
-      setTotalCount(count || 0);
-
-      // Fetch all records in batches of 1000
+      // Fetch all records in batches of 1000, filtered by period
       const allVendas: any[] = [];
       const batchSize = 1000;
       let from = 0;
@@ -131,6 +125,8 @@ export default function VendasInternas() {
             usuario:usuarios(nome, email),
             empresa:empresas(nome)
           `)
+          .gte('data_venda', period.dataInicioStr)
+          .lte('data_venda', period.dataFimStr)
           .order('created_at', { ascending: false })
           .range(from, from + batchSize - 1);
 
@@ -144,6 +140,8 @@ export default function VendasInternas() {
           hasMore = false;
         }
       }
+
+      setTotalCount(allVendas.length);
 
       setVendas(allVendas as any);
       
@@ -275,13 +273,11 @@ export default function VendasInternas() {
   };
 
   const hasActiveFilters = statusMakeFilter !== 'all' || confirmadaFilter !== 'all' || 
-    dataInicio !== '' || dataFim !== '' || idMakeSearch !== '' || protocoloSearch !== '';
+    idMakeSearch !== '' || protocoloSearch !== '';
 
   const clearAdvancedFilters = () => {
     setStatusMakeFilter('all');
     setConfirmadaFilter('all');
-    setDataInicio('');
-    setDataFim('');
     setIdMakeSearch('');
     setProtocoloSearch('');
     setVisibleCount(50);
@@ -290,7 +286,7 @@ export default function VendasInternas() {
   // Reset visible count when any filter changes
   useEffect(() => {
     setVisibleCount(50);
-  }, [searchTerm, statusFilter, operadoraFilter, statusMakeFilter, confirmadaFilter, dataInicio, dataFim, idMakeSearch, protocoloSearch]);
+  }, [searchTerm, statusFilter, operadoraFilter, statusMakeFilter, confirmadaFilter, idMakeSearch, protocoloSearch, period.dataInicioStr, period.dataFimStr]);
 
   const filteredVendas = vendas.filter(venda => {
     const matchesSearch = 
@@ -309,8 +305,8 @@ export default function VendasInternas() {
     const matchesConfirmada = confirmadaFilter === 'all' || 
       (confirmadaFilter === 'confirmada' ? venda.status_interno === 'confirmada' : venda.status_interno !== 'confirmada');
     
-    const matchesDataInicio = !dataInicio || venda.data_venda >= dataInicio;
-    const matchesDataFim = !dataFim || venda.data_venda <= dataFim;
+    // Period filter is applied at query level, no need for client-side date filtering
+    
     
     const matchesIdMake = !idMakeSearch || 
       venda.identificador_make?.toLowerCase().includes(idMakeSearch.toLowerCase());
@@ -319,7 +315,7 @@ export default function VendasInternas() {
       venda.protocolo_interno?.toLowerCase().includes(protocoloSearch.toLowerCase());
     
     return matchesSearch && matchesStatus && matchesOperadora && 
-      matchesStatusMake && matchesConfirmada && matchesDataInicio && matchesDataFim &&
+      matchesStatusMake && matchesConfirmada &&
       matchesIdMake && matchesProtocolo;
   });
 
@@ -340,6 +336,8 @@ export default function VendasInternas() {
         <Card>
           <CardContent className="pt-6">
             <div className="flex flex-col gap-4">
+              {/* Period Filter */}
+              <PeriodFilter {...period} />
               {/* Main filters row */}
               <div className="flex flex-col md:flex-row gap-4">
                 <div className="relative flex-1">
@@ -381,7 +379,7 @@ export default function VendasInternas() {
                   className="gap-2"
                 >
                   {showAdvancedFilters ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                  Filtros {hasActiveFilters && `(${[statusMakeFilter !== 'all', confirmadaFilter !== 'all', dataInicio, dataFim, idMakeSearch, protocoloSearch].filter(Boolean).length})`}
+                  Filtros {hasActiveFilters && `(${[statusMakeFilter !== 'all', confirmadaFilter !== 'all', idMakeSearch, protocoloSearch].filter(Boolean).length})`}
                 </Button>
                 <Button variant="outline" onClick={exportToCSV}>
                   <Download className="h-4 w-4 mr-2" />
@@ -405,7 +403,7 @@ export default function VendasInternas() {
                       </Button>
                     )}
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div>
                       <Label className="text-xs mb-1.5 block">Confirmada</Label>
                       <Select value={confirmadaFilter} onValueChange={setConfirmadaFilter}>
@@ -433,24 +431,6 @@ export default function VendasInternas() {
                           ))}
                         </SelectContent>
                       </Select>
-                    </div>
-                    <div>
-                      <Label className="text-xs mb-1.5 block">Data Início</Label>
-                      <Input
-                        type="date"
-                        value={dataInicio}
-                        onChange={(e) => setDataInicio(e.target.value)}
-                        className="w-full"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs mb-1.5 block">Data Fim</Label>
-                      <Input
-                        type="date"
-                        value={dataFim}
-                        onChange={(e) => setDataFim(e.target.value)}
-                        className="w-full"
-                      />
                     </div>
                     <div>
                       <Label className="text-xs mb-1.5 block">ID Make</Label>

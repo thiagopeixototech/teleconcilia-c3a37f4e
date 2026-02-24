@@ -2,17 +2,15 @@ import { useState, useMemo } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQuery } from '@tanstack/react-query';
-import { format, subDays } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
-import { CalendarIcon, Loader2, ArrowUpDown, Search } from 'lucide-react';
+import { format } from 'date-fns';
+import { Loader2, ArrowUpDown, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { PeriodFilter } from '@/components/PeriodFilter';
+import { usePeriodFilter } from '@/hooks/usePeriodFilter';
 
 interface ConsultorPerformance {
   usuario_id: string;
@@ -32,8 +30,8 @@ const formatBRL = (value: number) =>
 
 export default function PerformanceConsultor() {
   const { role } = useAuth();
-  const [dataInicio, setDataInicio] = useState<Date>(subDays(new Date(), 30));
-  const [dataFim, setDataFim] = useState<Date>(new Date());
+  const period = usePeriodFilter('performance');
+  const { dataInicio, dataFim } = period;
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState<SortField>('consultor_nome');
   const [sortAsc, setSortAsc] = useState(true);
@@ -92,27 +90,6 @@ export default function PerformanceConsultor() {
     </TableHead>
   );
 
-  const DatePicker = ({ date, onSelect, label }: { date: Date; onSelect: (d: Date) => void; label: string }) => (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button variant="outline" className={cn("w-[180px] justify-start text-left font-normal", !date && "text-muted-foreground")}>
-          <CalendarIcon className="mr-2 h-4 w-4" />
-          {date ? format(date, "dd/MM/yyyy") : label}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align="start">
-        <Calendar
-          mode="single"
-          selected={date}
-          onSelect={(d) => d && onSelect(d)}
-          initialFocus
-          className="p-3 pointer-events-auto"
-          locale={ptBR}
-        />
-      </PopoverContent>
-    </Popover>
-  );
-
   return (
     <AppLayout title="Performance do Consultor">
       <div className="space-y-4">
@@ -121,20 +98,16 @@ export default function PerformanceConsultor() {
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Filtros</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap items-center gap-3">
-              <DatePicker date={dataInicio} onSelect={setDataInicio} label="Data Início" />
-              <span className="text-muted-foreground">até</span>
-              <DatePicker date={dataFim} onSelect={setDataFim} label="Data Fim" />
-              <div className="relative ml-auto">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar consultor..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-9 w-[220px]"
-                />
-              </div>
+          <CardContent className="space-y-3">
+            <PeriodFilter {...period} />
+            <div className="relative max-w-xs">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar consultor..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9 w-[220px]"
+              />
             </div>
           </CardContent>
         </Card>
