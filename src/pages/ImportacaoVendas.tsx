@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import {
   Select,
   SelectContent,
@@ -119,6 +120,7 @@ export default function ImportacaoVendas() {
 
   // Processing
   const [isProcessing, setIsProcessing] = useState(false);
+  const [importProgress, setImportProgress] = useState<{ current: number; total: number; percent: number } | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
 
   // Load reference data
@@ -255,6 +257,19 @@ export default function ImportacaoVendas() {
     setStep('preview');
   };
 
+  // Pre-computed preview rows (only first 100) to avoid freezing render
+  const previewRows = useMemo(() => {
+    if (step !== 'preview') return [];
+    return csvRows.slice(0, 100).map((row, i) => {
+      const vendedor = findVendedor(row);
+      const operadora = findOperadora(row);
+      const vendedorRawValue = vendedorMode === 'fixed' ? '' : (row[vendedorColumn]?.trim() || '');
+      const operadoraRawValue = operadoraMode === 'fixed' ? '' : (row[operadoraColumn]?.trim() || '');
+      return { row, vendedor, operadora, vendedorRawValue, operadoraRawValue, index: i };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, csvRows, mapping, vendedorMode, vendedorColumn, fixedVendedorId, operadoraMode, operadoraId, operadoraColumn, operadoras, usuarios]);
+
   // Normalize helpers
   const normalizeCpfCnpj = (v: string) => v.replace(/[^\d]/g, '');
   const normalizeTelefone = (v: string) => v.replace(/[^\d]/g, '');
@@ -304,6 +319,7 @@ export default function ImportacaoVendas() {
   // Process import
   const processImport = async () => {
     setIsProcessing(true);
+    setImportProgress({ current: 0, total: csvRows.length, percent: 0 });
     const importResult: ImportResult = { total: csvRows.length, success: 0, updated: 0, errors: [] };
 
     try {
@@ -399,6 +415,8 @@ export default function ImportacaoVendas() {
       }
 
       // Insert new records in batches of 200
+      let processed = 0;
+      const totalToProcess = rowsToInsert.length + rowsToUpdate.length;
       for (let i = 0; i < rowsToInsert.length; i += 200) {
         const batch = rowsToInsert.slice(i, i + 200);
         const { error } = await supabase.from('vendas_internas').insert(batch);
@@ -414,6 +432,9 @@ export default function ImportacaoVendas() {
         } else {
           importResult.success += batch.length;
         }
+        processed += batch.length;
+        setImportProgress({ current: processed, total: totalToProcess, percent: Math.round((processed / totalToProcess) * 100) });
+        await new Promise(r => setTimeout(r, 50)); // yield to UI
       }
 
       // Update existing records one by one
@@ -426,6 +447,11 @@ export default function ImportacaoVendas() {
           importResult.errors.push({ line: 0, reason: `Erro ao atualizar: ${error.message}`, data: item.data });
         } else {
           importResult.updated++;
+        }
+        processed++;
+        if (processed % 50 === 0) {
+          setImportProgress({ current: processed, total: totalToProcess, percent: Math.round((processed / totalToProcess) * 100) });
+          await new Promise(r => setTimeout(r, 50)); // yield to UI
         }
       }
 
@@ -455,6 +481,7 @@ export default function ImportacaoVendas() {
       toast.error(err.message || 'Erro ao processar importação');
     } finally {
       setIsProcessing(false);
+      setImportProgress(null);
     }
   };
 
@@ -866,40 +893,34 @@ export default function ImportacaoVendas() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {csvRows.slice(0, 100).map((row, i) => {
-                      const vendedor = findVendedor(row);
-                      const operadora = findOperadora(row);
-                      const vendedorRawValue = vendedorMode === 'fixed' ? '' : (row[vendedorColumn]?.trim() || '');
-                      const operadoraRawValue = operadoraMode === 'fixed' ? '' : (row[operadoraColumn]?.trim() || '');
-                      return (
-                        <TableRow key={i}>
-                          <TableCell className="text-xs">{i + 1}</TableCell>
-                          {CAMPOS_VENDAS.filter(c => mapping[c.key]).map(c => (
-                            <TableCell key={c.key} className="text-xs whitespace-nowrap max-w-[150px] truncate">
-                              {row[mapping[c.key]] || '-'}
-                            </TableCell>
-                          ))}
-                          <TableCell className="text-xs">
-                            {operadora ? (
-                              <Badge variant="outline" className="text-xs">{operadora.nome}</Badge>
-                            ) : (
-                              <Badge variant="destructive" className="text-xs">
-                                Não encontrada{operadoraRawValue ? ` ("${operadoraRawValue}")` : ''}
-                              </Badge>
-                            )}
+                    {previewRows.map((pr) => (
+                      <TableRow key={pr.index}>
+                        <TableCell className="text-xs">{pr.index + 1}</TableCell>
+                        {CAMPOS_VENDAS.filter(c => mapping[c.key]).map(c => (
+                          <TableCell key={c.key} className="text-xs whitespace-nowrap max-w-[150px] truncate">
+                            {pr.row[mapping[c.key]] || '-'}
                           </TableCell>
-                          <TableCell className="text-xs">
-                            {vendedor ? (
-                              <Badge variant="outline" className="text-xs">{vendedor.nome}</Badge>
-                            ) : (
-                              <Badge variant="destructive" className="text-xs">
-                                Não encontrado{vendedorRawValue ? ` ("${vendedorRawValue}")` : ''}
-                              </Badge>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
+                        ))}
+                        <TableCell className="text-xs">
+                          {pr.operadora ? (
+                            <Badge variant="outline" className="text-xs">{pr.operadora.nome}</Badge>
+                          ) : (
+                            <Badge variant="destructive" className="text-xs">
+                              Não encontrada{pr.operadoraRawValue ? ` ("${pr.operadoraRawValue}")` : ''}
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {pr.vendedor ? (
+                            <Badge variant="outline" className="text-xs">{pr.vendedor.nome}</Badge>
+                          ) : (
+                            <Badge variant="destructive" className="text-xs">
+                              Não encontrado{pr.vendedorRawValue ? ` ("${pr.vendedorRawValue}")` : ''}
+                            </Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
                   </TableBody>
                 </Table>
               </div>
@@ -909,8 +930,18 @@ export default function ImportacaoVendas() {
                 </p>
               )}
 
+              {/* Import progress */}
+              {isProcessing && importProgress && (
+                <div className="space-y-2">
+                  <Progress value={importProgress.percent} className="h-3" />
+                  <p className="text-xs text-muted-foreground text-center">
+                    Processando {importProgress.current} de {importProgress.total} ({importProgress.percent}%)
+                  </p>
+                </div>
+              )}
+
               <div className="flex justify-between">
-                <Button variant="outline" onClick={() => setStep('mapping')}>
+                <Button variant="outline" onClick={() => setStep('mapping')} disabled={isProcessing}>
                   <ArrowLeft className="mr-2 h-4 w-4" />
                   Voltar
                 </Button>
