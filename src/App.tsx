@@ -20,6 +20,7 @@ import GestaoRoles from "./pages/GestaoRoles";
 import CadastrosPendentes from "./pages/CadastrosPendentes";
 import Operadoras from "./pages/Operadoras";
 import MapeamentoColunas from "./pages/MapeamentoColunas";
+import PerformanceConsultor from "./pages/PerformanceConsultor";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -139,6 +140,15 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={['admin']}>
                   <MapeamentoColunas />
+                </ProtectedRoute>
+              }
+            />
+            
+            <Route
+              path="/performance"
+              element={
+                <ProtectedRoute allowedRoles={['admin', 'supervisor']}>
+                  <PerformanceConsultor />
                 </ProtectedRoute>
               }
             />

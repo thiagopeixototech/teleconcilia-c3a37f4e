@@ -12,7 +12,8 @@ import {
   ClipboardList,
   Clock,
   Radio,
-  Columns
+  Columns,
+  BarChart3
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/contexts/AuthContext';
@@ -54,6 +55,7 @@ const cadastrosItems = [
 const gestaoItems = [
   { title: 'Conciliação', url: '/conciliacao', icon: GitCompare },
   { title: 'Divergências', url: '/divergencias', icon: AlertTriangle },
+  { title: 'Performance', url: '/performance', icon: BarChart3 },
 ];
 
 // Submenu Admin - apenas admin
