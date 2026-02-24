@@ -23,6 +23,7 @@ import MapeamentoColunas from "./pages/MapeamentoColunas";
 import PerformanceConsultor from "./pages/PerformanceConsultor";
 import ImportacaoVendas from "./pages/ImportacaoVendas";
 import ImportacaoEstornos from "./pages/ImportacaoEstornos";
+import CadastroMassa from "./pages/CadastroMassa";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -169,6 +170,15 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={['admin']}>
                   <ImportacaoEstornos />
+                </ProtectedRoute>
+              }
+            />
+            
+            <Route
+              path="/cadastro-massa"
+              element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <CadastroMassa />
                 </ProtectedRoute>
               }
             />

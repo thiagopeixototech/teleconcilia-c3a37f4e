@@ -51,6 +51,7 @@ const cadastrosItems = [
   { title: 'Empresas', url: '/empresas', icon: Building2 },
   { title: 'Operadoras', url: '/operadoras', icon: Radio },
   { title: 'Usuários', url: '/usuarios', icon: Users },
+  { title: 'Cadastro em Massa', url: '/cadastro-massa', icon: Upload },
   { title: 'Permissões', url: '/permissoes', icon: Shield },
 ];
 
