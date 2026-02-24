@@ -10,6 +10,7 @@ const corsHeaders = {
 interface UserInput {
   nome: string;
   email: string;
+  cpf?: string;
   empresa_id?: string;
   supervisor_id?: string;
 }
@@ -89,6 +90,7 @@ serve(async (req: Request) => {
           nome: u.nome.trim(),
           ativo: true,
         };
+        if (u.cpf) updateFields.cpf = u.cpf.replace(/\D/g, '');
         if (u.empresa_id) updateFields.empresa_id = u.empresa_id;
         if (u.supervisor_id) updateFields.supervisor_id = u.supervisor_id;
 
