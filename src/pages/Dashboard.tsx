@@ -4,6 +4,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { PendingAccessMessage } from '@/components/PendingAccessMessage';
+import { PeriodFilter } from '@/components/PeriodFilter';
+import { usePeriodFilter } from '@/hooks/usePeriodFilter';
 import { 
   ShoppingCart, 
   CheckCircle, 
@@ -42,6 +44,8 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [vendasPorStatus, setVendasPorStatus] = useState<{ name: string; value: number }[]>([]);
 
+  const period = usePeriodFilter('dashboard');
+
   // Usuário sem role e sem vendedor vinculado = acesso pendente
   const isPendingAccess = !role && !vendedor && !isAdmin;
 
@@ -51,14 +55,17 @@ export default function Dashboard() {
     } else {
       setIsLoading(false);
     }
-  }, [vendedor, isPendingAccess]);
+  }, [vendedor, isPendingAccess, period.dataInicioStr, period.dataFimStr]);
 
   const fetchDashboardData = async () => {
     try {
-      // Fetch vendas internas
+      setIsLoading(true);
+      // Fetch vendas internas filtered by period
       const { data: vendas, error } = await supabase
         .from('vendas_internas')
-        .select('*');
+        .select('*')
+        .gte('data_venda', period.dataInicioStr)
+        .lte('data_venda', period.dataFimStr);
 
       if (error) throw error;
 
@@ -72,15 +79,26 @@ export default function Dashboard() {
         v.status_make?.toLowerCase().startsWith('instalad')
       ).reduce((sum, v) => sum + (Number(v.valor) || 0), 0) || 0;
 
-      // Fetch conciliacoes with venda values
-      const { data: conciliacoes } = await supabase
-        .from('conciliacoes')
-        .select('*, venda:vendas_internas(valor)');
+      // Fetch conciliacoes for vendas in the period
+      const vendaIds = vendas?.map(v => v.id) || [];
+      let conciliadas = 0;
+      let valorConciliado = 0;
 
-      const conciliadas = conciliacoes?.filter(c => c.status_final === 'conciliado').length || 0;
-      const valorConciliado = conciliacoes
-        ?.filter(c => c.status_final === 'conciliado')
-        .reduce((sum, c) => sum + (Number((c as any).venda?.valor) || 0), 0) || 0;
+      if (vendaIds.length > 0) {
+        // Batch fetch conciliacoes
+        for (let i = 0; i < vendaIds.length; i += 500) {
+          const batch = vendaIds.slice(i, i + 500);
+          const { data: conciliacoes } = await supabase
+            .from('conciliacoes')
+            .select('*, venda:vendas_internas(valor)')
+            .in('venda_interna_id', batch);
+
+          const batchConciliadas = conciliacoes?.filter(c => c.status_final === 'conciliado') || [];
+          conciliadas += batchConciliadas.length;
+          valorConciliado += batchConciliadas.reduce((sum, c) => sum + (Number((c as any).venda?.valor) || 0), 0);
+        }
+      }
+
       const percentualConciliacao = vendasInstaladas > 0 ? (conciliadas / vendasInstaladas) * 100 : 0;
 
       setStats({
@@ -115,16 +133,6 @@ export default function Dashboard() {
     }
   };
 
-  if (isLoading) {
-    return (
-      <AppLayout title="Dashboard">
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </div>
-      </AppLayout>
-    );
-  }
-
   // Mostrar mensagem para usuários sem acesso
   if (isPendingAccess) {
     return (
@@ -137,192 +145,207 @@ export default function Dashboard() {
   return (
     <AppLayout title="Dashboard">
       <div className="space-y-6">
-        {/* KPI Cards */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Vendas Instaladas
-              </CardTitle>
-              <ShoppingCart className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats?.vendasInstaladas || 0}</div>
-              <p className="text-xs text-muted-foreground">
-                de {stats?.totalVendas || 0} vendas totais
-              </p>
-            </CardContent>
-          </Card>
+        {/* Period Filter */}
+        <Card>
+          <CardContent className="pt-6">
+            <PeriodFilter {...period} />
+          </CardContent>
+        </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Confirmadas
-              </CardTitle>
-              <CheckCircle className="h-4 w-4 text-success" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-success">{stats?.vendasConfirmadas || 0}</div>
-              <p className="text-xs text-muted-foreground">
-                vendas confirmadas
-              </p>
-            </CardContent>
-          </Card>
+        {isLoading ? (
+          <div className="flex items-center justify-center h-64">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        ) : (
+          <>
+            {/* KPI Cards */}
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Vendas Instaladas
+                  </CardTitle>
+                  <ShoppingCart className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{stats?.vendasInstaladas || 0}</div>
+                  <p className="text-xs text-muted-foreground">
+                    de {stats?.totalVendas || 0} vendas totais
+                  </p>
+                </CardContent>
+              </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                % Conciliação
-              </CardTitle>
-              <TrendingUp className="h-4 w-4 text-info" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-info">
-                {stats?.percentualConciliacao.toFixed(1) || 0}%
-              </div>
-              <p className="text-xs text-muted-foreground">
-                sobre vendas instaladas
-              </p>
-            </CardContent>
-          </Card>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Confirmadas
+                  </CardTitle>
+                  <CheckCircle className="h-4 w-4 text-success" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-success">{stats?.vendasConfirmadas || 0}</div>
+                  <p className="text-xs text-muted-foreground">
+                    vendas confirmadas
+                  </p>
+                </CardContent>
+              </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Valor Total
-              </CardTitle>
-              <TrendingUp className="h-4 w-4 text-primary" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {new Intl.NumberFormat('pt-BR', { 
-                  style: 'currency', 
-                  currency: 'BRL' 
-                }).format(stats?.valorTotal || 0)}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                em vendas instaladas
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Valor Conciliado
-              </CardTitle>
-              <CheckCircle className="h-4 w-4 text-success" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-success">
-                {new Intl.NumberFormat('pt-BR', { 
-                  style: 'currency', 
-                  currency: 'BRL' 
-                }).format(stats?.valorConciliado || 0)}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                em vendas conciliadas
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Charts */}
-        <div className="grid gap-6 md:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Vendas por Status</CardTitle>
-              <CardDescription>Distribuição das vendas por status interno</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {vendasPorStatus.length > 0 ? (
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={vendasPorStatus}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                      outerRadius={100}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {vendasPorStatus.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex items-center justify-center h-[300px] text-muted-foreground">
-                  Nenhuma venda registrada
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Resumo de Conciliação</CardTitle>
-              <CardDescription>Status das conciliações realizadas</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 rounded-lg bg-muted/50">
-                  <div className="flex items-center gap-3">
-                    <div className="h-3 w-3 rounded-full bg-success" />
-                    <span className="text-sm font-medium">Conciliadas</span>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    % Conciliação
+                  </CardTitle>
+                  <TrendingUp className="h-4 w-4 text-info" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-info">
+                    {stats?.percentualConciliacao.toFixed(1) || 0}%
                   </div>
-                  <span className="text-lg font-bold">
-                    {stats?.vendasConfirmadas || 0}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between p-4 rounded-lg bg-muted/50">
-                  <div className="flex items-center gap-3">
-                    <div className="h-3 w-3 rounded-full bg-warning" />
-                    <span className="text-sm font-medium">Divergentes</span>
-                  </div>
-                  <span className="text-lg font-bold">0</span>
-                </div>
-                <div className="flex items-center justify-between p-4 rounded-lg bg-muted/50">
-                  <div className="flex items-center gap-3">
-                    <div className="h-3 w-3 rounded-full bg-destructive" />
-                    <span className="text-sm font-medium">Não Encontradas</span>
-                  </div>
-                  <span className="text-lg font-bold">
-                    {(stats?.vendasInstaladas || 0) - (stats?.vendasConfirmadas || 0)}
-                  </span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+                  <p className="text-xs text-muted-foreground">
+                    sobre vendas instaladas
+                  </p>
+                </CardContent>
+              </Card>
 
-        {/* Quick Info */}
-        {vendedor && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Informações do Usuário</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 md:grid-cols-3">
-                <div>
-                  <p className="text-sm text-muted-foreground">Nome</p>
-                  <p className="font-medium">{vendedor.nome}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Email</p>
-                  <p className="font-medium">{vendedor.email}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Empresa</p>
-                  <p className="font-medium">{vendedor.empresa?.nome || 'Não vinculado'}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Valor Total
+                  </CardTitle>
+                  <TrendingUp className="h-4 w-4 text-primary" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    {new Intl.NumberFormat('pt-BR', { 
+                      style: 'currency', 
+                      currency: 'BRL' 
+                    }).format(stats?.valorTotal || 0)}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    em vendas instaladas
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Valor Conciliado
+                  </CardTitle>
+                  <CheckCircle className="h-4 w-4 text-success" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-success">
+                    {new Intl.NumberFormat('pt-BR', { 
+                      style: 'currency', 
+                      currency: 'BRL' 
+                    }).format(stats?.valorConciliado || 0)}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    em vendas conciliadas
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Charts */}
+            <div className="grid gap-6 md:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Vendas por Status</CardTitle>
+                  <CardDescription>Distribuição das vendas por status interno</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {vendasPorStatus.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={300}>
+                      <PieChart>
+                        <Pie
+                          data={vendasPorStatus}
+                          cx="50%"
+                          cy="50%"
+                          labelLine={false}
+                          label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                          outerRadius={100}
+                          fill="#8884d8"
+                          dataKey="value"
+                        >
+                          {vendasPorStatus.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                      Nenhuma venda registrada
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Resumo de Conciliação</CardTitle>
+                  <CardDescription>Status das conciliações realizadas</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between p-4 rounded-lg bg-muted/50">
+                      <div className="flex items-center gap-3">
+                        <div className="h-3 w-3 rounded-full bg-success" />
+                        <span className="text-sm font-medium">Conciliadas</span>
+                      </div>
+                      <span className="text-lg font-bold">
+                        {stats?.vendasConfirmadas || 0}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between p-4 rounded-lg bg-muted/50">
+                      <div className="flex items-center gap-3">
+                        <div className="h-3 w-3 rounded-full bg-warning" />
+                        <span className="text-sm font-medium">Divergentes</span>
+                      </div>
+                      <span className="text-lg font-bold">0</span>
+                    </div>
+                    <div className="flex items-center justify-between p-4 rounded-lg bg-muted/50">
+                      <div className="flex items-center gap-3">
+                        <div className="h-3 w-3 rounded-full bg-destructive" />
+                        <span className="text-sm font-medium">Não Encontradas</span>
+                      </div>
+                      <span className="text-lg font-bold">
+                        {(stats?.vendasInstaladas || 0) - (stats?.vendasConfirmadas || 0)}
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Quick Info */}
+            {vendedor && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Informações do Usuário</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Nome</p>
+                      <p className="font-medium">{vendedor.nome}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Email</p>
+                      <p className="font-medium">{vendedor.email}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Empresa</p>
+                      <p className="font-medium">{vendedor.empresa?.nome || 'Não vinculado'}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </>
         )}
       </div>
     </AppLayout>
