@@ -16,6 +16,7 @@ import { Upload, Users, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 interface ParsedUser {
   nome: string;
   email: string;
+  cpf: string;
 }
 
 interface ResultItem {
@@ -53,19 +54,19 @@ export default function CadastroMassa() {
     const users: ParsedUser[] = [];
 
     for (const line of lines) {
-      // Support: "nome;email" or "nome,email" or CSV with header
       const parts = line.includes(';') ? line.split(';') : line.split(',');
-      if (parts.length >= 2) {
+      if (parts.length >= 3) {
         const nome = parts[0].trim();
         const email = parts[1].trim();
-        if (nome && email && email.includes('@')) {
-          users.push({ nome, email: email.toLowerCase() });
+        const cpf = parts[2].trim().replace(/\D/g, '');
+        if (nome && email && email.includes('@') && cpf.length >= 11) {
+          users.push({ nome, email: email.toLowerCase(), cpf });
         }
       }
     }
 
     if (users.length === 0) {
-      toast.error('Nenhum usuário válido encontrado. Use o formato: Nome;email@exemplo.com');
+      toast.error('Nenhum usuário válido encontrado. Use o formato: Nome;email;CPF (um por linha)');
       return;
     }
 
@@ -84,8 +85,9 @@ export default function CadastroMassa() {
         usuarios: parsedUsers.map(u => ({
           nome: u.nome,
           email: u.email,
-          ...(empresaId ? { empresa_id: empresaId } : {}),
-          ...(supervisorId ? { supervisor_id: supervisorId } : {}),
+          cpf: u.cpf,
+          ...(empresaId && empresaId !== 'none' ? { empresa_id: empresaId } : {}),
+          ...(supervisorId && supervisorId !== 'none' ? { supervisor_id: supervisorId } : {}),
         })),
         senha_padrao: 'Mudar@123',
         role: 'vendedor',
@@ -119,11 +121,11 @@ export default function CadastroMassa() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2"><Upload className="h-5 w-5" /> Lista de Usuários</CardTitle>
-              <CardDescription>Cole a lista no formato: <strong>Nome;email@exemplo.com</strong> (um por linha)</CardDescription>
+              <CardDescription>Cole a lista no formato: <strong>Nome;email;CPF</strong> (um por linha)</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <Textarea
-                placeholder={"João Silva;joao@empresa.com\nMaria Santos;maria@empresa.com\nPedro Souza;pedro@empresa.com"}
+                placeholder={"João Silva;joao@empresa.com;12345678900\nMaria Santos;maria@empresa.com;98765432100\nPedro Souza;pedro@empresa.com;11122233344"}
                 rows={10}
                 value={rawText}
                 onChange={e => setRawText(e.target.value)}
@@ -207,22 +209,24 @@ export default function CadastroMassa() {
                 </div>
               ) : parsedUsers.length > 0 ? (
                 <div className="max-h-[400px] overflow-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>#</TableHead>
-                        <TableHead>Nome</TableHead>
-                        <TableHead>Email</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {parsedUsers.map((u, i) => (
-                        <TableRow key={i}>
-                          <TableCell>{i + 1}</TableCell>
-                          <TableCell>{u.nome}</TableCell>
-                          <TableCell className="font-mono text-sm">{u.email}</TableCell>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>#</TableHead>
+                          <TableHead>Nome</TableHead>
+                          <TableHead>Email</TableHead>
+                          <TableHead>CPF</TableHead>
                         </TableRow>
-                      ))}
+                      </TableHeader>
+                      <TableBody>
+                        {parsedUsers.map((u, i) => (
+                          <TableRow key={i}>
+                            <TableCell>{i + 1}</TableCell>
+                            <TableCell>{u.nome}</TableCell>
+                            <TableCell className="font-mono text-sm">{u.email}</TableCell>
+                            <TableCell className="font-mono text-sm">{u.cpf}</TableCell>
+                          </TableRow>
+                        ))}
                     </TableBody>
                   </Table>
                 </div>
