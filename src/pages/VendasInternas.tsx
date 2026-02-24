@@ -82,6 +82,7 @@ export default function VendasInternas() {
   const [vendas, setVendas] = useState<VendaInterna[]>([]);
   const [operadoras, setOperadoras] = useState<Operadora[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [totalCount, setTotalCount] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [operadoraFilter, setOperadoraFilter] = useState<string>('all');
@@ -108,21 +109,47 @@ export default function VendasInternas() {
 
   const fetchVendas = async () => {
     try {
-      const { data, error } = await supabase
+      // Fetch total count first
+      const { count, error: countError } = await supabase
         .from('vendas_internas')
-        .select(`
-          *,
-          usuario:usuarios(nome, email),
-          empresa:empresas(nome)
-        `)
-        .order('created_at', { ascending: false });
+        .select('*', { count: 'exact', head: true });
 
-      if (error) throw error;
-      setVendas(data as any);
+      if (countError) throw countError;
+      setTotalCount(count || 0);
+
+      // Fetch all records in batches of 1000
+      const allVendas: any[] = [];
+      const batchSize = 1000;
+      let from = 0;
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('vendas_internas')
+          .select(`
+            *,
+            usuario:usuarios(nome, email),
+            empresa:empresas(nome)
+          `)
+          .order('created_at', { ascending: false })
+          .range(from, from + batchSize - 1);
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          allVendas.push(...data);
+          from += batchSize;
+          hasMore = data.length === batchSize;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      setVendas(allVendas as any);
       
       // Extract unique status_make values
       const uniqueStatusMake = [...new Set(
-        (data as any[])
+        allVendas
           .map((v: any) => v.status_make)
           .filter((s: string | null): s is string => s !== null && s !== undefined && s !== '')
       )].sort();
@@ -453,7 +480,10 @@ export default function VendasInternas() {
         {/* Table */}
         <Card>
           <CardHeader>
-            <CardTitle>Vendas Registradas ({filteredVendas.length})</CardTitle>
+            <CardTitle>
+              Vendas Registradas ({filteredVendas.length}
+              {filteredVendas.length !== totalCount && ` de ${totalCount}`})
+            </CardTitle>
             {filteredVendas.length > visibleCount && (
               <p className="text-sm text-muted-foreground">
                 Mostrando {Math.min(visibleCount, filteredVendas.length)} de {filteredVendas.length}
