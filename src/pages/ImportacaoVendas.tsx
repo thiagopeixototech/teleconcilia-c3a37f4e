@@ -53,7 +53,9 @@ interface MapeamentoVendas {
     vendedor_mode?: 'column_cpf' | 'column_email' | 'fixed';
     vendedor_column?: string;
     fixed_vendedor_id?: string;
+    operadora_mode?: 'fixed' | 'column';
     operadora_id?: string;
+    operadora_column?: string;
     empresa_id?: string;
   };
   ativo: boolean;
@@ -104,7 +106,9 @@ export default function ImportacaoVendas() {
   const [vendedorMode, setVendedorMode] = useState<'column_cpf' | 'column_email' | 'fixed'>('column_cpf');
   const [vendedorColumn, setVendedorColumn] = useState('');
   const [fixedVendedorId, setFixedVendedorId] = useState('');
+  const [operadoraMode, setOperadoraMode] = useState<'fixed' | 'column'>('fixed');
   const [operadoraId, setOperadoraId] = useState('');
+  const [operadoraColumn, setOperadoraColumn] = useState('');
   const [empresaId, setEmpresaId] = useState('');
   const [modelName, setModelName] = useState('');
 
@@ -181,7 +185,9 @@ export default function ImportacaoVendas() {
     setVendedorMode(m.config?.vendedor_mode || 'column_cpf');
     setVendedorColumn(m.config?.vendedor_column || '');
     setFixedVendedorId(m.config?.fixed_vendedor_id || '');
+    setOperadoraMode(m.config?.operadora_mode || 'fixed');
     if (m.config?.operadora_id) setOperadoraId(m.config.operadora_id);
+    if (m.config?.operadora_column) setOperadoraColumn(m.config.operadora_column);
     if (m.config?.empresa_id) setEmpresaId(m.config.empresa_id);
     setModelName(m.nome);
   };
@@ -199,7 +205,9 @@ export default function ImportacaoVendas() {
         vendedor_mode: vendedorMode,
         vendedor_column: vendedorColumn,
         fixed_vendedor_id: fixedVendedorId,
+        operadora_mode: operadoraMode,
         operadora_id: operadoraId,
+        operadora_column: operadoraColumn,
         empresa_id: empresaId,
       },
       ativo: true,
@@ -231,7 +239,8 @@ export default function ImportacaoVendas() {
     for (const campo of required) {
       if (!mapping[campo.key]) return `Campo obrigatório não mapeado: ${campo.label}`;
     }
-    if (!operadoraId) return 'Selecione a operadora';
+    if (operadoraMode === 'fixed' && !operadoraId) return 'Selecione a operadora';
+    if (operadoraMode === 'column' && !operadoraColumn) return 'Selecione a coluna da operadora';
     if (!empresaId) return 'Selecione a empresa';
     if (vendedorMode === 'fixed' && !fixedVendedorId) return 'Selecione o vendedor fixo';
     if ((vendedorMode === 'column_cpf' || vendedorMode === 'column_email') && !vendedorColumn) {
@@ -262,6 +271,17 @@ export default function ImportacaoVendas() {
     const usMatch = v.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
     if (usMatch) return `${usMatch[3]}-${usMatch[1].padStart(2, '0')}-${usMatch[2].padStart(2, '0')}`;
     return null;
+  };
+
+  // Find operadora by name from row
+  const findOperadora = (row: Record<string, string>): Operadora | null => {
+    if (operadoraMode === 'fixed') {
+      return operadoras.find(o => o.id === operadoraId) || null;
+    }
+    const value = row[operadoraColumn]?.trim();
+    if (!value) return null;
+    const normalized = value.toLowerCase();
+    return operadoras.find(o => o.nome.toLowerCase() === normalized) || null;
   };
 
   // Find vendedor by CPF or email
@@ -337,6 +357,13 @@ export default function ImportacaoVendas() {
           continue;
         }
 
+        const operadora = findOperadora(row);
+        if (!operadora) {
+          const opValue = operadoraMode === 'fixed' ? operadoraId : row[operadoraColumn];
+          importResult.errors.push({ line: lineNum, reason: `Operadora não encontrada: "${opValue}"`, data: row });
+          continue;
+        }
+
         const cpf = mapping.cpf_cnpj ? normalizeCpfCnpj(row[mapping.cpf_cnpj] || '') : null;
         const telefone = mapping.telefone ? normalizeTelefone(row[mapping.telefone] || '') : null;
         const valorStr = mapping.valor ? row[mapping.valor]?.replace(',', '.').replace(/[^\d.-]/g, '') : null;
@@ -357,7 +384,7 @@ export default function ImportacaoVendas() {
           cep: mapping.cep ? row[mapping.cep]?.trim() || null : null,
           endereco: mapping.endereco ? row[mapping.endereco]?.trim() || null : null,
           observacoes: mapping.observacoes ? row[mapping.observacoes]?.trim() || null : null,
-          operadora_id: operadoraId,
+          operadora_id: operadora.id,
           empresa_id: empresaId,
           usuario_id: vendedor.id,
         };
@@ -603,29 +630,70 @@ export default function ImportacaoVendas() {
                 <CardTitle className="text-base">Configuração da Importação</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label>Operadora *</Label>
-                    <Select value={operadoraId} onValueChange={setOperadoraId}>
-                      <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                      <SelectContent>
-                        {operadoras.map(o => (
-                          <SelectItem key={o.id} value={o.id}>{o.nome}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                <div>
+                  <Label className="text-sm font-semibold">Operadora *</Label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+                    <Button
+                      variant={operadoraMode === 'column' ? 'default' : 'outline'}
+                      className="justify-start h-auto py-3"
+                      onClick={() => setOperadoraMode('column')}
+                    >
+                      <div className="text-left">
+                        <div className="font-medium">Da planilha (por nome)</div>
+                        <div className="text-xs opacity-70">Coluna com nome da operadora</div>
+                      </div>
+                    </Button>
+                    <Button
+                      variant={operadoraMode === 'fixed' ? 'default' : 'outline'}
+                      className="justify-start h-auto py-3"
+                      onClick={() => setOperadoraMode('fixed')}
+                    >
+                      <div className="text-left">
+                        <div className="font-medium">Operadora fixa</div>
+                        <div className="text-xs opacity-70">Todas as linhas = 1 operadora</div>
+                      </div>
+                    </Button>
                   </div>
-                  <div>
-                    <Label>Empresa *</Label>
-                    <Select value={empresaId} onValueChange={setEmpresaId}>
-                      <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                      <SelectContent>
-                        {empresas.map(e => (
-                          <SelectItem key={e.id} value={e.id}>{e.nome}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+
+                  {operadoraMode === 'column' && (
+                    <div className="mt-3">
+                      <Label>Coluna da Operadora</Label>
+                      <Select value={operadoraColumn} onValueChange={setOperadoraColumn}>
+                        <SelectTrigger><SelectValue placeholder="Selecione a coluna..." /></SelectTrigger>
+                        <SelectContent>
+                          {csvHeaders.map(h => (
+                            <SelectItem key={h} value={h}>{h}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground mt-1">O nome na planilha deve ser igual ao cadastrado no sistema</p>
+                    </div>
+                  )}
+                  {operadoraMode === 'fixed' && (
+                    <div className="mt-3">
+                      <Label>Operadora</Label>
+                      <Select value={operadoraId} onValueChange={setOperadoraId}>
+                        <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                        <SelectContent>
+                          {operadoras.map(o => (
+                            <SelectItem key={o.id} value={o.id}>{o.nome}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <Label>Empresa *</Label>
+                  <Select value={empresaId} onValueChange={setEmpresaId}>
+                    <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                    <SelectContent>
+                      {empresas.map(e => (
+                        <SelectItem key={e.id} value={e.id}>{e.nome}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <Separator />
@@ -763,7 +831,11 @@ export default function ImportacaoVendas() {
                   <div className="text-xs text-muted-foreground">Total de linhas</div>
                 </div>
                 <div className="bg-muted rounded-lg p-3 text-center">
-                  <div className="text-2xl font-bold">{operadoras.find(o => o.id === operadoraId)?.nome || '-'}</div>
+                  <div className="text-2xl font-bold">
+                    {operadoraMode === 'fixed'
+                      ? operadoras.find(o => o.id === operadoraId)?.nome || '-'
+                      : `Coluna: ${operadoraColumn}`}
+                  </div>
                   <div className="text-xs text-muted-foreground">Operadora</div>
                 </div>
                 <div className="bg-muted rounded-lg p-3 text-center">
@@ -789,12 +861,14 @@ export default function ImportacaoVendas() {
                       {CAMPOS_VENDAS.filter(c => mapping[c.key]).map(c => (
                         <TableHead key={c.key} className="text-xs whitespace-nowrap">{c.label}</TableHead>
                       ))}
+                      <TableHead className="text-xs">Operadora</TableHead>
                       <TableHead className="text-xs">Vendedor</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {csvRows.slice(0, 10).map((row, i) => {
                       const vendedor = findVendedor(row);
+                      const operadora = findOperadora(row);
                       return (
                         <TableRow key={i}>
                           <TableCell className="text-xs">{i + 1}</TableCell>
@@ -803,6 +877,13 @@ export default function ImportacaoVendas() {
                               {row[mapping[c.key]] || '-'}
                             </TableCell>
                           ))}
+                          <TableCell className="text-xs">
+                            {operadora ? (
+                              <Badge variant="outline" className="text-xs">{operadora.nome}</Badge>
+                            ) : (
+                              <Badge variant="destructive" className="text-xs">Não encontrada</Badge>
+                            )}
+                          </TableCell>
                           <TableCell className="text-xs">
                             {vendedor ? (
                               <Badge variant="outline" className="text-xs">{vendedor.nome}</Badge>
