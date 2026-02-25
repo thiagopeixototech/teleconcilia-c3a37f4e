@@ -444,19 +444,6 @@ export default function VendasInternas() {
         <Card>
           <CardContent className="pt-6">
             <div className="flex flex-col gap-4">
-              {/* Period Filter */}
-              <div className="flex flex-wrap items-center gap-3">
-                <Select value={dateField} onValueChange={(v) => setDateField(v as 'data_venda' | 'data_instalacao')}>
-                  <SelectTrigger className="w-[180px] h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="data_venda">Data de Venda</SelectItem>
-                    <SelectItem value="data_instalacao">Data de Instalação</SelectItem>
-                  </SelectContent>
-                </Select>
-                <PeriodFilter {...period} />
-              </div>
               {/* Main filters row */}
               <div className="flex flex-col md:flex-row gap-4">
                 <div className="relative flex-1">
@@ -521,6 +508,19 @@ export default function VendasInternas() {
                         Limpar filtros
                       </Button>
                     )}
+                  </div>
+                  {/* Period + date field */}
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Select value={dateField} onValueChange={(v) => setDateField(v as 'data_venda' | 'data_instalacao')}>
+                      <SelectTrigger className="w-[180px] h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="data_venda">Data de Venda</SelectItem>
+                        <SelectItem value="data_instalacao">Data de Instalação</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <PeriodFilter {...period} />
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div>
