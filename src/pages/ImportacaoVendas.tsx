@@ -257,32 +257,16 @@ export default function ImportacaoVendas() {
     setStep('preview');
   };
 
-  // Pre-computed preview rows (only first 100) to avoid freezing render
-  const previewRows = useMemo(() => {
-    if (step !== 'preview') return [];
-    return csvRows.slice(0, 100).map((row, i) => {
-      const vendedor = findVendedor(row);
-      const operadora = findOperadora(row);
-      const vendedorRawValue = vendedorMode === 'fixed' ? '' : (row[vendedorColumn]?.trim() || '');
-      const operadoraRawValue = operadoraMode === 'fixed' ? '' : (row[operadoraColumn]?.trim() || '');
-      return { row, vendedor, operadora, vendedorRawValue, operadoraRawValue, index: i };
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, csvRows, mapping, vendedorMode, vendedorColumn, fixedVendedorId, operadoraMode, operadoraId, operadoraColumn, operadoras, usuarios]);
-
   // Normalize helpers
   const normalizeCpfCnpj = (v: string) => v.replace(/[^\d]/g, '');
   const normalizeTelefone = (v: string) => v.replace(/[^\d]/g, '');
 
   const parseDate = (v: string): string | null => {
     if (!v) return null;
-    // Try dd/mm/yyyy
     const brMatch = v.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
     if (brMatch) return `${brMatch[3]}-${brMatch[2].padStart(2, '0')}-${brMatch[1].padStart(2, '0')}`;
-    // Try yyyy-mm-dd
     const isoMatch = v.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
     if (isoMatch) return `${isoMatch[1]}-${isoMatch[2].padStart(2, '0')}-${isoMatch[3].padStart(2, '0')}`;
-    // Try mm/dd/yyyy
     const usMatch = v.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
     if (usMatch) return `${usMatch[3]}-${usMatch[1].padStart(2, '0')}-${usMatch[2].padStart(2, '0')}`;
     return null;
@@ -315,6 +299,19 @@ export default function ImportacaoVendas() {
     }
     return null;
   };
+
+  // Pre-computed preview rows (only first 100) to avoid freezing render
+  const previewRows = useMemo(() => {
+    if (step !== 'preview') return [];
+    return csvRows.slice(0, 100).map((row, i) => {
+      const vendedor = findVendedor(row);
+      const operadora = findOperadora(row);
+      const vendedorRawValue = vendedorMode === 'fixed' ? '' : (row[vendedorColumn]?.trim() || '');
+      const operadoraRawValue = operadoraMode === 'fixed' ? '' : (row[operadoraColumn]?.trim() || '');
+      return { row, vendedor, operadora, vendedorRawValue, operadoraRawValue, index: i };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, csvRows, mapping, vendedorMode, vendedorColumn, fixedVendedorId, operadoraMode, operadoraId, operadoraColumn, operadoras, usuarios]);
 
   // Process import
   const processImport = async () => {
