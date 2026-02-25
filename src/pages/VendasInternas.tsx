@@ -101,6 +101,7 @@ export default function VendasInternas() {
   const [idMakeSearch, setIdMakeSearch] = useState('');
   const [protocoloSearch, setProtocoloSearch] = useState('');
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [vendedorFilter, setVendedorFilter] = useState<string>('all');
   const [dateField, setDateField] = useState<'data_venda' | 'data_instalacao'>('data_instalacao');
   const [statusMakeOptions, setStatusMakeOptions] = useState<string[]>([]);
   const [visibleCount, setVisibleCount] = useState(50);
@@ -363,7 +364,7 @@ export default function VendasInternas() {
   // Reset visible count when any filter changes
   useEffect(() => {
     setVisibleCount(50);
-  }, [searchTerm, statusFilter, operadoraFilter, statusMakeFilter, confirmadaFilter, idMakeSearch, protocoloSearch, period.dataInicioStr, period.dataFimStr]);
+  }, [searchTerm, statusFilter, operadoraFilter, vendedorFilter, statusMakeFilter, confirmadaFilter, idMakeSearch, protocoloSearch, period.dataInicioStr, period.dataFimStr]);
 
   const filteredVendas = (() => {
     const filtered = vendas.filter(venda => {
@@ -375,6 +376,7 @@ export default function VendasInternas() {
       
       const matchesStatus = statusFilter === 'all' || venda.status_interno === statusFilter;
       const matchesOperadora = operadoraFilter === 'all' || venda.operadora_id === operadoraFilter;
+      const matchesVendedor = vendedorFilter === 'all' || venda.usuario_id === vendedorFilter;
       
       const matchesStatusMake = statusMakeFilter === 'all' || 
         (statusMakeFilter === '_empty_' ? (!venda.status_make || venda.status_make === '') : venda.status_make === statusMakeFilter);
@@ -388,7 +390,7 @@ export default function VendasInternas() {
       const matchesProtocolo = !protocoloSearch || 
         venda.protocolo_interno?.toLowerCase().includes(protocoloSearch.toLowerCase());
       
-      return matchesSearch && matchesStatus && matchesOperadora && 
+      return matchesSearch && matchesStatus && matchesOperadora && matchesVendedor &&
         matchesStatusMake && matchesConfirmada &&
         matchesIdMake && matchesProtocolo;
     });
@@ -479,6 +481,24 @@ export default function VendasInternas() {
                     ))}
                   </SelectContent>
                 </Select>
+                {(isAdmin || isSupervisor) && (() => {
+                  const vendedoresUnicos = Array.from(
+                    new Map(vendas.map(v => [(v as any).usuario_id, (v as any).usuario?.nome || 'Sem nome'])).entries()
+                  ).sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'));
+                  return (
+                    <Select value={vendedorFilter} onValueChange={setVendedorFilter}>
+                      <SelectTrigger className="w-full md:w-48">
+                        <SelectValue placeholder="Vendedor" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos Vendedores</SelectItem>
+                        {vendedoresUnicos.map(([id, nome]) => (
+                          <SelectItem key={id} value={id}>{nome}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  );
+                })()}
                 <Button 
                   variant={showAdvancedFilters ? "secondary" : "outline"} 
                   onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
