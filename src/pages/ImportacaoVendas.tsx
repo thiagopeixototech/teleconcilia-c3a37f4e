@@ -24,6 +24,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -122,6 +123,13 @@ export default function ImportacaoVendas() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [importProgress, setImportProgress] = useState<{ current: number; total: number; percent: number } | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
+
+  // Error correction state
+  const [errorCorrections, setErrorCorrections] = useState<Record<number, { vendedor_id?: string; operadora_id?: string }>>({});
+  const [selectedErrorIndices, setSelectedErrorIndices] = useState<Set<number>>(new Set());
+  const [bulkVendedorId, setBulkVendedorId] = useState('');
+  const [bulkOperadoraId, setBulkOperadoraId] = useState('');
+  const [isSavingCorrections, setIsSavingCorrections] = useState(false);
 
   // Load reference data
   useEffect(() => {
@@ -521,10 +529,163 @@ export default function ImportacaoVendas() {
     setMapping({});
     setResult(null);
     setSelectedMapeamentoId('');
+    setErrorCorrections({});
+    setSelectedErrorIndices(new Set());
+    setBulkVendedorId('');
+    setBulkOperadoraId('');
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // Stepper
+  // Toggle selection of a single error for bulk actions
+  const toggleErrorSelection = (idx: number) => {
+    setSelectedErrorIndices(prev => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx); else next.add(idx);
+      return next;
+    });
+  };
+
+  const toggleAllErrors = () => {
+    if (!result) return;
+    if (selectedErrorIndices.size === result.errors.length) {
+      setSelectedErrorIndices(new Set());
+    } else {
+      setSelectedErrorIndices(new Set(result.errors.map((_, i) => i)));
+    }
+  };
+
+  // Apply bulk correction to selected errors
+  const applyBulkCorrection = () => {
+    if (selectedErrorIndices.size === 0) { toast.error('Selecione ao menos uma linha'); return; }
+    if (!bulkVendedorId && !bulkOperadoraId) { toast.error('Selecione vendedor ou operadora para aplicar'); return; }
+    setErrorCorrections(prev => {
+      const next = { ...prev };
+      selectedErrorIndices.forEach(idx => {
+        next[idx] = {
+          ...next[idx],
+          ...(bulkVendedorId ? { vendedor_id: bulkVendedorId } : {}),
+          ...(bulkOperadoraId ? { operadora_id: bulkOperadoraId } : {}),
+        };
+      });
+      return next;
+    });
+    toast.success(`Correção aplicada a ${selectedErrorIndices.size} linhas`);
+  };
+
+  // Save corrected error rows to the database
+  const saveCorrections = async () => {
+    if (!result) return;
+    const correctedIndices = Object.keys(errorCorrections).map(Number);
+    if (correctedIndices.length === 0) { toast.error('Nenhuma correção para salvar'); return; }
+
+    setIsSavingCorrections(true);
+    let saved = 0;
+    let failed = 0;
+    const remainingErrors: ImportResult['errors'] = [];
+
+    for (let i = 0; i < result.errors.length; i++) {
+      const correction = errorCorrections[i];
+      if (!correction) {
+        remainingErrors.push(result.errors[i]);
+        continue;
+      }
+
+      const errRow = result.errors[i];
+      const row = errRow.data;
+
+      // Determine vendedor
+      let vendedorId = correction.vendedor_id;
+      if (!vendedorId) {
+        // Try original logic
+        const v = findVendedor(row);
+        if (v) vendedorId = v.id;
+      }
+      if (!vendedorId) {
+        remainingErrors.push({ ...errRow, reason: 'Vendedor ainda não definido' });
+        failed++;
+        continue;
+      }
+
+      // Determine operadora
+      let opId = correction.operadora_id;
+      if (!opId) {
+        const op = findOperadora(row);
+        if (op) opId = op.id;
+      }
+      if (!opId) {
+        remainingErrors.push({ ...errRow, reason: 'Operadora ainda não definida' });
+        failed++;
+        continue;
+      }
+
+      const dataVenda = parseDate(row[mapping.data_venda]?.trim() || '');
+      if (!dataVenda) {
+        remainingErrors.push(errRow);
+        failed++;
+        continue;
+      }
+
+      const identificador = row[mapping.identificador_make]?.trim();
+      const cpf = mapping.cpf_cnpj ? normalizeCpfCnpj(row[mapping.cpf_cnpj] || '') : null;
+      const telefone = mapping.telefone ? normalizeTelefone(row[mapping.telefone] || '') : null;
+      const valorStr = mapping.valor ? row[mapping.valor]?.replace(',', '.').replace(/[^\d.-]/g, '') : null;
+      const valor = valorStr ? parseFloat(valorStr) : null;
+      const dataInstalacao = mapping.data_instalacao ? parseDate(row[mapping.data_instalacao]?.trim() || '') : null;
+
+      const rowData: any = {
+        identificador_make: identificador,
+        status_make: row[mapping.status_make]?.trim() || null,
+        data_venda: dataVenda,
+        data_instalacao: dataInstalacao,
+        cliente_nome: row[mapping.cliente_nome]?.trim() || 'Não informado',
+        cpf_cnpj: cpf || null,
+        telefone: telefone || null,
+        protocolo_interno: mapping.protocolo_interno ? row[mapping.protocolo_interno]?.trim() || null : null,
+        valor: valor,
+        plano: mapping.plano ? row[mapping.plano]?.trim() || null : null,
+        cep: mapping.cep ? row[mapping.cep]?.trim() || null : null,
+        endereco: mapping.endereco ? row[mapping.endereco]?.trim() || null : null,
+        observacoes: mapping.observacoes ? row[mapping.observacoes]?.trim() || null : null,
+        operadora_id: opId,
+        empresa_id: empresaId,
+        usuario_id: vendedorId,
+        status_interno: 'aguardando',
+      };
+
+      // Check if it already exists (upsert logic)
+      if (identificador) {
+        const { data: existing } = await supabase
+          .from('vendas_internas')
+          .select('id')
+          .eq('identificador_make', identificador)
+          .maybeSingle();
+
+        if (existing) {
+          const { status_interno, ...updateData } = rowData;
+          const { error } = await supabase.from('vendas_internas').update(updateData).eq('id', existing.id);
+          if (error) { remainingErrors.push({ ...errRow, reason: error.message }); failed++; }
+          else saved++;
+        } else {
+          const { error } = await supabase.from('vendas_internas').insert(rowData);
+          if (error) { remainingErrors.push({ ...errRow, reason: error.message }); failed++; }
+          else saved++;
+        }
+      } else {
+        remainingErrors.push(errRow);
+        failed++;
+      }
+    }
+
+    setResult(prev => prev ? { ...prev, success: prev.success + saved, errors: remainingErrors } : prev);
+    setErrorCorrections({});
+    setSelectedErrorIndices(new Set());
+    setIsSavingCorrections(false);
+    toast.success(`${saved} linhas salvas com sucesso${failed > 0 ? `, ${failed} ainda com erro` : ''}`);
+  };
+
+  // Check if an error is about vendedor or operadora
+  const errorNeedsVendedor = (reason: string) => reason.toLowerCase().includes('vendedor');
+  const errorNeedsOperadora = (reason: string) => reason.toLowerCase().includes('operadora');
   const steps: { key: Step; label: string }[] = [
     { key: 'upload', label: 'Upload' },
     { key: 'mapping', label: 'Mapeamento' },
@@ -1002,30 +1163,168 @@ export default function ImportacaoVendas() {
 
               {result.errors.length > 0 && (
                 <>
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-medium text-sm">Erros encontrados</h4>
-                    <Button variant="outline" size="sm" onClick={exportErrors}>
-                      <Download className="mr-2 h-4 w-4" />
-                      Exportar erros CSV
-                    </Button>
+                  <Separator />
+
+                  {/* Header with actions */}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h4 className="font-medium text-sm">
+                      {result.errors.length} linha(s) com erro — corrija abaixo ou exporte
+                    </h4>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={exportErrors}>
+                        <Download className="mr-2 h-4 w-4" />
+                        Exportar CSV
+                      </Button>
+                      {Object.keys(errorCorrections).length > 0 && (
+                        <Button size="sm" onClick={saveCorrections} disabled={isSavingCorrections}>
+                          {isSavingCorrections ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <Save className="mr-2 h-4 w-4" />
+                          )}
+                          Salvar {Object.keys(errorCorrections).length} correção(ões)
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                  <div className="overflow-x-auto max-h-64 border rounded-md">
+
+                  {/* Bulk correction panel */}
+                  <Card className="border-dashed">
+                    <CardContent className="pt-4 pb-3">
+                      <div className="flex flex-wrap items-end gap-3">
+                        <div className="text-xs font-medium text-muted-foreground whitespace-nowrap pt-2">
+                          Ajuste em massa ({selectedErrorIndices.size} selecionadas):
+                        </div>
+                        <div className="flex-1 min-w-[180px]">
+                          <Label className="text-xs">Vendedor</Label>
+                          <Select value={bulkVendedorId} onValueChange={setBulkVendedorId}>
+                            <SelectTrigger className="h-8 text-xs">
+                              <SelectValue placeholder="Selecionar vendedor" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {usuarios.map(u => (
+                                <SelectItem key={u.id} value={u.id} className="text-xs">{u.nome}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="flex-1 min-w-[180px]">
+                          <Label className="text-xs">Operadora</Label>
+                          <Select value={bulkOperadoraId} onValueChange={setBulkOperadoraId}>
+                            <SelectTrigger className="h-8 text-xs">
+                              <SelectValue placeholder="Selecionar operadora" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {operadoras.map(o => (
+                                <SelectItem key={o.id} value={o.id} className="text-xs">{o.nome}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <Button size="sm" variant="secondary" onClick={applyBulkCorrection} disabled={selectedErrorIndices.size === 0}>
+                          Aplicar
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Error rows table with inline correction */}
+                  <div className="overflow-x-auto max-h-[400px] border rounded-md">
                     <Table>
                       <TableHeader>
                         <TableRow>
+                          <TableHead className="text-xs w-8">
+                            <Checkbox
+                              checked={selectedErrorIndices.size === result.errors.length && result.errors.length > 0}
+                              onCheckedChange={toggleAllErrors}
+                            />
+                          </TableHead>
                           <TableHead className="text-xs">Linha</TableHead>
-                          <TableHead className="text-xs">Motivo</TableHead>
                           <TableHead className="text-xs">Identificador</TableHead>
+                          <TableHead className="text-xs">Cliente</TableHead>
+                          <TableHead className="text-xs">Motivo</TableHead>
+                          <TableHead className="text-xs min-w-[180px]">Vendedor</TableHead>
+                          <TableHead className="text-xs min-w-[180px]">Operadora</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {result.errors.slice(0, 50).map((err, i) => (
-                          <TableRow key={i}>
-                            <TableCell className="text-xs">{err.line}</TableCell>
-                            <TableCell className="text-xs text-destructive">{err.reason}</TableCell>
-                            <TableCell className="text-xs">{err.data[mapping.identificador_make] || '-'}</TableCell>
-                          </TableRow>
-                        ))}
+                        {result.errors.map((err, i) => {
+                          const correction = errorCorrections[i];
+                          const correctedVendedor = correction?.vendedor_id
+                            ? usuarios.find(u => u.id === correction.vendedor_id)?.nome
+                            : null;
+                          const correctedOperadora = correction?.operadora_id
+                            ? operadoras.find(o => o.id === correction.operadora_id)?.nome
+                            : null;
+                          const isCorrected = !!correctedVendedor || !!correctedOperadora;
+
+                          return (
+                            <TableRow key={i} className={isCorrected ? 'bg-primary/5' : ''}>
+                              <TableCell>
+                                <Checkbox
+                                  checked={selectedErrorIndices.has(i)}
+                                  onCheckedChange={() => toggleErrorSelection(i)}
+                                />
+                              </TableCell>
+                              <TableCell className="text-xs">{err.line}</TableCell>
+                              <TableCell className="text-xs font-mono">{err.data[mapping.identificador_make] || '-'}</TableCell>
+                              <TableCell className="text-xs">{err.data[mapping.cliente_nome] || '-'}</TableCell>
+                              <TableCell className="text-xs text-destructive">{err.reason}</TableCell>
+                              <TableCell className="text-xs">
+                                {errorNeedsVendedor(err.reason) || !findVendedor(err.data) ? (
+                                  <Select
+                                    value={correction?.vendedor_id || ''}
+                                    onValueChange={(val) =>
+                                      setErrorCorrections(prev => ({
+                                        ...prev,
+                                        [i]: { ...prev[i], vendedor_id: val },
+                                      }))
+                                    }
+                                  >
+                                    <SelectTrigger className="h-7 text-xs">
+                                      <SelectValue placeholder="Selecionar..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {usuarios.map(u => (
+                                        <SelectItem key={u.id} value={u.id} className="text-xs">
+                                          {u.nome}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                ) : (
+                                  <span className="text-muted-foreground">OK</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-xs">
+                                {errorNeedsOperadora(err.reason) || !findOperadora(err.data) ? (
+                                  <Select
+                                    value={correction?.operadora_id || ''}
+                                    onValueChange={(val) =>
+                                      setErrorCorrections(prev => ({
+                                        ...prev,
+                                        [i]: { ...prev[i], operadora_id: val },
+                                      }))
+                                    }
+                                  >
+                                    <SelectTrigger className="h-7 text-xs">
+                                      <SelectValue placeholder="Selecionar..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {operadoras.map(o => (
+                                        <SelectItem key={o.id} value={o.id} className="text-xs">
+                                          {o.nome}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                ) : (
+                                  <span className="text-muted-foreground">OK</span>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </div>
