@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { normalizeProtocolo } from '@/lib/normalizeProtocolo';
 import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/supabase/client';
@@ -205,7 +206,7 @@ export default function NovaVenda() {
           endereco: formData.endereco || null,
           plano: formData.plano || null,
           valor: valorNumerico,
-          protocolo_interno: formData.protocolo_interno || null,
+          protocolo_interno: normalizeProtocolo(formData.protocolo_interno),
           operadora_id: formData.operadora_id,
           observacoes: formData.observacoes || null,
           status_interno: 'nova',

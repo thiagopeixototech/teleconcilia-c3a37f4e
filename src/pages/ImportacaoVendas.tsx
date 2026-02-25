@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { normalizeProtocolo } from '@/lib/normalizeProtocolo';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -440,7 +441,7 @@ export default function ImportacaoVendas() {
           cliente_nome: row[mapping.cliente_nome]?.trim() || 'Não informado',
           cpf_cnpj: cpf || null,
           telefone: telefone || null,
-          protocolo_interno: mapping.protocolo_interno ? row[mapping.protocolo_interno]?.trim() || null : null,
+          protocolo_interno: mapping.protocolo_interno ? normalizeProtocolo(row[mapping.protocolo_interno]) : null,
           valor: valor,
           plano: mapping.plano ? row[mapping.plano]?.trim() || null : null,
           cep: mapping.cep ? row[mapping.cep]?.trim() || null : null,
@@ -676,7 +677,7 @@ export default function ImportacaoVendas() {
         cliente_nome: row[mapping.cliente_nome]?.trim() || 'Não informado',
         cpf_cnpj: cpf || null,
         telefone: telefone || null,
-        protocolo_interno: mapping.protocolo_interno ? row[mapping.protocolo_interno]?.trim() || null : null,
+        protocolo_interno: mapping.protocolo_interno ? normalizeProtocolo(row[mapping.protocolo_interno]) : null,
         valor: valor,
         plano: mapping.plano ? row[mapping.plano]?.trim() || null : null,
         cep: mapping.cep ? row[mapping.cep]?.trim() || null : null,
