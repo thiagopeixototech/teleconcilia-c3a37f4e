@@ -10,7 +10,7 @@ import {
   LogOut,
   ChevronDown,
   ClipboardList,
-  Clock,
+  
   Radio,
   Columns,
   BarChart3,
@@ -47,7 +47,6 @@ const mainNavItems = [
 ];
 
 const cadastrosItems = [
-  { title: 'Cadastros Pendentes', url: '/cadastros-pendentes', icon: Clock },
   { title: 'Empresas', url: '/empresas', icon: Building2 },
   { title: 'Operadoras', url: '/operadoras', icon: Radio },
   { title: 'Usuários', url: '/usuarios', icon: Users },

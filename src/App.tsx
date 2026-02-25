@@ -17,7 +17,7 @@ import Divergencias from "./pages/Divergencias";
 import Empresas from "./pages/Empresas";
 import Usuarios from "./pages/Usuarios";
 import GestaoRoles from "./pages/GestaoRoles";
-import CadastrosPendentes from "./pages/CadastrosPendentes";
+
 import Operadoras from "./pages/Operadoras";
 import MapeamentoColunas from "./pages/MapeamentoColunas";
 import PerformanceConsultor from "./pages/PerformanceConsultor";
@@ -120,14 +120,6 @@ const App = () => (
               }
             />
             
-            <Route
-              path="/cadastros-pendentes"
-              element={
-                <ProtectedRoute allowedRoles={['admin']}>
-                  <CadastrosPendentes />
-                </ProtectedRoute>
-              }
-            />
             
             <Route
               path="/operadoras"

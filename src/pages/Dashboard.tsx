@@ -3,7 +3,7 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { PendingAccessMessage } from '@/components/PendingAccessMessage';
+
 import { PeriodFilter } from '@/components/PeriodFilter';
 import { usePeriodFilter } from '@/hooks/usePeriodFilter';
 import { Badge } from '@/components/ui/badge';
@@ -56,15 +56,9 @@ export default function Dashboard() {
 
   const period = usePeriodFilter('dashboard');
 
-  const isPendingAccess = !role && !vendedor && !isAdmin;
-
   useEffect(() => {
-    if (!isPendingAccess) {
-      fetchDashboardData();
-    } else {
-      setIsLoading(false);
-    }
-  }, [vendedor, isPendingAccess, period.dataInicioStr, period.dataFimStr]);
+    fetchDashboardData();
+  }, [vendedor, period.dataInicioStr, period.dataFimStr]);
 
   const fetchDashboardData = async () => {
     try {
@@ -153,13 +147,6 @@ export default function Dashboard() {
   const receitaLiquida = (stats?.valorConciliado || 0) - totalEstornos;
   const irl = (stats?.valorConciliado || 0) > 0 ? (receitaLiquida / stats!.valorConciliado) * 100 : 0;
 
-  if (isPendingAccess) {
-    return (
-      <AppLayout title="Dashboard">
-        <PendingAccessMessage />
-      </AppLayout>
-    );
-  }
 
   return (
     <AppLayout title="Dashboard">
