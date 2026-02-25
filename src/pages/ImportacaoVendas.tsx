@@ -42,6 +42,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
+import { HistoricoImportacoes } from '@/components/importacao/HistoricoImportacoes';
 
 // Types
 interface Operadora { id: string; nome: string; }
@@ -821,6 +822,9 @@ export default function ImportacaoVendas() {
             </CardContent>
           </Card>
         )}
+
+        {/* Import History - show on upload step */}
+        {step === 'upload' && <HistoricoImportacoes />}
 
         {/* Step: Mapping */}
         {step === 'mapping' && (
