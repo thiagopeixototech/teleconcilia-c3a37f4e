@@ -5,8 +5,6 @@ import { VendaInterna, LinhaOperadora, Conciliacao, TipoMatch, StatusConciliacao
 import { useAuth } from '@/contexts/AuthContext';
 import { registrarAuditoriaBatch, AuditLogEntry } from '@/services/auditService';
 import { AuditLogPanel } from '@/components/audit/AuditLogPanel';
-import { PeriodFilter } from '@/components/PeriodFilter';
-import { usePeriodFilter } from '@/hooks/usePeriodFilter';
 import { 
   Table, 
   TableBody, 
@@ -95,11 +93,9 @@ export default function ConciliacaoPage() {
   const [isAutoMatchRunning, setIsAutoMatchRunning] = useState(false);
   const [matchCriteria, setMatchCriteria] = useState<'protocolo' | 'cpf' | 'todos'>('todos');
   const [vendedorFilter, setVendedorFilter] = useState<string>('all');
-  const period = usePeriodFilter();
-
   useEffect(() => {
     fetchData();
-  }, [period.dataInicioStr, period.dataFimStr]);
+  }, []);
 
   const fetchData = async () => {
     try {
@@ -111,8 +107,6 @@ export default function ConciliacaoPage() {
           vendedor:usuarios!vendas_internas_usuario_id_fkey(nome)
         `)
         .ilike('status_make', 'instalad%')
-        .gte('data_venda', period.dataInicioStr)
-        .lte('data_venda', period.dataFimStr)
         .order('created_at', { ascending: false });
 
       if (vendasError) throw vendasError;
@@ -486,13 +480,6 @@ export default function ConciliacaoPage() {
   return (
     <AppLayout title="Conciliação">
       <div className="space-y-6">
-        {/* Period Filter */}
-        <Card>
-          <CardContent className="pt-6">
-            <PeriodFilter {...period} />
-          </CardContent>
-        </Card>
-
         {/* Stats */}
         <div className="grid gap-4 md:grid-cols-4">
           <Card>
