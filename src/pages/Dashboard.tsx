@@ -54,7 +54,7 @@ export default function Dashboard() {
   const [vendasPorStatus, setVendasPorStatus] = useState<{ name: string; value: number }[]>([]);
   const [totalEstornos, setTotalEstornos] = useState(0);
 
-  const period = usePeriodFilter('dashboard');
+  const period = usePeriodFilter();
 
   useEffect(() => {
     fetchDashboardData();
@@ -254,9 +254,6 @@ export default function Dashboard() {
                 <CardTitle className="flex items-center gap-2">
                   <DollarSign className="h-5 w-5" />
                   Resumo Financeiro
-                  {period.preset === 'comissao' && (
-                    <Badge variant="outline" className="text-xs ml-2">Comissão a Receber</Badge>
-                  )}
                 </CardTitle>
                 <CardDescription>Receita conciliada, estornos e receita líquida prevista</CardDescription>
               </CardHeader>
