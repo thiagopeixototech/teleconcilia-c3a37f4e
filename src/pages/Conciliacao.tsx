@@ -95,7 +95,7 @@ export default function ConciliacaoPage() {
   const [isAutoMatchRunning, setIsAutoMatchRunning] = useState(false);
   const [matchCriteria, setMatchCriteria] = useState<'protocolo' | 'cpf' | 'todos'>('todos');
   const [vendedorFilter, setVendedorFilter] = useState<string>('all');
-  const period = usePeriodFilter('conciliacao');
+  const period = usePeriodFilter();
 
   useEffect(() => {
     fetchData();

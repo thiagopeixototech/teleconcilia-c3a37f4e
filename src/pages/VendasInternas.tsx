@@ -135,7 +135,7 @@ export default function VendasInternas() {
       : <ArrowDown className="h-3 w-3 ml-1" />;
   };
 
-  const period = usePeriodFilter('vendas');
+  const period = usePeriodFilter();
 
   useEffect(() => {
     fetchVendas();

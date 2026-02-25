@@ -50,7 +50,7 @@ function irlBadge(irl: number) {
 
 export default function PerformanceConsultor() {
   const { role } = useAuth();
-  const period = usePeriodFilter('performance');
+  const period = usePeriodFilter();
   const { dataInicio, dataFim, dataInicioStr, dataFimStr } = period;
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState<SortField>('receita_liquida');
