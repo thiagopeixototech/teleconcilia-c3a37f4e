@@ -51,9 +51,15 @@ import {
   X,
   ChevronDown,
   ChevronUp,
-  CheckSquare
+  CheckSquare,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
+
+type SortKey = 'vendedor' | 'protocolo_interno' | 'identificador_make' | 'cliente_nome' | 'cpf_cnpj' | 'operadora' | 'valor' | 'status_interno' | 'status_make' | 'data_venda' | 'data_instalacao';
+type SortDir = 'asc' | 'desc';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
@@ -108,6 +114,26 @@ export default function VendasInternas() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState<StatusInterno | ''>('');
   const [isBulkSaving, setIsBulkSaving] = useState(false);
+
+  // Sorting
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  };
+
+  const SortIcon = ({ col }: { col: SortKey }) => {
+    if (sortKey !== col) return <ArrowUpDown className="h-3 w-3 ml-1 opacity-40" />;
+    return sortDir === 'asc' 
+      ? <ArrowUp className="h-3 w-3 ml-1" /> 
+      : <ArrowDown className="h-3 w-3 ml-1" />;
+  };
 
   const period = usePeriodFilter('vendas');
 
@@ -338,36 +364,67 @@ export default function VendasInternas() {
     setVisibleCount(50);
   }, [searchTerm, statusFilter, operadoraFilter, statusMakeFilter, confirmadaFilter, idMakeSearch, protocoloSearch, period.dataInicioStr, period.dataFimStr]);
 
-  const filteredVendas = vendas.filter(venda => {
-    const matchesSearch = 
-      venda.cliente_nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      venda.cpf_cnpj?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      venda.protocolo_interno?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      venda.identificador_make?.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesStatus = statusFilter === 'all' || venda.status_interno === statusFilter;
-    const matchesOperadora = operadoraFilter === 'all' || venda.operadora_id === operadoraFilter;
-    
-    // Advanced filters
-    const matchesStatusMake = statusMakeFilter === 'all' || 
-      (statusMakeFilter === '_empty_' ? (!venda.status_make || venda.status_make === '') : venda.status_make === statusMakeFilter);
-    
-    const matchesConfirmada = confirmadaFilter === 'all' || 
-      (confirmadaFilter === 'confirmada' ? venda.status_interno === 'confirmada' : venda.status_interno !== 'confirmada');
-    
-    // Period filter is applied at query level, no need for client-side date filtering
-    
-    
-    const matchesIdMake = !idMakeSearch || 
-      venda.identificador_make?.toLowerCase().includes(idMakeSearch.toLowerCase());
-    
-    const matchesProtocolo = !protocoloSearch || 
-      venda.protocolo_interno?.toLowerCase().includes(protocoloSearch.toLowerCase());
-    
-    return matchesSearch && matchesStatus && matchesOperadora && 
-      matchesStatusMake && matchesConfirmada &&
-      matchesIdMake && matchesProtocolo;
-  });
+  const filteredVendas = (() => {
+    const filtered = vendas.filter(venda => {
+      const matchesSearch = 
+        venda.cliente_nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        venda.cpf_cnpj?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        venda.protocolo_interno?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        venda.identificador_make?.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      const matchesStatus = statusFilter === 'all' || venda.status_interno === statusFilter;
+      const matchesOperadora = operadoraFilter === 'all' || venda.operadora_id === operadoraFilter;
+      
+      const matchesStatusMake = statusMakeFilter === 'all' || 
+        (statusMakeFilter === '_empty_' ? (!venda.status_make || venda.status_make === '') : venda.status_make === statusMakeFilter);
+      
+      const matchesConfirmada = confirmadaFilter === 'all' || 
+        (confirmadaFilter === 'confirmada' ? venda.status_interno === 'confirmada' : venda.status_interno !== 'confirmada');
+      
+      const matchesIdMake = !idMakeSearch || 
+        venda.identificador_make?.toLowerCase().includes(idMakeSearch.toLowerCase());
+      
+      const matchesProtocolo = !protocoloSearch || 
+        venda.protocolo_interno?.toLowerCase().includes(protocoloSearch.toLowerCase());
+      
+      return matchesSearch && matchesStatus && matchesOperadora && 
+        matchesStatusMake && matchesConfirmada &&
+        matchesIdMake && matchesProtocolo;
+    });
+
+    if (!sortKey) return filtered;
+
+    return [...filtered].sort((a, b) => {
+      let valA: any, valB: any;
+      switch (sortKey) {
+        case 'vendedor':
+          valA = (a as any).usuario?.nome || '';
+          valB = (b as any).usuario?.nome || '';
+          break;
+        case 'operadora':
+          valA = getOperadoraNome(a.operadora_id);
+          valB = getOperadoraNome(b.operadora_id);
+          break;
+        case 'valor':
+          valA = a.valor ?? 0;
+          valB = b.valor ?? 0;
+          return sortDir === 'asc' ? valA - valB : valB - valA;
+        case 'data_venda':
+          valA = a.data_venda || '';
+          valB = b.data_venda || '';
+          break;
+        case 'data_instalacao':
+          valA = a.data_instalacao || '';
+          valB = b.data_instalacao || '';
+          break;
+        default:
+          valA = (a as any)[sortKey] || '';
+          valB = (b as any)[sortKey] || '';
+      }
+      const cmp = String(valA).localeCompare(String(valB), 'pt-BR', { sensitivity: 'base' });
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  })();
 
   if (isLoading) {
     return (
@@ -561,17 +618,39 @@ export default function VendasInternas() {
                         />
                       </TableHead>
                     )}
-                    <TableHead>Vendedor</TableHead>
-                    <TableHead>Protocolo</TableHead>
-                    <TableHead>ID Make</TableHead>
-                    <TableHead>Cliente</TableHead>
-                    <TableHead>CPF/CNPJ</TableHead>
-                    <TableHead>Operadora</TableHead>
-                    <TableHead>Valor</TableHead>
-                    <TableHead>Confirmada</TableHead>
-                    <TableHead>Status Make</TableHead>
-                    <TableHead>Data Venda</TableHead>
-                    <TableHead>Data Instalação</TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('vendedor')}>
+                      <span className="flex items-center">Vendedor<SortIcon col="vendedor" /></span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('protocolo_interno')}>
+                      <span className="flex items-center">Protocolo<SortIcon col="protocolo_interno" /></span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('identificador_make')}>
+                      <span className="flex items-center">ID Make<SortIcon col="identificador_make" /></span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('cliente_nome')}>
+                      <span className="flex items-center">Cliente<SortIcon col="cliente_nome" /></span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('cpf_cnpj')}>
+                      <span className="flex items-center">CPF/CNPJ<SortIcon col="cpf_cnpj" /></span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('operadora')}>
+                      <span className="flex items-center">Operadora<SortIcon col="operadora" /></span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('valor')}>
+                      <span className="flex items-center">Valor<SortIcon col="valor" /></span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('status_interno')}>
+                      <span className="flex items-center">Confirmada<SortIcon col="status_interno" /></span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('status_make')}>
+                      <span className="flex items-center">Status Make<SortIcon col="status_make" /></span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('data_venda')}>
+                      <span className="flex items-center">Data Venda<SortIcon col="data_venda" /></span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('data_instalacao')}>
+                      <span className="flex items-center">Data Instalação<SortIcon col="data_instalacao" /></span>
+                    </TableHead>
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
