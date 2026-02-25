@@ -271,12 +271,39 @@ export default function ImportacaoVendas() {
 
   const parseDate = (v: string): string | null => {
     if (!v) return null;
-    const brMatch = v.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-    if (brMatch) return `${brMatch[3]}-${brMatch[2].padStart(2, '0')}-${brMatch[1].padStart(2, '0')}`;
-    const isoMatch = v.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+    // Strip time component if present (e.g. "10/28/25 13:07")
+    const dateOnly = v.replace(/\s+\d{1,2}:\d{2}(:\d{2})?.*$/, '').trim();
+    
+    const expandYear = (y: string) => {
+      if (y.length === 4) return y;
+      const num = parseInt(y, 10);
+      return num >= 0 && num <= 49 ? `20${y.padStart(2, '0')}` : `19${y.padStart(2, '0')}`;
+    };
+
+    // ISO: YYYY-MM-DD or YYYY/MM/DD
+    const isoMatch = dateOnly.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
     if (isoMatch) return `${isoMatch[1]}-${isoMatch[2].padStart(2, '0')}-${isoMatch[3].padStart(2, '0')}`;
-    const usMatch = v.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-    if (usMatch) return `${usMatch[3]}-${usMatch[1].padStart(2, '0')}-${usMatch[2].padStart(2, '0')}`;
+
+    // Detect BR (DD/MM) vs US (MM/DD) by checking if first part > 12 (must be day)
+    const slashMatch = dateOnly.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if (slashMatch) {
+      const [, p1, p2, p3] = slashMatch;
+      const year = expandYear(p3);
+      const n1 = parseInt(p1, 10);
+      const n2 = parseInt(p2, 10);
+      
+      if (n1 > 12) {
+        // First part > 12, must be day → DD/MM/YYYY
+        return `${year}-${p2.padStart(2, '0')}-${p1.padStart(2, '0')}`;
+      } else if (n2 > 12) {
+        // Second part > 12, must be day → MM/DD/YYYY
+        return `${year}-${p1.padStart(2, '0')}-${p2.padStart(2, '0')}`;
+      } else {
+        // Ambiguous (both ≤ 12): assume US format MM/DD/YYYY (matches the user's data pattern)
+        return `${year}-${p1.padStart(2, '0')}-${p2.padStart(2, '0')}`;
+      }
+    }
+
     return null;
   };
 
@@ -349,26 +376,34 @@ export default function ImportacaoVendas() {
         await new Promise(r => setTimeout(r, 10));
       }
 
-      // === Phase 2: Build insert/update arrays (runs synchronously, fast) ===
-      const rowsToInsert: any[] = [];
-      const rowsToUpdate: { id: string; data: any }[] = [];
-      const seenIds = new Set<string>();
+      // === Phase 2a: Deduplicate rows (keep last occurrence) ===
+      // === Phase 2a: Deduplicate rows (keep last occurrence) ===
+      const seenIds = new Map<string, number>();
+      const processedRows: { row: Record<string, string>; lineNum: number }[] = [];
 
       for (let i = 0; i < csvRows.length; i++) {
         const row = csvRows[i];
         const lineNum = i + 2;
-
         const identificador = row[mapping.identificador_make]?.trim();
         if (!identificador) {
           importResult.errors.push({ line: lineNum, reason: 'identificador_make vazio', data: row });
           continue;
         }
-
         if (seenIds.has(identificador)) {
-          importResult.errors.push({ line: lineNum, reason: `Duplicado dentro do próprio arquivo: "${identificador}"`, data: row });
-          continue;
+          const prevIdx = seenIds.get(identificador)!;
+          processedRows[prevIdx] = { row, lineNum };
+        } else {
+          seenIds.set(identificador, processedRows.length);
+          processedRows.push({ row, lineNum });
         }
-        seenIds.add(identificador);
+      }
+
+      // === Phase 2b: Build insert/update arrays from deduplicated rows ===
+      const rowsToInsert: any[] = [];
+      const rowsToUpdate: { id: string; data: any }[] = [];
+
+      for (const { row, lineNum } of processedRows) {
+        const identificador = row[mapping.identificador_make]?.trim();
 
         const dataVenda = parseDate(row[mapping.data_venda]?.trim() || '');
         if (!dataVenda) {
@@ -415,8 +450,8 @@ export default function ImportacaoVendas() {
           usuario_id: vendedor.id,
         };
 
-        if (existingMap.has(identificador)) {
-          const existingId = existingMap.get(identificador)!;
+        if (existingMap.has(identificador!)) {
+          const existingId = existingMap.get(identificador!)!;
           rowsToUpdate.push({ id: existingId, data: rowData });
         } else {
           rowsToInsert.push({ ...rowData, status_interno: 'aguardando' });
