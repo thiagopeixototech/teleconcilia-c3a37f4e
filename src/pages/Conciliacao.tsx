@@ -97,40 +97,63 @@ export default function ConciliacaoPage() {
     fetchData();
   }, []);
 
+  // Helper to fetch all rows from a table, paginating past the 1000-row limit
+  const fetchAllRows = async <T,>(
+    queryBuilder: () => ReturnType<typeof supabase.from>,
+    selectStr: string,
+    filters?: (q: any) => any,
+    orderCol = 'created_at',
+  ): Promise<T[]> => {
+    const PAGE_SIZE = 1000;
+    let allData: T[] = [];
+    let offset = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      let q = queryBuilder().select(selectStr);
+      if (filters) q = filters(q);
+      q = q.order(orderCol, { ascending: false }).range(offset, offset + PAGE_SIZE - 1);
+      const { data, error } = await q;
+      if (error) throw error;
+      if (data) allData = allData.concat(data as T[]);
+      hasMore = (data?.length ?? 0) === PAGE_SIZE;
+      offset += PAGE_SIZE;
+    }
+    return allData;
+  };
+
   const fetchData = async () => {
     try {
-      // Fetch vendas with conciliacao, filtered by period
-      const { data: vendasData, error: vendasError } = await supabase
-        .from('vendas_internas')
-        .select(`
-          *,
-          vendedor:usuarios!vendas_internas_usuario_id_fkey(nome)
-        `)
-        .ilike('status_make', 'instalad%')
-        .order('created_at', { ascending: false });
+      // Fetch ALL vendas instaladas (paginando para ultrapassar limite de 1000)
+      const vendasData = await fetchAllRows<any>(
+        () => supabase.from('vendas_internas'),
+        '*, vendedor:usuarios!vendas_internas_usuario_id_fkey(nome)',
+        (q: any) => q.ilike('status_make', 'instalad%'),
+      );
 
-      if (vendasError) throw vendasError;
+      // Fetch ALL conciliacoes
+      const conciliacoesData = await fetchAllRows<any>(
+        () => supabase.from('conciliacoes'),
+        '*',
+      );
 
-      // Fetch conciliacoes
-      const { data: conciliacoesData, error: conciliacoesError } = await supabase
-        .from('conciliacoes')
-        .select('*');
-
-      if (conciliacoesError) throw conciliacoesError;
-
-      // Fetch linhas operadora
-      const { data: linhasData, error: linhasError } = await supabase
-        .from('linha_operadora')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (linhasError) throw linhasError;
+      // Fetch ALL linhas operadora
+      const linhasData = await fetchAllRows<any>(
+        () => supabase.from('linha_operadora'),
+        '*',
+      );
 
       // Map conciliacoes to vendas
+      const conciliacaoMap = new Map<string, any>();
+      conciliacoesData.forEach(c => conciliacaoMap.set(c.venda_interna_id, c));
+
+      const linhaMap = new Map<string, any>();
+      linhasData.forEach(l => linhaMap.set(l.id, l));
+
       const vendasWithConciliacao = vendasData.map(venda => {
-        const conciliacao = conciliacoesData?.find(c => c.venda_interna_id === venda.id);
+        const conciliacao = conciliacaoMap.get(venda.id) ?? null;
         const linhaOperadoraVinculada = conciliacao 
-          ? linhasData?.find(l => l.id === conciliacao.linha_operadora_id) 
+          ? linhaMap.get(conciliacao.linha_operadora_id) ?? null
           : null;
         return { ...venda, conciliacao, linhaOperadoraVinculada } as VendaWithConciliacao;
       });
@@ -141,8 +164,8 @@ export default function ConciliacaoPage() {
       // Extract unique arquivo_origem values
       const arquivos = [...new Set(
         linhasData
-          .map(l => l.arquivo_origem)
-          .filter((a): a is string => a !== null && a !== undefined)
+          .map((l: any) => l.arquivo_origem)
+          .filter((a: any): a is string => a !== null && a !== undefined)
       )];
       setArquivosDisponiveis(arquivos);
     } catch (error) {
