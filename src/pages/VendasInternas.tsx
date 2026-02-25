@@ -101,6 +101,7 @@ export default function VendasInternas() {
   const [idMakeSearch, setIdMakeSearch] = useState('');
   const [protocoloSearch, setProtocoloSearch] = useState('');
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [dateField, setDateField] = useState<'data_venda' | 'data_instalacao'>('data_venda');
   const [statusMakeOptions, setStatusMakeOptions] = useState<string[]>([]);
   const [visibleCount, setVisibleCount] = useState(50);
   const [selectedVenda, setSelectedVenda] = useState<VendaInterna | null>(null);
@@ -140,7 +141,7 @@ export default function VendasInternas() {
   useEffect(() => {
     fetchVendas();
     fetchOperadoras();
-  }, [period.dataInicioStr, period.dataFimStr]);
+  }, [period.dataInicioStr, period.dataFimStr, dateField]);
 
   const fetchVendas = async () => {
     try {
@@ -158,8 +159,8 @@ export default function VendasInternas() {
             usuario:usuarios(nome, email),
             empresa:empresas(nome)
           `)
-          .gte('data_venda', period.dataInicioStr)
-          .lte('data_venda', period.dataFimStr)
+          .gte(dateField, period.dataInicioStr)
+          .lte(dateField, period.dataFimStr)
           .order('created_at', { ascending: false })
           .range(from, from + batchSize - 1);
 
@@ -444,7 +445,18 @@ export default function VendasInternas() {
           <CardContent className="pt-6">
             <div className="flex flex-col gap-4">
               {/* Period Filter */}
-              <PeriodFilter {...period} />
+              <div className="flex flex-wrap items-center gap-3">
+                <Select value={dateField} onValueChange={(v) => setDateField(v as 'data_venda' | 'data_instalacao')}>
+                  <SelectTrigger className="w-[180px] h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="data_venda">Data de Venda</SelectItem>
+                    <SelectItem value="data_instalacao">Data de Instalação</SelectItem>
+                  </SelectContent>
+                </Select>
+                <PeriodFilter {...period} />
+              </div>
               {/* Main filters row */}
               <div className="flex flex-col md:flex-row gap-4">
                 <div className="relative flex-1">
