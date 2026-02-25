@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { type PeriodPreset } from '@/hooks/usePeriodFilter';
 
 const PRESET_LABELS: Record<PeriodPreset, string> = {
+  todas: 'Todas',
   comissao: 'Comissão a Receber',
   mes_atual: 'Mês Atual',
   mes_anterior: 'Mês Anterior',
@@ -98,16 +99,18 @@ export function PeriodFilter({
       </div>
 
       {/* Info badge showing the active period */}
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Info className="h-3 w-3 flex-shrink-0" />
-        {preset === 'comissao' ? (
-          <span>Comissão a Receber: {comissaoInfo.label}</span>
-        ) : (
-          <span>
-            Período: {format(dataInicio, 'dd/MM/yyyy')} a {format(dataFim, 'dd/MM/yyyy')}
-          </span>
-        )}
-      </div>
+      {preset !== 'todas' && (
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Info className="h-3 w-3 flex-shrink-0" />
+          {preset === 'comissao' ? (
+            <span>Comissão a Receber: {comissaoInfo.label}</span>
+          ) : (
+            <span>
+              Período: {format(dataInicio, 'dd/MM/yyyy')} a {format(dataFim, 'dd/MM/yyyy')}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
