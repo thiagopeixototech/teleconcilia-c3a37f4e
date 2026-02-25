@@ -93,6 +93,7 @@ export default function ConciliacaoPage() {
   const [isAutoMatchRunning, setIsAutoMatchRunning] = useState(false);
   const [matchCriteria, setMatchCriteria] = useState<'protocolo' | 'cpf' | 'todos'>('todos');
   const [vendedorFilter, setVendedorFilter] = useState<string>('all');
+  const [displayLimit, setDisplayLimit] = useState(100);
   useEffect(() => {
     fetchData();
   }, []);
@@ -311,9 +312,25 @@ export default function ConciliacaoPage() {
   };
 
   // Get linhas filtered by arquivo
-  const linhasDoArquivo = arquivoFilter !== 'all' 
-    ? linhasOperadora.filter(l => l.arquivo_origem === arquivoFilter)
-    : linhasOperadora;
+  const linhasDoArquivo = useMemo(() => 
+    arquivoFilter !== 'all' 
+      ? linhasOperadora.filter(l => l.arquivo_origem === arquivoFilter)
+      : linhasOperadora,
+    [linhasOperadora, arquivoFilter]
+  );
+
+  // Pre-build lookup indexes for O(1) matching instead of O(n) .some()
+  const arquivoIndexes = useMemo(() => {
+    const protocolos = new Set<string>();
+    const cpfs = new Set<string>();
+    const telefones = new Set<string>();
+    for (const linha of linhasDoArquivo) {
+      if (linha.protocolo_operadora) protocolos.add(linha.protocolo_operadora);
+      if (linha.cpf_cnpj) cpfs.add(normalizeDoc(linha.cpf_cnpj));
+      if (linha.telefone) telefones.add(normalizeTelefone(linha.telefone));
+    }
+    return { protocolos, cpfs, telefones };
+  }, [linhasDoArquivo]);
 
   // Extract unique vendedores from vendas
   const vendedoresUnicos = useMemo(() => {
@@ -325,33 +342,41 @@ export default function ConciliacaoPage() {
     return [...map.values()].sort();
   }, [vendas]);
 
-  const filteredVendas = vendas.filter(venda => {
-    const matchesSearch = 
-      venda.cliente_nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      venda.cpf_cnpj?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      venda.protocolo_interno?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (venda as any).vendedor?.nome?.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    // Filter by vendedor
-    const matchesVendedor = vendedorFilter === 'all' || 
-      (venda as any).vendedor?.nome === vendedorFilter;
+  // Reset display limit when filters change
+  useEffect(() => { setDisplayLimit(100); }, [searchTerm, statusFilter, arquivoFilter, vendedorFilter]);
 
-    // Filter by arquivo - show only vendas that have a match in the selected arquivo
-    let matchesArquivo = true;
-    if (arquivoFilter !== 'all') {
-      const hasLinkInArquivo = venda.linhaOperadoraVinculada?.arquivo_origem === arquivoFilter;
-      const hasPotentialMatch = linhasDoArquivo.some(linha => 
-        (venda.cpf_cnpj && linha.cpf_cnpj && normalizeDoc(venda.cpf_cnpj) === normalizeDoc(linha.cpf_cnpj)) ||
-        (venda.protocolo_interno && linha.protocolo_operadora && venda.protocolo_interno === linha.protocolo_operadora) ||
-        (venda.telefone && linha.telefone && normalizeTelefone(venda.telefone) === normalizeTelefone(linha.telefone))
-      );
-      matchesArquivo = hasLinkInArquivo || hasPotentialMatch;
-    }
-    
-    if (statusFilter === 'all') return matchesSearch && matchesArquivo && matchesVendedor;
-    if (statusFilter === 'pendente') return matchesSearch && matchesArquivo && matchesVendedor && !venda.conciliacao;
-    return matchesSearch && matchesArquivo && matchesVendedor && venda.conciliacao?.status_final === statusFilter;
-  });
+  const filteredVendas = useMemo(() => {
+    const search = searchTerm.toLowerCase();
+    return vendas.filter(venda => {
+      const matchesSearch = !search ||
+        venda.cliente_nome.toLowerCase().includes(search) ||
+        venda.cpf_cnpj?.toLowerCase().includes(search) ||
+        venda.protocolo_interno?.toLowerCase().includes(search) ||
+        (venda as any).vendedor?.nome?.toLowerCase().includes(search);
+      
+      if (!matchesSearch) return false;
+
+      const matchesVendedor = vendedorFilter === 'all' || 
+        (venda as any).vendedor?.nome === vendedorFilter;
+      if (!matchesVendedor) return false;
+
+      // Filter by arquivo - use pre-built indexes for O(1) lookups
+      if (arquivoFilter !== 'all') {
+        const hasLinkInArquivo = venda.linhaOperadoraVinculada?.arquivo_origem === arquivoFilter;
+        if (!hasLinkInArquivo) {
+          const hasPotentialMatch = 
+            (!!venda.protocolo_interno && arquivoIndexes.protocolos.has(venda.protocolo_interno)) ||
+            (!!venda.cpf_cnpj && arquivoIndexes.cpfs.has(normalizeDoc(venda.cpf_cnpj))) ||
+            (!!venda.telefone && arquivoIndexes.telefones.has(normalizeTelefone(venda.telefone)));
+          if (!hasPotentialMatch) return false;
+        }
+      }
+      
+      if (statusFilter === 'all') return true;
+      if (statusFilter === 'pendente') return !venda.conciliacao;
+      return venda.conciliacao?.status_final === statusFilter;
+    });
+  }, [vendas, searchTerm, statusFilter, arquivoFilter, vendedorFilter, arquivoIndexes]);
 
   // Helper functions for matching
   function normalizeDoc(doc: string): string {
@@ -490,6 +515,16 @@ export default function ConciliacaoPage() {
     );
   });
 
+  // Memoize stats to avoid re-filtering 7700+ items on every render
+  const stats = useMemo(() => ({
+    conciliados: vendas.filter(v => v.conciliacao?.status_final === 'conciliado').length,
+    divergentes: vendas.filter(v => v.conciliacao?.status_final === 'divergente').length,
+    aguardando: vendas.filter(v => !v.conciliacao).length,
+    total: vendas.length,
+  }), [vendas]);
+
+  const displayedVendas = useMemo(() => filteredVendas.slice(0, displayLimit), [filteredVendas, displayLimit]);
+
   if (isLoading) {
     return (
       <AppLayout title="Conciliação">
@@ -513,7 +548,7 @@ export default function ConciliacaoPage() {
                 </div>
                 <div>
                   <p className="text-2xl font-bold">
-                    {vendas.filter(v => v.conciliacao?.status_final === 'conciliado').length}
+                    {stats.conciliados}
                   </p>
                   <p className="text-sm text-muted-foreground">Conciliados</p>
                 </div>
@@ -528,7 +563,7 @@ export default function ConciliacaoPage() {
                 </div>
                 <div>
                   <p className="text-2xl font-bold">
-                    {vendas.filter(v => v.conciliacao?.status_final === 'divergente').length}
+                    {stats.divergentes}
                   </p>
                   <p className="text-sm text-muted-foreground">Divergentes</p>
                 </div>
@@ -543,7 +578,7 @@ export default function ConciliacaoPage() {
                 </div>
                 <div>
                   <p className="text-2xl font-bold">
-                    {vendas.filter(v => !v.conciliacao).length}
+                    {stats.aguardando}
                   </p>
                   <p className="text-sm text-muted-foreground">Aguardando</p>
                 </div>
@@ -557,7 +592,7 @@ export default function ConciliacaoPage() {
                   <Link2 className="h-5 w-5 text-primary" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold">{vendas.length}</p>
+                  <p className="text-2xl font-bold">{stats.total}</p>
                   <p className="text-sm text-muted-foreground">Total</p>
                 </div>
               </div>
@@ -698,7 +733,7 @@ export default function ConciliacaoPage() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredVendas.map((venda) => (
+                    displayedVendas.map((venda) => (
                       <TableRow key={venda.id}>
                         <TableCell className="text-sm">
                           {(venda as any).vendedor?.nome || '-'}
@@ -752,6 +787,16 @@ export default function ConciliacaoPage() {
                 </TableBody>
               </Table>
             </div>
+            {filteredVendas.length > displayLimit && (
+              <div className="flex justify-center pt-4">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setDisplayLimit(prev => prev + 100)}
+                >
+                  Mostrar mais ({displayLimit} de {filteredVendas.length})
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
 
