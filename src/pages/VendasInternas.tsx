@@ -96,12 +96,12 @@ export default function VendasInternas() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [operadoraFilter, setOperadoraFilter] = useState<string>('all');
-  const [statusMakeFilter, setStatusMakeFilter] = useState<string>('all');
+  const [statusMakeFilter, setStatusMakeFilter] = useState<string>('INSTALADA');
   const [confirmadaFilter, setConfirmadaFilter] = useState<string>('all');
   const [idMakeSearch, setIdMakeSearch] = useState('');
   const [protocoloSearch, setProtocoloSearch] = useState('');
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-  const [dateField, setDateField] = useState<'data_venda' | 'data_instalacao'>('data_venda');
+  const [dateField, setDateField] = useState<'data_venda' | 'data_instalacao'>('data_instalacao');
   const [statusMakeOptions, setStatusMakeOptions] = useState<string[]>([]);
   const [visibleCount, setVisibleCount] = useState(50);
   const [selectedVenda, setSelectedVenda] = useState<VendaInterna | null>(null);
