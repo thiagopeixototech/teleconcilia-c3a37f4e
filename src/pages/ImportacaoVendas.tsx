@@ -335,7 +335,7 @@ export default function ImportacaoVendas() {
         .filter(Boolean);
 
       const existingMap = new Map<string, string>();
-      const CHECK_BATCH = 2000;
+      const CHECK_BATCH = 200;
       for (let i = 0; i < idsToCheck.length; i += CHECK_BATCH) {
         const batch = idsToCheck.slice(i, i + CHECK_BATCH);
         const { data } = await supabase
