@@ -316,33 +316,39 @@ export default function ImportacaoVendas() {
   // Process import
   const processImport = async () => {
     setIsProcessing(true);
-    setImportProgress({ current: 0, total: csvRows.length, percent: 0 });
-    const importResult: ImportResult = { total: csvRows.length, success: 0, updated: 0, errors: [] };
+    const totalRows = csvRows.length;
+    setImportProgress({ current: 0, total: totalRows, percent: 0 });
+    const importResult: ImportResult = { total: totalRows, success: 0, updated: 0, errors: [] };
 
     try {
-      // Fetch existing identificadores to detect updates
+      // === Phase 1: Check existing IDs (show progress as "preparing") ===
       const idsToCheck = csvRows
         .map(r => r[mapping.identificador_make]?.trim())
         .filter(Boolean);
 
-      // Batch check in groups of 500
-      const existingMap = new Map<string, string>(); // identificador_make -> venda id
-      for (let i = 0; i < idsToCheck.length; i += 500) {
-        const batch = idsToCheck.slice(i, i + 500);
+      const existingMap = new Map<string, string>();
+      const CHECK_BATCH = 2000;
+      for (let i = 0; i < idsToCheck.length; i += CHECK_BATCH) {
+        const batch = idsToCheck.slice(i, i + CHECK_BATCH);
         const { data } = await supabase
           .from('vendas_internas')
           .select('id, identificador_make')
           .in('identificador_make', batch);
         data?.forEach(d => { if (d.identificador_make) existingMap.set(d.identificador_make, d.id); });
+        // Show preparation progress (0-10% range)
+        const prepPercent = Math.round(((i + batch.length) / idsToCheck.length) * 10);
+        setImportProgress({ current: 0, total: totalRows, percent: prepPercent });
+        await new Promise(r => setTimeout(r, 10));
       }
 
+      // === Phase 2: Build insert/update arrays (runs synchronously, fast) ===
       const rowsToInsert: any[] = [];
       const rowsToUpdate: { id: string; data: any }[] = [];
       const seenIds = new Set<string>();
 
       for (let i = 0; i < csvRows.length; i++) {
         const row = csvRows[i];
-        const lineNum = i + 2; // +2 for header + 0-index
+        const lineNum = i + 2;
 
         const identificador = row[mapping.identificador_make]?.trim();
         if (!identificador) {
@@ -350,7 +356,6 @@ export default function ImportacaoVendas() {
           continue;
         }
 
-        // Prevent intra-file duplicates
         if (seenIds.has(identificador)) {
           importResult.errors.push({ line: lineNum, reason: `Duplicado dentro do próprio arquivo: "${identificador}"`, data: row });
           continue;
@@ -403,7 +408,6 @@ export default function ImportacaoVendas() {
         };
 
         if (existingMap.has(identificador)) {
-          // Update existing record (don't overwrite status_interno)
           const existingId = existingMap.get(identificador)!;
           rowsToUpdate.push({ id: existingId, data: rowData });
         } else {
@@ -411,13 +415,15 @@ export default function ImportacaoVendas() {
         }
       }
 
-      // Insert new records in batches of 200
+      // === Phase 3: Insert in batches of 500 (progress 10-80%) ===
       let processed = 0;
       const totalToProcess = rowsToInsert.length + rowsToUpdate.length;
-      for (let i = 0; i < rowsToInsert.length; i += 200) {
-        const batch = rowsToInsert.slice(i, i + 200);
+      const INSERT_BATCH = 500;
+      for (let i = 0; i < rowsToInsert.length; i += INSERT_BATCH) {
+        const batch = rowsToInsert.slice(i, i + INSERT_BATCH);
         const { error } = await supabase.from('vendas_internas').insert(batch);
         if (error) {
+          // Fallback: try one by one
           for (const row of batch) {
             const { error: singleError } = await supabase.from('vendas_internas').insert(row);
             if (singleError) {
@@ -430,26 +436,31 @@ export default function ImportacaoVendas() {
           importResult.success += batch.length;
         }
         processed += batch.length;
-        setImportProgress({ current: processed, total: totalToProcess, percent: Math.round((processed / totalToProcess) * 100) });
-        await new Promise(r => setTimeout(r, 50)); // yield to UI
+        const pct = 10 + Math.round((processed / Math.max(totalToProcess, 1)) * 70);
+        setImportProgress({ current: processed, total: totalToProcess, percent: pct });
+        await new Promise(r => setTimeout(r, 30));
       }
 
-      // Update existing records one by one
-      for (const item of rowsToUpdate) {
-        const { error } = await supabase
-          .from('vendas_internas')
-          .update(item.data)
-          .eq('id', item.id);
-        if (error) {
-          importResult.errors.push({ line: 0, reason: `Erro ao atualizar: ${error.message}`, data: item.data });
-        } else {
-          importResult.updated++;
-        }
-        processed++;
-        if (processed % 50 === 0) {
-          setImportProgress({ current: processed, total: totalToProcess, percent: Math.round((processed / totalToProcess) * 100) });
-          await new Promise(r => setTimeout(r, 50)); // yield to UI
-        }
+      // === Phase 4: Update in batches of 50 via Promise.all (progress 80-100%) ===
+      const UPDATE_BATCH = 50;
+      for (let i = 0; i < rowsToUpdate.length; i += UPDATE_BATCH) {
+        const batch = rowsToUpdate.slice(i, i + UPDATE_BATCH);
+        const results = await Promise.all(
+          batch.map(item =>
+            supabase.from('vendas_internas').update(item.data).eq('id', item.id)
+          )
+        );
+        results.forEach((res, idx) => {
+          if (res.error) {
+            importResult.errors.push({ line: 0, reason: `Erro ao atualizar: ${res.error.message}`, data: batch[idx].data });
+          } else {
+            importResult.updated++;
+          }
+        });
+        processed += batch.length;
+        const pct = 10 + Math.round((processed / Math.max(totalToProcess, 1)) * 70);
+        setImportProgress({ current: processed, total: totalToProcess, percent: Math.min(pct, 95) });
+        await new Promise(r => setTimeout(r, 30));
       }
 
       // Audit log
