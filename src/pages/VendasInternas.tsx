@@ -580,8 +580,7 @@ export default function VendasInternas() {
         <Card>
           <CardHeader>
             <CardTitle>
-              Vendas Registradas ({filteredVendas.length}
-              {filteredVendas.length !== totalCount && ` de ${totalCount}`})
+              Vendas Registradas ({filteredVendas.length})
             </CardTitle>
             {filteredVendas.length > visibleCount && (
               <p className="text-sm text-muted-foreground">
