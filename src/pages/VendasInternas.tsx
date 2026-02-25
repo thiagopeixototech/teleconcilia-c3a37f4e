@@ -50,8 +50,10 @@ import {
   CalendarIcon,
   X,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  CheckSquare
 } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
@@ -101,6 +103,11 @@ export default function VendasInternas() {
   const [editStatus, setEditStatus] = useState<StatusInterno>('nova');
   const [editObservacoes, setEditObservacoes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  // Bulk selection
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkStatus, setBulkStatus] = useState<StatusInterno | ''>('');
+  const [isBulkSaving, setIsBulkSaving] = useState(false);
 
   const period = usePeriodFilter('vendas');
 
@@ -243,6 +250,49 @@ export default function VendasInternas() {
       toast.error('Erro ao atualizar status');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // Bulk selection helpers
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    const visible = filteredVendas.slice(0, visibleCount);
+    if (selectedIds.size === visible.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(visible.map(v => v.id)));
+    }
+  };
+
+  const handleBulkStatusUpdate = async () => {
+    if (!bulkStatus || selectedIds.size === 0) return;
+    setIsBulkSaving(true);
+    try {
+      const ids = Array.from(selectedIds);
+      const BATCH = 200;
+      for (let i = 0; i < ids.length; i += BATCH) {
+        const batch = ids.slice(i, i + BATCH);
+        const { error } = await supabase
+          .from('vendas_internas')
+          .update({ status_interno: bulkStatus })
+          .in('id', batch);
+        if (error) throw error;
+      }
+      toast.success(`${ids.length} vendas atualizadas para "${statusLabels[bulkStatus]}"`);
+      setSelectedIds(new Set());
+      setBulkStatus('');
+      fetchVendas();
+    } catch (error: any) {
+      toast.error('Erro ao atualizar vendas: ' + (error.message || ''));
+    } finally {
+      setIsBulkSaving(false);
     }
   };
 
@@ -471,10 +521,46 @@ export default function VendasInternas() {
             )}
           </CardHeader>
           <CardContent>
+            {/* Bulk action bar */}
+            {(isAdmin || isSupervisor) && selectedIds.size > 0 && (
+              <div className="flex items-center gap-3 mb-4 p-3 rounded-md bg-muted border">
+                <CheckSquare className="h-4 w-4 text-primary" />
+                <span className="text-sm font-medium">{selectedIds.size} selecionada(s)</span>
+                <Select value={bulkStatus} onValueChange={(v) => setBulkStatus(v as StatusInterno)}>
+                  <SelectTrigger className="w-52">
+                    <SelectValue placeholder="Atualizar status para..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(statusLabels).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button 
+                  size="sm" 
+                  disabled={!bulkStatus || isBulkSaving}
+                  onClick={handleBulkStatusUpdate}
+                >
+                  {isBulkSaving && <Loader2 className="mr-2 h-3 w-3 animate-spin" />}
+                  Atualizar
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
+                  Limpar seleção
+                </Button>
+              </div>
+            )}
             <div className="rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
+                    {(isAdmin || isSupervisor) && (
+                      <TableHead className="w-10">
+                        <Checkbox 
+                          checked={filteredVendas.slice(0, visibleCount).length > 0 && selectedIds.size === filteredVendas.slice(0, visibleCount).length}
+                          onCheckedChange={toggleSelectAll}
+                        />
+                      </TableHead>
+                    )}
                     <TableHead>Vendedor</TableHead>
                     <TableHead>Protocolo</TableHead>
                     <TableHead>ID Make</TableHead>
@@ -492,13 +578,21 @@ export default function VendasInternas() {
                 <TableBody>
                   {filteredVendas.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={13} className="text-center py-8 text-muted-foreground">
                         Nenhuma venda encontrada
                       </TableCell>
                     </TableRow>
                   ) : (
                     filteredVendas.slice(0, visibleCount).map((venda) => (
-                      <TableRow key={venda.id}>
+                      <TableRow key={venda.id} data-state={selectedIds.has(venda.id) ? 'selected' : undefined}>
+                        {(isAdmin || isSupervisor) && (
+                          <TableCell className="w-10">
+                            <Checkbox 
+                              checked={selectedIds.has(venda.id)}
+                              onCheckedChange={() => toggleSelect(venda.id)}
+                            />
+                          </TableCell>
+                        )}
                         <TableCell className="text-sm">
                           {(venda as any).usuario?.nome || '-'}
                         </TableCell>

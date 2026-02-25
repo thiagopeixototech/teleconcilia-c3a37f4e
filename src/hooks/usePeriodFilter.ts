@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { startOfMonth, endOfMonth, subMonths, format, addMonths } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 
-export type PeriodPreset = 'comissao' | 'mes_atual' | 'mes_anterior' | 'personalizado';
+export type PeriodPreset = 'todas' | 'comissao' | 'mes_atual' | 'mes_anterior' | 'personalizado';
 
 const TIMEZONE = 'America/Sao_Paulo';
 const STORAGE_KEY = 'teleconcilia_period_preset';
@@ -42,6 +42,8 @@ function getPeriodForPreset(preset: PeriodPreset): { start: Date; end: Date } {
   const now = toZonedTime(new Date(), TIMEZONE);
 
   switch (preset) {
+    case 'todas':
+      return { start: new Date(2020, 0, 1), end: new Date(2099, 11, 31) };
     case 'comissao': {
       const { start, end } = getComissaoPeriod();
       return { start, end };
