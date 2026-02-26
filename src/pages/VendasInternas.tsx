@@ -142,7 +142,23 @@ export default function VendasInternas() {
 
   useEffect(() => {
     fetchOperadoras();
+    fetchStatusMakeOptions();
   }, []);
+
+  const fetchStatusMakeOptions = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('vendas_internas')
+        .select('status_make')
+        .not('status_make', 'is', null)
+        .not('status_make', 'eq', '');
+      if (error) throw error;
+      const unique = [...new Set((data || []).map((d: any) => d.status_make as string))].sort();
+      setStatusMakeOptions(unique);
+    } catch (error) {
+      console.error('Error fetching status_make options:', error);
+    }
+  };
 
   const handleBuscar = () => {
     setHasFetched(true);
@@ -185,14 +201,6 @@ export default function VendasInternas() {
       setTotalCount(allVendas.length);
 
       setVendas(allVendas as any);
-      
-      // Extract unique status_make values
-      const uniqueStatusMake = [...new Set(
-        allVendas
-          .map((v: any) => v.status_make)
-          .filter((s: string | null): s is string => s !== null && s !== undefined && s !== '')
-      )].sort();
-      setStatusMakeOptions(uniqueStatusMake);
     } catch (error) {
       console.error('Error fetching vendas:', error);
       toast.error('Erro ao carregar vendas');
