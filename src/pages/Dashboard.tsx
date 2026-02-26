@@ -36,7 +36,7 @@ interface DashboardStats {
   percentualConciliacao: number;
 }
 
-const COLORS = ['hsl(215, 70%, 45%)', 'hsl(142, 70%, 45%)', 'hsl(38, 92%, 50%)', 'hsl(0, 72%, 51%)'];
+const COLORS = ['hsl(38, 92%, 50%)', 'hsl(215, 70%, 45%)', 'hsl(280, 60%, 50%)', 'hsl(142, 70%, 45%)', 'hsl(0, 72%, 51%)'];
 
 const formatBRL = (value: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
@@ -119,6 +119,7 @@ export default function Dashboard() {
       setTotalEstornos(estTotal);
 
       const statusCount = {
+        aguardando: vendas.filter(v => v.status_interno === 'aguardando').length,
         nova: vendas.filter(v => v.status_interno === 'nova').length,
         enviada: vendas.filter(v => v.status_interno === 'enviada').length,
         confirmada: vendasConfirmadas,
@@ -126,6 +127,7 @@ export default function Dashboard() {
       };
 
       setVendasPorStatus([
+        { name: 'Aguardando', value: statusCount.aguardando },
         { name: 'Nova', value: statusCount.nova },
         { name: 'Enviada', value: statusCount.enviada },
         { name: 'Confirmada', value: statusCount.confirmada },
