@@ -57,6 +57,7 @@ import {
   ArrowDown,
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Progress } from '@/components/ui/progress';
 
 type SortKey = 'vendedor' | 'protocolo_interno' | 'identificador_make' | 'cliente_nome' | 'cpf_cnpj' | 'operadora' | 'valor' | 'status_interno' | 'status_make' | 'data_venda' | 'data_instalacao';
 type SortDir = 'asc' | 'desc';
@@ -106,6 +107,7 @@ export default function VendasInternas() {
   const [dateField, setDateField] = useState<'data_venda' | 'data_instalacao'>('data_instalacao');
   const [statusMakeOptions, setStatusMakeOptions] = useState<string[]>([]);
   const [visibleCount, setVisibleCount] = useState(50);
+  const [loadProgress, setLoadProgress] = useState(0);
   const [selectedVenda, setSelectedVenda] = useState<VendaInterna | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -163,16 +165,21 @@ export default function VendasInternas() {
   const handleBuscar = () => {
     setHasFetched(true);
     setVisibleCount(50);
+    setIsLoading(true);
+    setLoadProgress(0);
     fetchVendas();
   };
 
   const fetchVendas = async () => {
     try {
-      // Fetch all records in batches of 1000, filtered by period
       const allVendas: any[] = [];
       const batchSize = 1000;
       let from = 0;
       let hasMore = true;
+      let batchNum = 0;
+
+      // First pass: estimate by fetching count
+      setLoadProgress(5);
 
       while (hasMore) {
         const { data, error } = await supabase
@@ -189,23 +196,31 @@ export default function VendasInternas() {
 
         if (error) throw error;
 
+        batchNum++;
+
         if (data && data.length > 0) {
           allVendas.push(...data);
           from += batchSize;
           hasMore = data.length === batchSize;
+          // Progress: ramp up towards 90% as batches load
+          setLoadProgress(Math.min(90, 5 + batchNum * 25));
         } else {
           hasMore = false;
         }
       }
 
+      setLoadProgress(95);
       setTotalCount(allVendas.length);
-
       setVendas(allVendas as any);
+      setLoadProgress(100);
     } catch (error) {
       console.error('Error fetching vendas:', error);
       toast.error('Erro ao carregar vendas');
     } finally {
-      setIsLoading(false);
+      setTimeout(() => {
+        setIsLoading(false);
+        setLoadProgress(0);
+      }, 300);
     }
   };
 
@@ -609,12 +624,18 @@ export default function VendasInternas() {
                       />
                     </div>
                   </div>
-                  <div className="flex justify-end pt-2">
+                   <div className="flex justify-end pt-2">
                     <Button onClick={handleBuscar} disabled={isLoading} className="gap-2">
                       {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                       Buscar
                     </Button>
                   </div>
+                  {isLoading && (
+                    <div className="space-y-1 pt-2">
+                      <Progress value={loadProgress} className="h-2" />
+                      <p className="text-xs text-muted-foreground text-center">Carregando... {loadProgress}%</p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
