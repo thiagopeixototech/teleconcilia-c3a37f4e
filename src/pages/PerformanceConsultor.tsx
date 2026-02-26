@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -48,6 +48,7 @@ function irlBadge(irl: number) {
 export default function PerformanceConsultor() {
   const { role } = useAuth();
   const [selectedConsultores, setSelectedConsultores] = useState<Set<string>>(new Set());
+  const [consultorOptions, setConsultorOptions] = useState<string[]>([]);
   const [sortField, setSortField] = useState<SortField>('receita_liquida');
   const [sortAsc, setSortAsc] = useState(false);
 
@@ -63,6 +64,24 @@ export default function PerformanceConsultor() {
   const dataInstalacaoFimStr = dataInstalacaoFim ? format(dataInstalacaoFim, 'yyyy-MM-dd') : null;
 
   const hasDateFilter = dataVendaInicio || dataVendaFim || dataInstalacaoInicio || dataInstalacaoFim;
+
+  // Fetch all consultores on mount (independent of date filters)
+  useEffect(() => {
+    const fetchConsultores = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('usuarios')
+          .select('nome')
+          .eq('ativo', true)
+          .order('nome');
+        if (error) throw error;
+        setConsultorOptions((data || []).map((u: any) => u.nome as string));
+      } catch (error) {
+        console.error('Error fetching consultores:', error);
+      }
+    };
+    fetchConsultores();
+  }, []);
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['performance-consultores', dataVendaInicioStr, dataVendaFimStr, dataInstalacaoInicioStr, dataInstalacaoFimStr],
@@ -142,12 +161,8 @@ export default function PerformanceConsultor() {
     });
   }, [rows, estornosPorUsuario]);
 
-  // All unique consultor names for the filter
-  const allConsultores = useMemo(() => {
-    return [...new Set(enrichedRows.map(r => r.consultor_nome))].sort((a, b) =>
-      a.localeCompare(b, 'pt-BR')
-    );
-  }, [enrichedRows]);
+  // Use independently loaded consultores list
+  const allConsultores = consultorOptions;
 
   const toggleConsultor = (nome: string) => {
     setSelectedConsultores(prev => {
