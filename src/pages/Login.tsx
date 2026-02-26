@@ -13,12 +13,12 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  
+
   const { signIn } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  
-  const from = (location.state as { from?: Location })?.from?.pathname || '/dashboard';
+
+  const from = (location.state as {from?: Location;})?.from?.pathname || '/dashboard';
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,7 +27,7 @@ export default function Login() {
 
     try {
       const { error } = await signIn(email, password);
-      
+
       if (error) {
         if (error.message.includes('Invalid login credentials')) {
           setError('Email ou senha incorretos.');
@@ -50,10 +50,10 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="inline-flex h-16 w-16 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold text-2xl mb-4">
-            TC
+          <div className="inline-flex h-16 w-16 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold text-2xl mb-4">VK
+
           </div>
-          <h1 className="text-2xl font-bold text-foreground">TeleConcilia</h1>
+          <h1 className="text-2xl font-bold text-foreground">Verifika</h1>
           <p className="text-muted-foreground">Sistema de Conciliação de Vendas</p>
         </div>
 
@@ -65,12 +65,12 @@ export default function Login() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {error && (
-              <Alert variant="destructive" className="mb-4">
+            {error &&
+            <Alert variant="destructive" className="mb-4">
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
-            )}
+            }
 
             <form onSubmit={handleLogin} className="space-y-4">
               <div className="space-y-2">
@@ -82,8 +82,8 @@ export default function Login() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  disabled={isLoading}
-                />
+                  disabled={isLoading} />
+
               </div>
 
               <div className="space-y-2">
@@ -95,24 +95,24 @@ export default function Login() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  disabled={isLoading}
-                />
+                  disabled={isLoading} />
+
               </div>
 
               <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? (
-                  <>
+                {isLoading ?
+                <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Entrando...
-                  </>
-                ) : (
-                  'Entrar'
-                )}
+                  </> :
+
+                'Entrar'
+                }
               </Button>
             </form>
           </CardContent>
         </Card>
       </div>
-    </div>
-  );
+    </div>);
+
 }
