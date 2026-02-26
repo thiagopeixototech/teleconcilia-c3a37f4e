@@ -1,92 +1,237 @@
+---
 
+# 🔥 Plano de Alterações Estruturais – Teleconcilia (Versão Corrigida)
 
-## Sistema de Conciliação de Vendas Telecom/Fibra Óptica
+## 📌 Resumo Real das Mudanças
 
-### Visão Geral
-Sistema web para cruzar vendas registradas internamente com relatórios "linha a linha" das operadoras, permitindo acompanhamento por vendedor, empresa e supervisor.
+Seis mudanças principais:
+
+1. Transformar Divergências em fila automática de vendas não conciliadas
+2. Apelido obrigatório na importação do Linha a Linha (nível de lote)
+3. Manter coluna "Confirmada" e adicionar nova coluna separada "Linha a Linha"
+4. Ajustar filtros da tela Divergências
+5. Redesenhar filtros de data para serem independentes (Data Venda + Data Instalação)
+6. Aplicar mesma lógica de datas nas telas relevantes
 
 ---
 
-### 🔐 Autenticação e Permissões
+# 1️⃣ Banco de Dados – Apelido é do LOTE, não da linha individual
 
-**Perfis de usuário (via Supabase Auth + tabela de roles):**
-- **Admin**: acesso total, pode editar qualquer registro e criar usuários
-- **Supervisor**: vendedor promovido que vê vendas do seu time
-- **Vendedor**: vê apenas suas próprias vendas
+A coluna `apelido` na tabela `linha_operadora` está correta.
 
-**Gestão de usuários:**
-- Admin cadastra vendedores e supervisores manualmente
-- Campo `supervisor_id` na tabela vendedores para hierarquia
+Mas a regra precisa ser entendida assim:
 
----
+- O apelido representa o **lote importado**
+- Todas as linhas daquele lote compartilham o mesmo apelido
+- Ele não é um campo decorativo, ele será usado para rastrear conciliações
 
-### 🗄️ Estrutura de Dados
+Migração correta:
 
-**Tabelas principais:**
-1. **empresas** - Cadastro de empresas parceiras
-2. **vendedores** - Vendedores com vínculo a empresa e supervisor
-3. **vendas_internas** - Vendas registradas pela equipe
-4. **linha_operadora** - Dados importados das operadoras
-5. **conciliacoes** - Cruzamento entre vendas internas e linhas
-6. **user_roles** - Controle de permissões (admin, supervisor, vendedor)
-7. **audit_log** - Histórico de alterações de status
+```
+ALTER TABLE public.linha_operadora ADD COLUMN apelido TEXT;
+```
 
 ---
 
-### 📊 Telas do Sistema
+# 2️⃣ Tela Linha a Linha – Apelido Obrigatório
 
-#### 1. Dashboard
-- KPIs: total vendas, confirmadas, % conciliação, valor vendido
-- Gráficos por empresa e por vendedor
-- Filtros por período
-- Visão ajustada conforme perfil do usuário
+Arquivo: `LinhaOperadora.tsx`
 
-#### 2. Vendas Internas
-- Tabela com busca, filtros (vendedor, empresa, status, data) e ordenação
-- Edição de status com histórico
-- Página de detalhes completa
-- Exportação CSV
+Regras:
 
-#### 3. Linha a Linha Operadora
-- Listagem dos dados importados das operadoras
-- Filtros por operadora, status, quinzena
-- Upload de CSV/Excel com parser automático
-- Exportação de dados
+- Campo "Apelido do Lote" obrigatório
+- Não permitir importação sem apelido
+- O valor deve ser salvo na coluna `apelido`
+- A listagem deve exibir o apelido no lugar de `arquivo_origem` (ou como principal identificador do lote)
 
-#### 4. Conciliação
-- Lista de vendas com indicador visual de status (conciliado/divergente/não encontrado)
-- Ação manual para vincular venda interna com registro da operadora
-- Definição do tipo de match (protocolo, CPF, telefone, manual)
-
-#### 5. Divergências
-- Vendas internas sem correspondência
-- Registros da operadora sem venda interna
-- Ações: ignorar, marcar como erro interno, ou venda externa
-
-#### 6. Gestão (Admin)
-- Cadastro de empresas
-- Cadastro de vendedores e supervisores
-- Atribuição de perfis e hierarquias
+⚠️ O apelido é o identificador oficial do lote a partir de agora.
 
 ---
 
-### 🎨 Design
+# 3️⃣ Tela Vendas Internas – DUAS COLUNAS SEPARADAS
 
-**Estilo Corporativo/Profissional:**
-- Cores sóbrias (azul e cinza)
-- Visual limpo focado em produtividade
-- Layout responsivo com sidebar de navegação
-- Tabelas com filtros inline e paginação
-- Cards para KPIs e gráficos no dashboard
+⚠️ Aqui estava o erro de interpretação.
+
+## ✔️ Manter coluna atual de status
+
+A coluna que hoje mostra:
+
+- "Confirmada"
+- Ou vazio
+
+DEVE continuar existindo exatamente como está.
+
+Essa coluna é apenas um indicador binário de conciliação.
 
 ---
 
-### ⚡ Funcionalidades Técnicas
+## ✔️ Criar nova coluna adicional
 
-- CRUD completo de vendas internas
-- Upload e parsing de CSV/Excel para importar dados das operadoras
-- Sistema de conciliação com score de match
-- Auditoria completa (created_at, updated_at, logs de alteração)
-- Row Level Security (RLS) para controle de acesso por perfil
-- Estrutura preparada para futura integração via API/ETL
+Nova coluna separada chamada:
 
+```
+Linha a Linha
+```
+
+ou
+
+```
+Confirmado no Linha a Linha
+```
+
+Essa coluna deve:
+
+- Buscar o apelido do `linha_operadora` vinculado à conciliação
+- Mostrar o apelido se conciliada
+- Ficar vazia se não conciliada
+
+---
+
+### Exemplo esperado:
+
+
+| Protocolo | Status     | Linha a Linha         |
+| --------- | ---------- | --------------------- |
+| 12345     | Confirmada | Claro Nov 1ª Quinzena |
+| 67890     | &nbsp;     | &nbsp;                |
+
+
+---
+
+🚫 NÃO substituir a coluna Confirmada  
+  
+🚫 NÃO juntar status + apelido na mesma coluna
+
+São informações diferentes.
+
+---
+
+# 4️⃣ Redesenho dos Filtros de Data (Mudança Estrutural Real)
+
+Substituir completamente o modelo atual de:
+
+Radio Button:
+
+- Data Venda OU
+- Data Instalação
+
+Por:
+
+## Dois blocos fixos independentes
+
+### 🔹 Bloco Data de Venda
+
+- Data Início
+- Data Fim
+
+### 🔹 Bloco Data de Instalação
+
+- Data Início
+- Data Fim
+
+---
+
+## Regras Obrigatórias
+
+- Nenhum campo vem preenchido automaticamente
+- Se apenas Data Venda preenchida → filtra só por venda
+- Se apenas Data Instalação preenchida → filtra só por instalação
+- Se ambos preenchidos → aplicar AND
+- Se nenhum preenchido → não aplicar filtro de data
+- A busca só executa ao clicar em "Buscar"
+
+---
+
+## Query condicional correta
+
+```
+(_data_venda_inicio IS NULL OR vi.data_venda >= _data_venda_inicio)
+AND (_data_venda_fim IS NULL OR vi.data_venda <= _data_venda_fim)
+AND (_data_instalacao_inicio IS NULL OR vi.data_instalacao >= _data_instalacao_inicio)
+AND (_data_instalacao_fim IS NULL OR vi.data_instalacao <= _data_instalacao_fim)
+```
+
+---
+
+# 5️⃣ Tela Divergências – Agora é 100% Automática
+
+Arquivo: `Divergencias.tsx`
+
+## ❌ Remover totalmente:
+
+- Filtro de status_interno
+- Qualquer controle manual de status
+
+---
+
+## ✅ Nova regra da tela
+
+Essa tela deve exibir automaticamente:
+
+Vendas que NÃO possuem registro em `conciliacoes` com:
+
+```
+status_final = 'conciliado'
+```
+
+Ou seja:
+
+Se está conciliada → não aparece  
+  
+Se não está conciliada → aparece
+
+Simples.
+
+---
+
+## Filtros que devem existir:
+
+- Status Make
+- Operadora
+- ID Make
+- Protocolo
+- Vendedor
+- Data Venda (bloco independente)
+- Data Instalação (bloco independente)
+
+⚠️ Não existe mais filtro de conciliação aqui.
+
+---
+
+# 6️⃣ Tela Performance – Atualizar RPC
+
+Arquivo: `PerformanceConsultor.tsx`
+
+Atualizar RPC para aceitar 4 parâmetros opcionais:
+
+```
+_data_venda_inicio
+_data_venda_fim
+_data_instalacao_inicio
+_data_instalacao_fim
+```
+
+Remover modelo antigo baseado em um único campo de data.
+
+---
+
+# 7️⃣ Ordem Correta de Execução
+
+1. Migração coluna apelido
+2. Migração RPC performance
+3. Criar componente reutilizável DateRangeBlock
+4. Atualizar LinhaOperadora.tsx
+5. Atualizar VendasInternas.tsx
+6. Atualizar Divergencias.tsx
+7. Atualizar PerformanceConsultor.tsx
+
+---
+
+# 🎯 Objetivo Final
+
+- Divergência 100% automática
+- Rastreabilidade por lote
+- Status e lote separados corretamente
+- Filtros de data flexíveis
+- Performance preservada
+- Sem ambiguidade de regra
