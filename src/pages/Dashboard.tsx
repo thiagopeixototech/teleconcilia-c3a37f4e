@@ -1,24 +1,27 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-
-import { PeriodFilter } from '@/components/PeriodFilter';
-import { usePeriodFilter } from '@/hooks/usePeriodFilter';
+import { DateRangeBlock } from '@/components/DateRangeBlock';
 import { Badge } from '@/components/ui/badge';
-import { 
-  ShoppingCart, 
-  CheckCircle, 
-  XCircle, 
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
+import {
+  ShoppingCart,
+  CheckCircle,
+  XCircle,
   TrendingUp,
   Loader2,
   RotateCcw,
   DollarSign,
+  Filter,
+  X,
 } from 'lucide-react';
-import { 
-  PieChart, 
-  Pie, 
+import {
+  PieChart,
+  Pie,
   Cell,
   Tooltip,
   ResponsiveContainer,
@@ -34,6 +37,12 @@ interface DashboardStats {
   valorTotal: number;
   valorConciliado: number;
   percentualConciliacao: number;
+}
+
+interface UsuarioOption {
+  id: string;
+  nome: string;
+  supervisor_id: string | null;
 }
 
 const COLORS = ['hsl(38, 92%, 50%)', 'hsl(215, 70%, 45%)', 'hsl(280, 60%, 50%)', 'hsl(142, 70%, 45%)', 'hsl(0, 72%, 51%)'];
@@ -54,27 +63,69 @@ export default function Dashboard() {
   const [vendasPorStatus, setVendasPorStatus] = useState<{ name: string; value: number }[]>([]);
   const [totalEstornos, setTotalEstornos] = useState(0);
 
-  const period = usePeriodFilter();
+  // Date filters
+  const [dataVendaInicio, setDataVendaInicio] = useState<Date | null>(null);
+  const [dataVendaFim, setDataVendaFim] = useState<Date | null>(null);
+  const [dataInstInicio, setDataInstInicio] = useState<Date | null>(null);
+  const [dataInstFim, setDataInstFim] = useState<Date | null>(null);
+
+  // Entity filters
+  const [selectedUsuarioId, setSelectedUsuarioId] = useState<string | null>(null);
+  const [selectedSupervisorId, setSelectedSupervisorId] = useState<string | null>(null);
+
+  // Lists for selects
+  const [usuarios, setUsuarios] = useState<UsuarioOption[]>([]);
+  const [supervisores, setSupervisores] = useState<UsuarioOption[]>([]);
+
+  // Derived date strings for RPC
+  const dataInicioStr = dataVendaInicio ? format(dataVendaInicio, 'yyyy-MM-dd') : '1900-01-01';
+  const dataFimStr = dataVendaFim ? format(dataVendaFim, 'yyyy-MM-dd') : '2099-12-31';
+  const dataInstInicioStr = dataInstInicio ? format(dataInstInicio, 'yyyy-MM-dd') : null;
+  const dataInstFimStr = dataInstFim ? format(dataInstFim, 'yyyy-MM-dd') : null;
+
+  // Fetch usuarios for filter dropdowns
+  useEffect(() => {
+    const fetchUsuarios = async () => {
+      const { data } = await supabase
+        .from('usuarios')
+        .select('id, nome, supervisor_id')
+        .eq('ativo', true)
+        .order('nome');
+
+      if (data) {
+        setUsuarios(data);
+        // Supervisores are those who have subordinates
+        const supervisorIds = new Set(data.filter(u => u.supervisor_id).map(u => u.supervisor_id!));
+        setSupervisores(data.filter(u => supervisorIds.has(u.id)));
+      }
+    };
+    fetchUsuarios();
+  }, []);
 
   useEffect(() => {
     fetchDashboardData();
-  }, [vendedor, period.dataInicioStr, period.dataFimStr]);
+  }, [vendedor, dataInicioStr, dataFimStr, dataInstInicioStr, dataInstFimStr, selectedUsuarioId, selectedSupervisorId]);
 
   const fetchDashboardData = async () => {
     try {
       setIsLoading(true);
 
-      // Use RPC for accurate aggregation (no 1000 row limit)
+      const rpcParams: Record<string, any> = {
+        _data_inicio: dataInicioStr,
+        _data_fim: dataFimStr,
+      };
+      if (dataInstInicioStr) rpcParams._data_instalacao_inicio = dataInstInicioStr;
+      if (dataInstFimStr) rpcParams._data_instalacao_fim = dataInstFimStr;
+      if (selectedUsuarioId) rpcParams._usuario_id = selectedUsuarioId;
+      if (selectedSupervisorId) rpcParams._supervisor_id = selectedSupervisorId;
+
       const [statsResult, estornosResult] = await Promise.all([
-        supabase.rpc('get_dashboard_stats', {
-          _data_inicio: period.dataInicioStr,
-          _data_fim: period.dataFimStr,
-        }),
+        supabase.rpc('get_dashboard_stats', rpcParams as any),
         supabase
           .from('estornos')
           .select('valor_estornado')
-          .gte('referencia_desconto', format(period.dataInicio, 'yyyy-MM'))
-          .lte('referencia_desconto', format(period.dataFim, 'yyyy-MM')),
+          .gte('referencia_desconto', dataVendaInicio ? format(dataVendaInicio, 'yyyy-MM') : '1900-01')
+          .lte('referencia_desconto', dataVendaFim ? format(dataVendaFim, 'yyyy-MM') : '2099-12'),
       ]);
 
       if (statsResult.error) throw statsResult.error;
@@ -115,14 +166,109 @@ export default function Dashboard() {
   const receitaLiquida = (stats?.valorConciliado || 0) - totalEstornos;
   const irl = (stats?.valorConciliado || 0) > 0 ? (receitaLiquida / stats!.valorConciliado) * 100 : 0;
 
+  const hasActiveFilters = dataVendaInicio || dataVendaFim || dataInstInicio || dataInstFim || selectedUsuarioId || selectedSupervisorId;
+
+  const clearAllFilters = () => {
+    setDataVendaInicio(null);
+    setDataVendaFim(null);
+    setDataInstInicio(null);
+    setDataInstFim(null);
+    setSelectedUsuarioId(null);
+    setSelectedSupervisorId(null);
+  };
+
+  // Filter vendedores list by selected supervisor
+  const filteredVendedores = selectedSupervisorId
+    ? usuarios.filter(u => u.supervisor_id === selectedSupervisorId)
+    : usuarios;
 
   return (
     <AppLayout title="Dashboard">
       <div className="space-y-6">
-        {/* Period Filter */}
+        {/* Filters */}
         <Card>
-          <CardContent className="pt-6">
-            <PeriodFilter {...period} />
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Filter className="h-4 w-4" />
+                Filtros
+              </CardTitle>
+              {hasActiveFilters && (
+                <Button variant="ghost" size="sm" onClick={clearAllFilters} className="text-xs gap-1">
+                  <X className="h-3.5 w-3.5" />
+                  Limpar filtros
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              {/* Data Venda */}
+              <DateRangeBlock
+                label="Data de Venda"
+                dateFrom={dataVendaInicio}
+                dateTo={dataVendaFim}
+                onDateFromChange={setDataVendaInicio}
+                onDateToChange={setDataVendaFim}
+              />
+
+              {/* Data Instalação */}
+              <DateRangeBlock
+                label="Data de Instalação"
+                dateFrom={dataInstInicio}
+                dateTo={dataInstFim}
+                onDateFromChange={setDataInstInicio}
+                onDateToChange={setDataInstFim}
+              />
+
+              {/* Supervisor */}
+              {(isAdmin || isSupervisor) && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">Supervisor</Label>
+                  <Select
+                    value={selectedSupervisorId || '_all'}
+                    onValueChange={(v) => {
+                      setSelectedSupervisorId(v === '_all' ? null : v);
+                      // Reset vendedor when supervisor changes
+                      if (v !== (selectedSupervisorId || '_all')) {
+                        setSelectedUsuarioId(null);
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Todos" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_all">Todos</SelectItem>
+                      {supervisores.map(s => (
+                        <SelectItem key={s.id} value={s.id}>{s.nome}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* Vendedor */}
+              {(isAdmin || isSupervisor) && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">Vendedor</Label>
+                  <Select
+                    value={selectedUsuarioId || '_all'}
+                    onValueChange={(v) => setSelectedUsuarioId(v === '_all' ? null : v)}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Todos" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_all">Todos</SelectItem>
+                      {filteredVendedores.map(u => (
+                        <SelectItem key={u.id} value={u.id}>{u.nome}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
 
