@@ -553,19 +553,37 @@ export type Database = {
         Args: { _user_id: string; _usuario_id: string }
         Returns: boolean
       }
-      get_performance_consultores: {
-        Args: { _data_fim: string; _data_inicio: string }
-        Returns: {
-          consultor_nome: string
-          receita_conciliada: number
-          taxa_conciliacao: number
-          ticket_medio: number
-          total_vendas: number
-          usuario_id: string
-          vendas_conciliadas: number
-          vendas_instaladas: number
-        }[]
-      }
+      get_performance_consultores:
+        | {
+            Args: { _data_fim: string; _data_inicio: string }
+            Returns: {
+              consultor_nome: string
+              receita_conciliada: number
+              taxa_conciliacao: number
+              ticket_medio: number
+              total_vendas: number
+              usuario_id: string
+              vendas_conciliadas: number
+              vendas_instaladas: number
+            }[]
+          }
+        | {
+            Args: {
+              _campo_data?: string
+              _data_fim: string
+              _data_inicio: string
+            }
+            Returns: {
+              consultor_nome: string
+              receita_conciliada: number
+              taxa_conciliacao: number
+              ticket_medio: number
+              total_vendas: number
+              usuario_id: string
+              vendas_conciliadas: number
+              vendas_instaladas: number
+            }[]
+          }
       get_subordinates_ids: {
         Args: { _supervisor_id: string }
         Returns: string[]

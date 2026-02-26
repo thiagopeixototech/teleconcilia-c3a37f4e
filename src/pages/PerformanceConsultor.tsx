@@ -8,6 +8,13 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { Loader2, ArrowUpDown, Search } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { PeriodFilter } from '@/components/PeriodFilter';
 import { usePeriodFilter } from '@/hooks/usePeriodFilter';
@@ -55,13 +62,15 @@ export default function PerformanceConsultor() {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState<SortField>('receita_liquida');
   const [sortAsc, setSortAsc] = useState(false);
+  const [dateField, setDateField] = useState<'data_venda' | 'data_instalacao'>('data_instalacao');
 
   const { data: rows = [], isLoading } = useQuery({
-    queryKey: ['performance-consultores', dataInicioStr, dataFimStr],
+    queryKey: ['performance-consultores', dataInicioStr, dataFimStr, dateField],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('get_performance_consultores', {
+      const { data, error } = await (supabase as any).rpc('get_performance_consultores', {
         _data_inicio: dataInicioStr,
         _data_fim: dataFimStr,
+        _campo_data: dateField,
       });
       if (error) throw error;
       return (data || []) as ConsultorPerformance[];
@@ -194,7 +203,18 @@ export default function PerformanceConsultor() {
             <CardTitle className="text-base">Filtros</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <PeriodFilter {...period} />
+            <div className="flex flex-wrap items-center gap-3">
+              <Select value={dateField} onValueChange={(v) => setDateField(v as 'data_venda' | 'data_instalacao')}>
+                <SelectTrigger className="w-[180px] h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="data_venda">Data de Venda</SelectItem>
+                  <SelectItem value="data_instalacao">Data de Instalação</SelectItem>
+                </SelectContent>
+              </Select>
+              <PeriodFilter {...period} />
+            </div>
             <div className="relative max-w-xs">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input

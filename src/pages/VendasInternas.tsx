@@ -481,24 +481,21 @@ export default function VendasInternas() {
                     ))}
                   </SelectContent>
                 </Select>
-                {(isAdmin || isSupervisor) && (() => {
-                  const vendedoresUnicos = Array.from(
-                    new Map(vendas.map(v => [(v as any).usuario_id, (v as any).usuario?.nome || 'Sem nome'])).entries()
-                  ).sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'));
-                  return (
-                    <Select value={vendedorFilter} onValueChange={setVendedorFilter}>
-                      <SelectTrigger className="w-full md:w-48">
-                        <SelectValue placeholder="Vendedor" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Todos Vendedores</SelectItem>
-                        {vendedoresUnicos.map(([id, nome]) => (
-                          <SelectItem key={id} value={id}>{nome}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  );
-                })()}
+                {(isAdmin || isSupervisor) && (
+                  <Select value={vendedorFilter} onValueChange={setVendedorFilter}>
+                    <SelectTrigger className="w-full md:w-48">
+                      <SelectValue placeholder="Vendedor" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos Vendedores</SelectItem>
+                      {Array.from(
+                        new Map(vendas.map(v => [(v as any).usuario_id, (v as any).usuario?.nome || 'Sem nome'])).entries()
+                      ).sort((a, b) => a[1].localeCompare(b[1], 'pt-BR')).map(([id, nome]) => (
+                        <SelectItem key={id} value={id}>{nome}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
                 <Button 
                   variant={showAdvancedFilters ? "secondary" : "outline"} 
                   onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
