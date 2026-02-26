@@ -556,19 +556,17 @@ export type Database = {
         Args: { _user_id: string; _usuario_id: string }
         Returns: boolean
       }
-      get_dashboard_stats:
-        | { Args: { _data_fim: string; _data_inicio: string }; Returns: Json }
-        | {
-            Args: {
-              _data_fim: string
-              _data_inicio: string
-              _data_instalacao_fim?: string
-              _data_instalacao_inicio?: string
-              _supervisor_id?: string
-              _usuario_id?: string
-            }
-            Returns: Json
-          }
+      get_dashboard_stats: {
+        Args: {
+          _data_fim: string
+          _data_inicio: string
+          _data_instalacao_fim?: string
+          _data_instalacao_inicio?: string
+          _supervisor_id?: string
+          _usuario_id?: string
+        }
+        Returns: Json
+      }
       get_performance_consultores: {
         Args: {
           _data_instalacao_fim?: string
