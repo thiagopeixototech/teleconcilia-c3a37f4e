@@ -59,7 +59,8 @@ function irlColor(irl: number): string {
 export default function Dashboard() {
   const { vendedor, isAdmin, isSupervisor, role } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [hasFetched, setHasFetched] = useState(false);
   const [vendasPorStatus, setVendasPorStatus] = useState<{ name: string; value: number }[]>([]);
   const [totalEstornos, setTotalEstornos] = useState(0);
 
@@ -102,9 +103,10 @@ export default function Dashboard() {
     fetchUsuarios();
   }, []);
 
-  useEffect(() => {
+  const handleBuscar = () => {
+    setHasFetched(true);
     fetchDashboardData();
-  }, [vendedor, dataInicioStr, dataFimStr, dataInstInicioStr, dataInstFimStr, selectedUsuarioId, selectedSupervisorId]);
+  };
 
   const fetchDashboardData = async () => {
     try {
@@ -269,12 +271,22 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
+            <div className="flex items-center gap-2 mt-4">
+              <Button onClick={handleBuscar} disabled={isLoading} size="sm" className="gap-1.5">
+                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Filter className="h-4 w-4" />}
+                Buscar
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
         {isLoading ? (
           <div className="flex items-center justify-center h-64">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        ) : !hasFetched ? (
+          <div className="flex items-center justify-center h-64 text-muted-foreground">
+            Configure os filtros acima e clique em <strong className="ml-1">Buscar</strong>.
           </div>
         ) : (
           <>
