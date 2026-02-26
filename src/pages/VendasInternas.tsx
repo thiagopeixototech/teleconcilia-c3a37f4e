@@ -133,11 +133,12 @@ export default function VendasInternas() {
     try {
       const { data, error } = await supabase
         .from('linha_operadora')
-        .select('apelido')
-        .not('apelido', 'is', null)
-        .not('apelido', 'eq', '');
+        .select('apelido, arquivo_origem');
       if (error) throw error;
-      const unique = [...new Set((data || []).map((d: any) => d.apelido as string))].sort();
+      const labels = (data || [])
+        .map((d: any) => (d.apelido || d.arquivo_origem) as string)
+        .filter(Boolean);
+      const unique = [...new Set(labels)].sort();
       setLinhaALinhaOptions(unique);
     } catch (error) {
       console.error('Error fetching linha a linha options:', error);
@@ -230,11 +231,11 @@ export default function VendasInternas() {
             const linhaIds = concData.map(c => c.linha_operadora_id);
             const { data: linhaData } = await supabase
               .from('linha_operadora')
-              .select('id, apelido')
+              .select('id, apelido, arquivo_origem')
               .in('id', linhaIds);
             
             const linhaApelidoMap: Record<string, string> = {};
-            linhaData?.forEach(l => { if (l.apelido) linhaApelidoMap[l.id] = l.apelido; });
+            linhaData?.forEach(l => { const label = l.apelido || l.arquivo_origem; if (label) linhaApelidoMap[l.id] = label; });
             
             concData.forEach(c => {
               const apelido = linhaApelidoMap[c.linha_operadora_id];

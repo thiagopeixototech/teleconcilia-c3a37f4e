@@ -119,11 +119,12 @@ export default function Divergencias() {
     try {
       const { data, error } = await supabase
         .from('linha_operadora')
-        .select('apelido')
-        .not('apelido', 'is', null)
-        .not('apelido', 'eq', '');
+        .select('apelido, arquivo_origem');
       if (error) throw error;
-      const unique = [...new Set((data || []).map((d: any) => d.apelido as string))].sort();
+      const labels = (data || [])
+        .map((d: any) => (d.apelido || d.arquivo_origem) as string)
+        .filter(Boolean);
+      const unique = [...new Set(labels)].sort();
       setLinhaALinhaOptions(unique);
     } catch (error) {
       console.error('Error fetching linha a linha options:', error);
@@ -420,8 +421,9 @@ export default function Divergencias() {
       linha.cliente_nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       linha.cpf_cnpj?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       linha.protocolo_operadora?.toLowerCase().includes(searchTerm.toLowerCase());
+    const linhaLabel = linha.apelido || linha.arquivo_origem || '';
     const matchesLinhaALinha = linhaALinhaFilter === 'all' ||
-      (linhaALinhaFilter === '_sem_' ? (!linha.apelido || linha.apelido === '') : linha.apelido === linhaALinhaFilter);
+      (linhaALinhaFilter === '_sem_' ? !linhaLabel : linhaLabel === linhaALinhaFilter);
     return matchesSearch && matchesLinhaALinha;
   });
 
