@@ -87,6 +87,7 @@ export default function Divergencias() {
   const [dataInstalacaoInicio, setDataInstalacaoInicio] = useState<Date | null>(null);
   const [dataInstalacaoFim, setDataInstalacaoFim] = useState<Date | null>(null);
   const [operadoraFilter, setOperadoraFilter] = useState<string>('all');
+  const [vendedorOptions, setVendedorOptions] = useState<{ id: string; nome: string }[]>([]);
   const [vendedorFilter, setVendedorFilter] = useState<string>('all');
   const [statusMakeFilter, setStatusMakeFilter] = useState<string>('all');
   const [idMakeSearch, setIdMakeSearch] = useState('');
@@ -147,6 +148,7 @@ export default function Divergencias() {
     fetchOperadoras();
     fetchStatusMakeOptions();
     fetchLinhaALinhaOptions();
+    fetchVendedorOptions();
   }, []);
 
   // Reset data when context changes
@@ -200,6 +202,20 @@ export default function Divergencias() {
       setStatusMakeOptions(unique);
     } catch (error) {
       console.error('Error fetching status_make options:', error);
+    }
+  };
+
+  const fetchVendedorOptions = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('usuarios')
+        .select('id, nome')
+        .eq('ativo', true)
+        .order('nome');
+      if (error) throw error;
+      setVendedorOptions((data || []).map((u: any) => ({ id: u.id, nome: u.nome })));
+    } catch (error) {
+      console.error('Error fetching vendedor options:', error);
     }
   };
 
@@ -757,9 +773,7 @@ export default function Divergencias() {
                             <SelectTrigger className="w-full"><SelectValue placeholder="Vendedor" /></SelectTrigger>
                             <SelectContent>
                               <SelectItem value="all">Todos Vendedores</SelectItem>
-                              {Array.from(
-                                new Map(vendasSemMatch.map(v => [v.usuario_id, v.usuario?.nome || 'Sem nome'])).entries()
-                              ).sort((a, b) => a[1].localeCompare(b[1], 'pt-BR')).map(([id, nome]) => (
+                              {vendedorOptions.map(({ id, nome }) => (
                                 <SelectItem key={id} value={id}>{nome}</SelectItem>
                               ))}
                             </SelectContent>

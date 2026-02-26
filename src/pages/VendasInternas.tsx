@@ -80,6 +80,7 @@ export default function VendasInternas() {
   const [protocoloSearch, setProtocoloSearch] = useState('');
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [vendedorFilter, setVendedorFilter] = useState<string>('all');
+  const [vendedorOptions, setVendedorOptions] = useState<{ id: string; nome: string }[]>([]);
   const [statusMakeOptions, setStatusMakeOptions] = useState<string[]>([]);
   const [linhaALinhaFilter, setLinhaALinhaFilter] = useState<string>('all');
   const [linhaALinhaOptions, setLinhaALinhaOptions] = useState<string[]>([]);
@@ -130,6 +131,7 @@ export default function VendasInternas() {
     fetchOperadoras();
     fetchStatusMakeOptions();
     fetchLinhaALinhaOptions();
+    fetchVendedorOptions();
   }, []);
 
   const fetchLinhaALinhaOptions = async () => {
@@ -160,6 +162,20 @@ export default function VendasInternas() {
       setStatusMakeOptions(unique);
     } catch (error) {
       console.error('Error fetching status_make options:', error);
+    }
+  };
+
+  const fetchVendedorOptions = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('usuarios')
+        .select('id, nome')
+        .eq('ativo', true)
+        .order('nome');
+      if (error) throw error;
+      setVendedorOptions((data || []).map((u: any) => ({ id: u.id, nome: u.nome })));
+    } catch (error) {
+      console.error('Error fetching vendedor options:', error);
     }
   };
 
@@ -632,9 +648,7 @@ export default function VendasInternas() {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="all">Todos Vendedores</SelectItem>
-                            {Array.from(
-                              new Map(vendas.map(v => [v.usuario_id, v.usuario?.nome || 'Sem nome'])).entries()
-                            ).sort((a, b) => a[1].localeCompare(b[1], 'pt-BR')).map(([id, nome]) => (
+                            {vendedorOptions.map(({ id, nome }) => (
                               <SelectItem key={id} value={id}>{nome}</SelectItem>
                             ))}
                           </SelectContent>
