@@ -24,8 +24,9 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Loader2, Search, MoreHorizontal, AlertTriangle, FileX,
   ShoppingCart, FileText, Send, Filter, Download,
-  X, ArrowUpDown, ArrowUp, ArrowDown,
+  X, ArrowUpDown, ArrowUp, ArrowDown, Link2,
 } from 'lucide-react';
+import { VinculoManualDialog } from '@/components/divergencias/VinculoManualDialog';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
@@ -105,6 +106,12 @@ export default function Divergencias() {
 
   // Cancel ref
   const cancelRef = useRef(false);
+
+  // Vinculo manual dialog
+  const [vinculoOpen, setVinculoOpen] = useState(false);
+  const [vinculoTipo, setVinculoTipo] = useState<'venda' | 'linha'>('venda');
+  const [vinculoRegistroId, setVinculoRegistroId] = useState('');
+  const [vinculoRegistroLabel, setVinculoRegistroLabel] = useState('');
 
   // Sorting
   const [sortKeyVendas, setSortKeyVendas] = useState<SortKeyVendas | null>(null);
@@ -1061,6 +1068,15 @@ export default function Divergencias() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => {
+                                  setVinculoTipo('venda');
+                                  setVinculoRegistroId(venda.id);
+                                  setVinculoRegistroLabel(`${venda.cliente_nome} — ${venda.protocolo_interno || venda.identificador_make || venda.cpf_cnpj || 'Sem identificador'}`);
+                                  setVinculoOpen(true);
+                                }}>
+                                  <Link2 className="h-4 w-4 mr-2" />
+                                  Vincular Manualmente
+                                </DropdownMenuItem>
                                 {!venda.status_interno.startsWith('contestacao_') && (
                                   <DropdownMenuItem onClick={() => handleContestacao(venda.id)}>
                                     <Send className="h-4 w-4 mr-2" />
@@ -1153,12 +1169,13 @@ export default function Divergencias() {
                       <TableHead className="cursor-pointer select-none" onClick={() => toggleSortLinhas('apelido')}>
                         <span className="flex items-center">Lote<SortIconLinhas col="apelido" /></span>
                       </TableHead>
+                      <TableHead className="text-right">Ações</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredLinhas.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                         <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                           <FileX className="h-12 w-12 mx-auto mb-2 opacity-50" />
                           Nenhuma divergência encontrada
                         </TableCell>
@@ -1190,6 +1207,22 @@ export default function Divergencias() {
                           </TableCell>
                           <TableCell className="text-sm text-muted-foreground">
                             {linha.apelido || linha.arquivo_origem || '-'}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="gap-1 text-xs"
+                              onClick={() => {
+                                setVinculoTipo('linha');
+                                setVinculoRegistroId(linha.id);
+                                setVinculoRegistroLabel(`${linha.operadora} — ${linha.cliente_nome || linha.protocolo_operadora || linha.cpf_cnpj || 'Sem identificador'}`);
+                                setVinculoOpen(true);
+                              }}
+                            >
+                              <Link2 className="h-3.5 w-3.5" />
+                              Vincular
+                            </Button>
                           </TableCell>
                         </TableRow>
                       ))
@@ -1224,6 +1257,19 @@ export default function Divergencias() {
             </CardContent>
           </Card>
         )}
+
+        {/* Vinculo Manual Dialog */}
+        <VinculoManualDialog
+          open={vinculoOpen}
+          onOpenChange={setVinculoOpen}
+          tipo={vinculoTipo}
+          registroId={vinculoRegistroId}
+          registroLabel={vinculoRegistroLabel}
+          onSuccess={() => {
+            if (tipoDivergencia === 'vendas') fetchVendasSemMatch();
+            else if (tipoDivergencia === 'linhas') fetchLinhasSemMatch();
+          }}
+        />
       </div>
     </AppLayout>
   );
