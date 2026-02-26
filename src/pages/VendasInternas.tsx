@@ -91,7 +91,8 @@ export default function VendasInternas() {
   const { user, vendedor, isAdmin, isSupervisor } = useAuth();
   const [vendas, setVendas] = useState<VendaInterna[]>([]);
   const [operadoras, setOperadoras] = useState<Operadora[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [hasFetched, setHasFetched] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -140,9 +141,14 @@ export default function VendasInternas() {
   const period = usePeriodFilter();
 
   useEffect(() => {
-    fetchVendas();
     fetchOperadoras();
-  }, [period.dataInicioStr, period.dataFimStr, dateField]);
+  }, []);
+
+  const handleBuscar = () => {
+    setHasFetched(true);
+    setVisibleCount(50);
+    fetchVendas();
+  };
 
   const fetchVendas = async () => {
     try {
@@ -350,10 +356,16 @@ export default function VendasInternas() {
     URL.revokeObjectURL(url);
   };
 
-  const hasActiveFilters = statusMakeFilter !== 'all' || confirmadaFilter !== 'all' || 
+  const hasActiveFilters = statusFilter !== 'all' || operadoraFilter !== 'all' || vendedorFilter !== 'all' ||
+    statusMakeFilter !== 'all' || confirmadaFilter !== 'all' || 
     idMakeSearch !== '' || protocoloSearch !== '';
 
+  const activeFilterCount = [statusFilter !== 'all', operadoraFilter !== 'all', vendedorFilter !== 'all', statusMakeFilter !== 'all', confirmadaFilter !== 'all', idMakeSearch, protocoloSearch].filter(Boolean).length;
+
   const clearAdvancedFilters = () => {
+    setStatusFilter('all');
+    setOperadoraFilter('all');
+    setVendedorFilter('all');
     setStatusMakeFilter('all');
     setConfirmadaFilter('all');
     setIdMakeSearch('');
@@ -429,14 +441,8 @@ export default function VendasInternas() {
     });
   })();
 
-  if (isLoading) {
-    return (
-      <AppLayout title="Vendas Internas">
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </div>
-      </AppLayout>
-    );
+  if (!hasFetched) {
+    // Don't show loading on initial render - wait for user to click Buscar
   }
 
   return (
@@ -457,52 +463,14 @@ export default function VendasInternas() {
                     className="pl-9"
                   />
                 </div>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-full md:w-48">
-                    <Filter className="h-4 w-4 mr-2" />
-                    <SelectValue placeholder="Status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos os Status</SelectItem>
-                    {Object.entries(statusLabels).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>{label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select value={operadoraFilter} onValueChange={setOperadoraFilter}>
-                  <SelectTrigger className="w-full md:w-48">
-                    <Radio className="h-4 w-4 mr-2" />
-                    <SelectValue placeholder="Operadora" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todas Operadoras</SelectItem>
-                    {operadoras.map((op) => (
-                      <SelectItem key={op.id} value={op.id}>{op.nome}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {(isAdmin || isSupervisor) && (
-                  <Select value={vendedorFilter} onValueChange={setVendedorFilter}>
-                    <SelectTrigger className="w-full md:w-48">
-                      <SelectValue placeholder="Vendedor" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Todos Vendedores</SelectItem>
-                      {Array.from(
-                        new Map(vendas.map(v => [(v as any).usuario_id, (v as any).usuario?.nome || 'Sem nome'])).entries()
-                      ).sort((a, b) => a[1].localeCompare(b[1], 'pt-BR')).map(([id, nome]) => (
-                        <SelectItem key={id} value={id}>{nome}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
                 <Button 
                   variant={showAdvancedFilters ? "secondary" : "outline"} 
                   onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
                   className="gap-2"
                 >
+                  <Filter className="h-4 w-4" />
                   {showAdvancedFilters ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                  Filtros {hasActiveFilters && `(${[statusMakeFilter !== 'all', confirmadaFilter !== 'all', idMakeSearch, protocoloSearch].filter(Boolean).length})`}
+                  Filtros {activeFilterCount > 0 && `(${activeFilterCount})`}
                 </Button>
                 <Button variant="outline" onClick={exportToCSV}>
                   <Download className="h-4 w-4 mr-2" />
@@ -518,7 +486,7 @@ export default function VendasInternas() {
               {showAdvancedFilters && (
                 <div className="border-t pt-4 space-y-4">
                   <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-muted-foreground">Filtros Avançados</p>
+                    <p className="text-sm font-medium text-muted-foreground">Filtros</p>
                     {hasActiveFilters && (
                       <Button variant="ghost" size="sm" onClick={clearAdvancedFilters} className="gap-1 text-xs">
                         <X className="h-3 w-3" />
@@ -540,6 +508,52 @@ export default function VendasInternas() {
                     <PeriodFilter {...period} />
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div>
+                      <Label className="text-xs mb-1.5 block">Status</Label>
+                      <Select value={statusFilter} onValueChange={setStatusFilter}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todos os Status</SelectItem>
+                          {Object.entries(statusLabels).map(([value, label]) => (
+                            <SelectItem key={value} value={value}>{label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs mb-1.5 block">Operadora</Label>
+                      <Select value={operadoraFilter} onValueChange={setOperadoraFilter}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Operadora" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todas Operadoras</SelectItem>
+                          {operadoras.map((op) => (
+                            <SelectItem key={op.id} value={op.id}>{op.nome}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {(isAdmin || isSupervisor) && (
+                      <div>
+                        <Label className="text-xs mb-1.5 block">Vendedor</Label>
+                        <Select value={vendedorFilter} onValueChange={setVendedorFilter}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Vendedor" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Todos Vendedores</SelectItem>
+                            {Array.from(
+                              new Map(vendas.map(v => [(v as any).usuario_id, (v as any).usuario?.nome || 'Sem nome'])).entries()
+                            ).sort((a, b) => a[1].localeCompare(b[1], 'pt-BR')).map(([id, nome]) => (
+                              <SelectItem key={id} value={id}>{nome}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
                     <div>
                       <Label className="text-xs mb-1.5 block">Confirmada</Label>
                       <Select value={confirmadaFilter} onValueChange={setConfirmadaFilter}>
@@ -586,6 +600,12 @@ export default function VendasInternas() {
                         className="w-full"
                       />
                     </div>
+                  </div>
+                  <div className="flex justify-end pt-2">
+                    <Button onClick={handleBuscar} disabled={isLoading} className="gap-2">
+                      {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                      Buscar
+                    </Button>
                   </div>
                 </div>
               )}
@@ -683,7 +703,22 @@ export default function VendasInternas() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredVendas.length === 0 ? (
+                  {!hasFetched ? (
+                    <TableRow>
+                      <TableCell colSpan={13} className="text-center py-12 text-muted-foreground">
+                        <div className="flex flex-col items-center gap-2">
+                          <Filter className="h-8 w-8 opacity-40" />
+                          <p>Utilize os filtros acima e clique em <strong>Buscar</strong> para carregar as vendas</p>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : isLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={13} className="text-center py-12">
+                        <Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" />
+                      </TableCell>
+                    </TableRow>
+                  ) : filteredVendas.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={13} className="text-center py-8 text-muted-foreground">
                         Nenhuma venda encontrada
