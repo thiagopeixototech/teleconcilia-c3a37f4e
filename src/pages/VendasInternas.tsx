@@ -6,60 +6,30 @@ import { registrarAuditoria } from '@/services/auditService';
 import { AuditLogPanel } from '@/components/audit/AuditLogPanel';
 import { VendaInterna, StatusInterno, Operadora } from '@/types/database';
 import { useAuth } from '@/contexts/AuthContext';
-import { PeriodFilter } from '@/components/PeriodFilter';
-import { usePeriodFilter } from '@/hooks/usePeriodFilter';
+import { DateRangeBlock } from '@/components/DateRangeBlock';
 import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow 
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { 
-  Loader2, 
-  Search, 
-  Plus, 
-  Eye, 
-  Edit, 
-  Download,
-  Filter,
-  Radio,
-  CalendarIcon,
-  X,
-  ChevronDown,
-  ChevronUp,
-  CheckSquare,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
+  Loader2, Search, Plus, Eye, Edit, Download, Filter,
+  X, ChevronDown, ChevronUp, CheckSquare, ArrowUpDown, ArrowUp, ArrowDown,
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Progress } from '@/components/ui/progress';
 
-type SortKey = 'vendedor' | 'protocolo_interno' | 'identificador_make' | 'cliente_nome' | 'cpf_cnpj' | 'operadora' | 'valor' | 'status_interno' | 'status_make' | 'data_venda' | 'data_instalacao';
+type SortKey = 'vendedor' | 'protocolo_interno' | 'identificador_make' | 'cliente_nome' | 'cpf_cnpj' | 'operadora' | 'valor' | 'status_interno' | 'status_make' | 'data_venda' | 'data_instalacao' | 'linha_a_linha';
 type SortDir = 'asc' | 'desc';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -87,10 +57,16 @@ const statusLabels: Record<StatusInterno, string> = {
   contestacao_improcedente: 'Contestação Improcedente',
 };
 
+type VendaComExtras = VendaInterna & {
+  usuario?: { nome: string; email: string } | null;
+  empresa?: { nome: string } | null;
+  _linha_a_linha_apelido?: string;
+};
+
 export default function VendasInternas() {
   const navigate = useNavigate();
   const { user, vendedor, isAdmin, isSupervisor } = useAuth();
-  const [vendas, setVendas] = useState<VendaInterna[]>([]);
+  const [vendas, setVendas] = useState<VendaComExtras[]>([]);
   const [operadoras, setOperadoras] = useState<Operadora[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasFetched, setHasFetched] = useState(false);
@@ -104,16 +80,21 @@ export default function VendasInternas() {
   const [protocoloSearch, setProtocoloSearch] = useState('');
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [vendedorFilter, setVendedorFilter] = useState<string>('all');
-  const [dateField, setDateField] = useState<'data_venda' | 'data_instalacao'>('data_instalacao');
   const [statusMakeOptions, setStatusMakeOptions] = useState<string[]>([]);
   const [visibleCount, setVisibleCount] = useState(50);
   const [loadProgress, setLoadProgress] = useState(0);
-  const [selectedVenda, setSelectedVenda] = useState<VendaInterna | null>(null);
+  const [selectedVenda, setSelectedVenda] = useState<VendaComExtras | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editStatus, setEditStatus] = useState<StatusInterno>('nova');
   const [editObservacoes, setEditObservacoes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  // Independent date filters
+  const [dataVendaInicio, setDataVendaInicio] = useState<Date | null>(null);
+  const [dataVendaFim, setDataVendaFim] = useState<Date | null>(null);
+  const [dataInstalacaoInicio, setDataInstalacaoInicio] = useState<Date | null>(null);
+  const [dataInstalacaoFim, setDataInstalacaoFim] = useState<Date | null>(null);
 
   // Bulk selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -139,8 +120,6 @@ export default function VendasInternas() {
       ? <ArrowUp className="h-3 w-3 ml-1" /> 
       : <ArrowDown className="h-3 w-3 ml-1" />;
   };
-
-  const period = usePeriodFilter();
 
   useEffect(() => {
     fetchOperadoras();
@@ -178,21 +157,26 @@ export default function VendasInternas() {
       let hasMore = true;
       let batchNum = 0;
 
-      // First pass: estimate by fetching count
       setLoadProgress(5);
 
       while (hasMore) {
-        const { data, error } = await supabase
+        let query = supabase
           .from('vendas_internas')
           .select(`
             *,
             usuario:usuarios(nome, email),
             empresa:empresas(nome)
           `)
-          .gte(dateField, period.dataInicioStr)
-          .lte(dateField, period.dataFimStr)
           .order('created_at', { ascending: false })
           .range(from, from + batchSize - 1);
+
+        // Conditional date filters
+        if (dataVendaInicio) query = query.gte('data_venda', format(dataVendaInicio, 'yyyy-MM-dd'));
+        if (dataVendaFim) query = query.lte('data_venda', format(dataVendaFim, 'yyyy-MM-dd'));
+        if (dataInstalacaoInicio) query = query.gte('data_instalacao', format(dataInstalacaoInicio, 'yyyy-MM-dd'));
+        if (dataInstalacaoFim) query = query.lte('data_instalacao', format(dataInstalacaoFim, 'yyyy-MM-dd'));
+
+        const { data, error } = await query;
 
         if (error) throw error;
 
@@ -202,16 +186,56 @@ export default function VendasInternas() {
           allVendas.push(...data);
           from += batchSize;
           hasMore = data.length === batchSize;
-          // Progress: ramp up towards 90% as batches load
-          setLoadProgress(Math.min(90, 5 + batchNum * 25));
+          setLoadProgress(Math.min(70, 5 + batchNum * 25));
         } else {
           hasMore = false;
         }
       }
 
+      setLoadProgress(75);
+
+      // Fetch conciliacoes to find "Linha a Linha" apelido
+      const vendaIds = allVendas.map(v => v.id);
+      const conciliacaoMap: Record<string, string> = {};
+
+      if (vendaIds.length > 0) {
+        // Fetch conciliacoes in batches
+        for (let i = 0; i < vendaIds.length; i += 500) {
+          const batch = vendaIds.slice(i, i + 500);
+          const { data: concData } = await supabase
+            .from('conciliacoes')
+            .select('venda_interna_id, linha_operadora_id, status_final')
+            .in('venda_interna_id', batch)
+            .eq('status_final', 'conciliado');
+          
+          if (concData && concData.length > 0) {
+            const linhaIds = concData.map(c => c.linha_operadora_id);
+            const { data: linhaData } = await supabase
+              .from('linha_operadora')
+              .select('id, apelido')
+              .in('id', linhaIds);
+            
+            const linhaApelidoMap: Record<string, string> = {};
+            linhaData?.forEach(l => { if (l.apelido) linhaApelidoMap[l.id] = l.apelido; });
+            
+            concData.forEach(c => {
+              const apelido = linhaApelidoMap[c.linha_operadora_id];
+              if (apelido) conciliacaoMap[c.venda_interna_id] = apelido;
+            });
+          }
+        }
+      }
+
       setLoadProgress(95);
-      setTotalCount(allVendas.length);
-      setVendas(allVendas as any);
+
+      // Enrich vendas with apelido
+      const enriched = allVendas.map(v => ({
+        ...v,
+        _linha_a_linha_apelido: conciliacaoMap[v.id] || '',
+      }));
+
+      setTotalCount(enriched.length);
+      setVendas(enriched as VendaComExtras[]);
       setLoadProgress(100);
     } catch (error) {
       console.error('Error fetching vendas:', error);
@@ -231,7 +255,6 @@ export default function VendasInternas() {
         .select('*')
         .eq('ativa', true)
         .order('nome');
-
       if (error) throw error;
       setOperadoras(data as Operadora[]);
     } catch (error) {
@@ -239,19 +262,17 @@ export default function VendasInternas() {
     }
   };
 
-  // Get operadora name by ID
   const getOperadoraNome = (operadoraId: string | null) => {
     if (!operadoraId) return '-';
-    const operadora = operadoras.find(o => o.id === operadoraId);
-    return operadora?.nome || '-';
+    return operadoras.find(o => o.id === operadoraId)?.nome || '-';
   };
 
-  const handleViewDetails = (venda: VendaInterna) => {
+  const handleViewDetails = (venda: VendaComExtras) => {
     setSelectedVenda(venda);
     setIsDetailOpen(true);
   };
 
-  const handleEditStatus = (venda: VendaInterna) => {
+  const handleEditStatus = (venda: VendaComExtras) => {
     setSelectedVenda(venda);
     setEditStatus(venda.status_interno);
     setEditObservacoes(venda.observacoes || '');
@@ -261,19 +282,13 @@ export default function VendasInternas() {
   const handleSaveStatus = async () => {
     if (!selectedVenda) return;
     setIsSaving(true);
-
     try {
       const { error } = await supabase
         .from('vendas_internas')
-        .update({ 
-          status_interno: editStatus,
-          observacoes: editObservacoes 
-        })
+        .update({ status_interno: editStatus, observacoes: editObservacoes })
         .eq('id', selectedVenda.id);
-
       if (error) throw error;
 
-      // Registrar auditoria para mudança de status
       if (editStatus !== selectedVenda.status_interno) {
         await registrarAuditoria({
           venda_id: selectedVenda.id,
@@ -285,8 +300,6 @@ export default function VendasInternas() {
           valor_novo: editStatus,
         });
       }
-
-      // Registrar auditoria para mudança de observações
       if (editObservacoes !== (selectedVenda.observacoes || '')) {
         await registrarAuditoria({
           venda_id: selectedVenda.id,
@@ -310,7 +323,6 @@ export default function VendasInternas() {
     }
   };
 
-  // Bulk selection helpers
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -354,16 +366,20 @@ export default function VendasInternas() {
   };
 
   const exportToCSV = () => {
-    const headers = ['Protocolo', 'Cliente', 'CPF/CNPJ', 'Operadora', 'Plano', 'Valor', 'Status', 'Data'];
+    const headers = ['Protocolo', 'ID Make', 'Cliente', 'CPF/CNPJ', 'Operadora', 'Plano', 'Valor', 'Status', 'Status Make', 'Data Venda', 'Data Instalação', 'Linha a Linha'];
     const rows = filteredVendas.map(v => [
       v.protocolo_interno || '',
+      v.identificador_make || '',
       v.cliente_nome,
       v.cpf_cnpj || '',
       getOperadoraNome(v.operadora_id),
       v.plano || '',
       v.valor?.toString() || '',
       statusLabels[v.status_interno],
+      v.status_make || '',
       format(new Date(v.data_venda), 'dd/MM/yyyy'),
+      v.data_instalacao ? format(new Date(v.data_instalacao), 'dd/MM/yyyy') : '',
+      v._linha_a_linha_apelido || '',
     ]);
 
     const csvContent = [headers, ...rows]
@@ -381,9 +397,15 @@ export default function VendasInternas() {
 
   const hasActiveFilters = statusFilter !== 'all' || operadoraFilter !== 'all' || vendedorFilter !== 'all' ||
     statusMakeFilter !== 'all' || confirmadaFilter !== 'all' || 
-    idMakeSearch !== '' || protocoloSearch !== '';
+    idMakeSearch !== '' || protocoloSearch !== '' ||
+    dataVendaInicio !== null || dataVendaFim !== null || dataInstalacaoInicio !== null || dataInstalacaoFim !== null;
 
-  const activeFilterCount = [statusFilter !== 'all', operadoraFilter !== 'all', vendedorFilter !== 'all', statusMakeFilter !== 'all', confirmadaFilter !== 'all', idMakeSearch, protocoloSearch].filter(Boolean).length;
+  const activeFilterCount = [
+    statusFilter !== 'all', operadoraFilter !== 'all', vendedorFilter !== 'all',
+    statusMakeFilter !== 'all', confirmadaFilter !== 'all', idMakeSearch, protocoloSearch,
+    dataVendaInicio !== null || dataVendaFim !== null,
+    dataInstalacaoInicio !== null || dataInstalacaoFim !== null,
+  ].filter(Boolean).length;
 
   const clearAdvancedFilters = () => {
     setStatusFilter('all');
@@ -393,13 +415,16 @@ export default function VendasInternas() {
     setConfirmadaFilter('all');
     setIdMakeSearch('');
     setProtocoloSearch('');
+    setDataVendaInicio(null);
+    setDataVendaFim(null);
+    setDataInstalacaoInicio(null);
+    setDataInstalacaoFim(null);
     setVisibleCount(50);
   };
 
-  // Reset visible count when any filter changes
   useEffect(() => {
     setVisibleCount(50);
-  }, [searchTerm, statusFilter, operadoraFilter, vendedorFilter, statusMakeFilter, confirmadaFilter, idMakeSearch, protocoloSearch, period.dataInicioStr, period.dataFimStr]);
+  }, [searchTerm, statusFilter, operadoraFilter, vendedorFilter, statusMakeFilter, confirmadaFilter, idMakeSearch, protocoloSearch]);
 
   const filteredVendas = (() => {
     const filtered = vendas.filter(venda => {
@@ -436,8 +461,8 @@ export default function VendasInternas() {
       let valA: any, valB: any;
       switch (sortKey) {
         case 'vendedor':
-          valA = (a as any).usuario?.nome || '';
-          valB = (b as any).usuario?.nome || '';
+          valA = a.usuario?.nome || '';
+          valB = b.usuario?.nome || '';
           break;
         case 'operadora':
           valA = getOperadoraNome(a.operadora_id);
@@ -455,6 +480,10 @@ export default function VendasInternas() {
           valA = a.data_instalacao || '';
           valB = b.data_instalacao || '';
           break;
+        case 'linha_a_linha':
+          valA = a._linha_a_linha_apelido || '';
+          valB = b._linha_a_linha_apelido || '';
+          break;
         default:
           valA = (a as any)[sortKey] || '';
           valB = (b as any)[sortKey] || '';
@@ -464,10 +493,6 @@ export default function VendasInternas() {
     });
   })();
 
-  if (!hasFetched) {
-    // Don't show loading on initial render - wait for user to click Buscar
-  }
-
   return (
     <AppLayout title="Vendas Internas">
       <div className="space-y-6">
@@ -475,7 +500,6 @@ export default function VendasInternas() {
         <Card>
           <CardContent className="pt-6">
             <div className="flex flex-col gap-4">
-              {/* Main filters row */}
               <div className="flex flex-col md:flex-row gap-4">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -505,7 +529,6 @@ export default function VendasInternas() {
                 </Button>
               </div>
 
-              {/* Advanced filters */}
               {showAdvancedFilters && (
                 <div className="border-t pt-4 space-y-4">
                   <div className="flex items-center justify-between">
@@ -517,18 +540,22 @@ export default function VendasInternas() {
                       </Button>
                     )}
                   </div>
-                  {/* Period + date field */}
-                  <div className="flex flex-wrap items-center gap-3">
-                    <Select value={dateField} onValueChange={(v) => setDateField(v as 'data_venda' | 'data_instalacao')}>
-                      <SelectTrigger className="w-[180px] h-8 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="data_venda">Data de Venda</SelectItem>
-                        <SelectItem value="data_instalacao">Data de Instalação</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <PeriodFilter {...period} />
+                  {/* Independent date blocks */}
+                  <div className="flex flex-wrap gap-6">
+                    <DateRangeBlock
+                      label="Data de Venda"
+                      dateFrom={dataVendaInicio}
+                      dateTo={dataVendaFim}
+                      onDateFromChange={setDataVendaInicio}
+                      onDateToChange={setDataVendaFim}
+                    />
+                    <DateRangeBlock
+                      label="Data de Instalação"
+                      dateFrom={dataInstalacaoInicio}
+                      dateTo={dataInstalacaoFim}
+                      onDateFromChange={setDataInstalacaoInicio}
+                      onDateToChange={setDataInstalacaoFim}
+                    />
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div>
@@ -569,7 +596,7 @@ export default function VendasInternas() {
                           <SelectContent>
                             <SelectItem value="all">Todos Vendedores</SelectItem>
                             {Array.from(
-                              new Map(vendas.map(v => [(v as any).usuario_id, (v as any).usuario?.nome || 'Sem nome'])).entries()
+                              new Map(vendas.map(v => [v.usuario_id, v.usuario?.nome || 'Sem nome'])).entries()
                             ).sort((a, b) => a[1].localeCompare(b[1], 'pt-BR')).map(([id, nome]) => (
                               <SelectItem key={id} value={id}>{nome}</SelectItem>
                             ))}
@@ -683,7 +710,7 @@ export default function VendasInternas() {
                 </Button>
               </div>
             )}
-            <div className="rounded-md border">
+            <div className="rounded-md border overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -722,6 +749,9 @@ export default function VendasInternas() {
                     <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('status_make')}>
                       <span className="flex items-center">Status Make<SortIcon col="status_make" /></span>
                     </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('linha_a_linha')}>
+                      <span className="flex items-center">Linha a Linha<SortIcon col="linha_a_linha" /></span>
+                    </TableHead>
                     <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('data_venda')}>
                       <span className="flex items-center">Data Venda<SortIcon col="data_venda" /></span>
                     </TableHead>
@@ -734,7 +764,7 @@ export default function VendasInternas() {
                 <TableBody>
                   {!hasFetched ? (
                     <TableRow>
-                      <TableCell colSpan={13} className="text-center py-12 text-muted-foreground">
+                      <TableCell colSpan={14} className="text-center py-12 text-muted-foreground">
                         <div className="flex flex-col items-center gap-2">
                           <Filter className="h-8 w-8 opacity-40" />
                           <p>Utilize os filtros acima e clique em <strong>Buscar</strong> para carregar as vendas</p>
@@ -743,13 +773,13 @@ export default function VendasInternas() {
                     </TableRow>
                   ) : isLoading ? (
                     <TableRow>
-                      <TableCell colSpan={13} className="text-center py-12">
+                      <TableCell colSpan={14} className="text-center py-12">
                         <Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" />
                       </TableCell>
                     </TableRow>
                   ) : filteredVendas.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={13} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={14} className="text-center py-8 text-muted-foreground">
                         Nenhuma venda encontrada
                       </TableCell>
                     </TableRow>
@@ -764,15 +794,9 @@ export default function VendasInternas() {
                             />
                           </TableCell>
                         )}
-                        <TableCell className="text-sm">
-                          {(venda as any).usuario?.nome || '-'}
-                        </TableCell>
-                        <TableCell className="font-mono text-sm">
-                          {venda.protocolo_interno || '-'}
-                        </TableCell>
-                        <TableCell className="font-mono text-sm">
-                          {venda.identificador_make || '-'}
-                        </TableCell>
+                        <TableCell className="text-sm">{venda.usuario?.nome || '-'}</TableCell>
+                        <TableCell className="font-mono text-sm">{venda.protocolo_interno || '-'}</TableCell>
+                        <TableCell className="font-mono text-sm">{venda.identificador_make || '-'}</TableCell>
                         <TableCell className="font-medium">{venda.cliente_nome}</TableCell>
                         <TableCell className="font-mono text-sm">{venda.cpf_cnpj || '-'}</TableCell>
                         <TableCell>{getOperadoraNome(venda.operadora_id)}</TableCell>
@@ -787,8 +811,9 @@ export default function VendasInternas() {
                             {statusLabels[venda.status_interno]}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-sm">
-                          {venda.status_make || '-'}
+                        <TableCell className="text-sm">{venda.status_make || '-'}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {venda._linha_a_linha_apelido || '-'}
                         </TableCell>
                         <TableCell>
                           {format(new Date(venda.data_venda), 'dd/MM/yyyy', { locale: ptBR })}
@@ -801,19 +826,11 @@ export default function VendasInternas() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
-                            <Button 
-                              variant="ghost" 
-                              size="icon"
-                              onClick={() => handleViewDetails(venda)}
-                            >
+                            <Button variant="ghost" size="icon" onClick={() => handleViewDetails(venda)}>
                               <Eye className="h-4 w-4" />
                             </Button>
                             {(isAdmin || isSupervisor) && (
-                              <Button 
-                                variant="ghost" 
-                                size="icon"
-                                onClick={() => handleEditStatus(venda)}
-                              >
+                              <Button variant="ghost" size="icon" onClick={() => handleEditStatus(venda)}>
                                 <Edit className="h-4 w-4" />
                               </Button>
                             )}
@@ -887,6 +904,10 @@ export default function VendasInternas() {
                         {statusLabels[selectedVenda.status_interno]}
                       </Badge>
                     </div>
+                    <div>
+                      <Label className="text-muted-foreground">Linha a Linha</Label>
+                      <p className="font-medium">{selectedVenda._linha_a_linha_apelido || '-'}</p>
+                    </div>
                     <div className="col-span-2">
                       <Label className="text-muted-foreground">Endereço</Label>
                       <p className="font-medium">
@@ -900,7 +921,6 @@ export default function VendasInternas() {
                   </div>
                 </div>
 
-                {/* Histórico de Auditoria */}
                 <div className="border-t pt-4">
                   <AuditLogPanel vendaId={selectedVenda.id} isOpen={isDetailOpen} />
                 </div>
