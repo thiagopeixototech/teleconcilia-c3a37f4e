@@ -8,16 +8,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { Loader2, ArrowUpDown, Search } from 'lucide-react';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { PeriodFilter } from '@/components/PeriodFilter';
-import { usePeriodFilter } from '@/hooks/usePeriodFilter';
+import { DateRangeBlock } from '@/components/DateRangeBlock';
 import { Badge } from '@/components/ui/badge';
 
 interface ConsultorPerformance {
@@ -29,13 +21,6 @@ interface ConsultorPerformance {
   receita_conciliada: number;
   taxa_conciliacao: number;
   ticket_medio: number;
-}
-
-interface Estorno {
-  venda_id: string | null;
-  valor_estornado: number;
-  // joined
-  venda_usuario_id?: string;
 }
 
 type SortField = 'consultor_nome' | 'total_vendas' | 'vendas_instaladas' | 'vendas_conciliadas' | 'receita_conciliada' | 'taxa_conciliacao' | 'ticket_medio' | 'valor_estornado' | 'receita_liquida' | 'taxa_estorno' | 'irl';
@@ -57,34 +42,45 @@ function irlBadge(irl: number) {
 
 export default function PerformanceConsultor() {
   const { role } = useAuth();
-  const period = usePeriodFilter();
-  const { dataInicio, dataFim, dataInicioStr, dataFimStr } = period;
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState<SortField>('receita_liquida');
   const [sortAsc, setSortAsc] = useState(false);
-  const [dateField, setDateField] = useState<'data_venda' | 'data_instalacao'>('data_instalacao');
+
+  // Independent date filters
+  const [dataVendaInicio, setDataVendaInicio] = useState<Date | null>(null);
+  const [dataVendaFim, setDataVendaFim] = useState<Date | null>(null);
+  const [dataInstalacaoInicio, setDataInstalacaoInicio] = useState<Date | null>(null);
+  const [dataInstalacaoFim, setDataInstalacaoFim] = useState<Date | null>(null);
+
+  const dataVendaInicioStr = dataVendaInicio ? format(dataVendaInicio, 'yyyy-MM-dd') : null;
+  const dataVendaFimStr = dataVendaFim ? format(dataVendaFim, 'yyyy-MM-dd') : null;
+  const dataInstalacaoInicioStr = dataInstalacaoInicio ? format(dataInstalacaoInicio, 'yyyy-MM-dd') : null;
+  const dataInstalacaoFimStr = dataInstalacaoFim ? format(dataInstalacaoFim, 'yyyy-MM-dd') : null;
+
+  const hasDateFilter = dataVendaInicio || dataVendaFim || dataInstalacaoInicio || dataInstalacaoFim;
 
   const { data: rows = [], isLoading } = useQuery({
-    queryKey: ['performance-consultores', dataInicioStr, dataFimStr, dateField],
+    queryKey: ['performance-consultores', dataVendaInicioStr, dataVendaFimStr, dataInstalacaoInicioStr, dataInstalacaoFimStr],
     queryFn: async () => {
       const { data, error } = await (supabase as any).rpc('get_performance_consultores', {
-        _data_inicio: dataInicioStr,
-        _data_fim: dataFimStr,
-        _campo_data: dateField,
+        _data_venda_inicio: dataVendaInicioStr,
+        _data_venda_fim: dataVendaFimStr,
+        _data_instalacao_inicio: dataInstalacaoInicioStr,
+        _data_instalacao_fim: dataInstalacaoFimStr,
       });
       if (error) throw error;
       return (data || []) as ConsultorPerformance[];
     },
+    enabled: !!hasDateFilter,
   });
 
   // Fetch estornos for the period reference
   const { data: estornos = [] } = useQuery({
-    queryKey: ['estornos-performance', dataInicioStr, dataFimStr],
+    queryKey: ['estornos-performance', dataVendaInicioStr, dataVendaFimStr],
     queryFn: async () => {
-      // Derive referencia_desconto from period (YYYY-MM format)
-      // We need to get estornos where referencia_desconto matches the period months
-      const startMonth = format(dataInicio, 'yyyy-MM');
-      const endMonth = format(dataFim, 'yyyy-MM');
+      if (!dataVendaInicio && !dataVendaFim) return [];
+      const startMonth = dataVendaInicio ? format(dataVendaInicio, 'yyyy-MM') : '2000-01';
+      const endMonth = dataVendaFim ? format(dataVendaFim, 'yyyy-MM') : '2099-12';
       
       const { data, error } = await (supabase as any)
         .from('estornos')
@@ -94,9 +90,9 @@ export default function PerformanceConsultor() {
       if (error) throw error;
       return (data || []) as { venda_id: string | null; valor_estornado: number }[];
     },
+    enabled: !!(dataVendaInicio || dataVendaFim),
   });
 
-  // Map estornos by venda_id -> need to know which usuario_id each venda belongs to
   const vendaIds = useMemo(() => {
     return [...new Set(estornos.filter(e => e.venda_id).map(e => e.venda_id!))];
   }, [estornos]);
@@ -119,7 +115,6 @@ export default function PerformanceConsultor() {
     enabled: vendaIds.length > 0,
   });
 
-  // Aggregate estornos by usuario_id
   const estornosPorUsuario = useMemo(() => {
     const map: Record<string, number> = {};
     estornos.forEach(e => {
@@ -131,12 +126,6 @@ export default function PerformanceConsultor() {
     return map;
   }, [estornos, vendaUsuarioMap]);
 
-  // Unmatched estornos total
-  const estornosUnmatched = useMemo(() => {
-    return estornos.filter(e => !e.venda_id).reduce((s, e) => s + Number(e.valor_estornado), 0);
-  }, [estornos]);
-
-  // Enriched rows
   const enrichedRows = useMemo(() => {
     return rows.map(r => {
       const receita = Number(r.receita_conciliada);
@@ -203,18 +192,25 @@ export default function PerformanceConsultor() {
             <CardTitle className="text-base">Filtros</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex flex-wrap items-center gap-3">
-              <Select value={dateField} onValueChange={(v) => setDateField(v as 'data_venda' | 'data_instalacao')}>
-                <SelectTrigger className="w-[180px] h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="data_venda">Data de Venda</SelectItem>
-                  <SelectItem value="data_instalacao">Data de Instalação</SelectItem>
-                </SelectContent>
-              </Select>
-              <PeriodFilter {...period} />
+            <div className="flex flex-wrap gap-6">
+              <DateRangeBlock
+                label="Data de Venda"
+                dateFrom={dataVendaInicio}
+                dateTo={dataVendaFim}
+                onDateFromChange={setDataVendaInicio}
+                onDateToChange={setDataVendaFim}
+              />
+              <DateRangeBlock
+                label="Data de Instalação"
+                dateFrom={dataInstalacaoInicio}
+                dateTo={dataInstalacaoFim}
+                onDateFromChange={setDataInstalacaoInicio}
+                onDateToChange={setDataInstalacaoFim}
+              />
             </div>
+            {!hasDateFilter && (
+              <p className="text-sm text-muted-foreground">Selecione pelo menos um período de data para visualizar os dados.</p>
+            )}
             <div className="relative max-w-xs">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
@@ -272,7 +268,11 @@ export default function PerformanceConsultor() {
         {/* Table */}
         <Card>
           <CardContent className="p-0">
-            {isLoading ? (
+            {!hasDateFilter ? (
+              <div className="flex items-center justify-center h-48 text-muted-foreground">
+                Selecione um período de data para visualizar a performance.
+              </div>
+            ) : isLoading ? (
               <div className="flex items-center justify-center h-48">
                 <Loader2 className="h-6 w-6 animate-spin text-primary" />
               </div>

@@ -228,6 +228,7 @@ export type Database = {
       }
       linha_operadora: {
         Row: {
+          apelido: string | null
           arquivo_origem: string | null
           cliente_nome: string | null
           cpf_cnpj: string | null
@@ -247,6 +248,7 @@ export type Database = {
           valor_make: number | null
         }
         Insert: {
+          apelido?: string | null
           arquivo_origem?: string | null
           cliente_nome?: string | null
           cpf_cnpj?: string | null
@@ -266,6 +268,7 @@ export type Database = {
           valor_make?: number | null
         }
         Update: {
+          apelido?: string | null
           arquivo_origem?: string | null
           cliente_nome?: string | null
           cpf_cnpj?: string | null
@@ -553,37 +556,24 @@ export type Database = {
         Args: { _user_id: string; _usuario_id: string }
         Returns: boolean
       }
-      get_performance_consultores:
-        | {
-            Args: { _data_fim: string; _data_inicio: string }
-            Returns: {
-              consultor_nome: string
-              receita_conciliada: number
-              taxa_conciliacao: number
-              ticket_medio: number
-              total_vendas: number
-              usuario_id: string
-              vendas_conciliadas: number
-              vendas_instaladas: number
-            }[]
-          }
-        | {
-            Args: {
-              _campo_data?: string
-              _data_fim: string
-              _data_inicio: string
-            }
-            Returns: {
-              consultor_nome: string
-              receita_conciliada: number
-              taxa_conciliacao: number
-              ticket_medio: number
-              total_vendas: number
-              usuario_id: string
-              vendas_conciliadas: number
-              vendas_instaladas: number
-            }[]
-          }
+      get_performance_consultores: {
+        Args: {
+          _data_instalacao_fim?: string
+          _data_instalacao_inicio?: string
+          _data_venda_fim?: string
+          _data_venda_inicio?: string
+        }
+        Returns: {
+          consultor_nome: string
+          receita_conciliada: number
+          taxa_conciliacao: number
+          ticket_medio: number
+          total_vendas: number
+          usuario_id: string
+          vendas_conciliadas: number
+          vendas_instaladas: number
+        }[]
+      }
       get_subordinates_ids: {
         Args: { _supervisor_id: string }
         Returns: string[]

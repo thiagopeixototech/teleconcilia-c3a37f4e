@@ -114,6 +114,7 @@ export interface LinhaOperadora {
   status_operadora: StatusOperadora;
   quinzena_ref: string | null;
   arquivo_origem: string | null;
+  apelido: string | null;
   created_at: string;
   updated_at: string;
 }
