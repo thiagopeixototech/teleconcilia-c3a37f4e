@@ -12,7 +12,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -21,14 +20,17 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Loader2, Search, MoreHorizontal, AlertTriangle, FileX,
   ShoppingCart, FileText, Send, Filter, Download,
-  ChevronDown, ChevronUp, X, ArrowUpDown, ArrowUp, ArrowDown,
+  X, ArrowUpDown, ArrowUp, ArrowDown,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
+
+type TipoDivergencia = 'vendas' | 'linhas' | null;
 
 type VendaComVendedor = VendaInterna & {
   vendedor?: { nome: string } | null;
@@ -57,63 +59,101 @@ const statusColors: Record<string, string> = {
   contestacao_improcedente: 'bg-red-600 text-white',
 };
 
-type SortKey = 'vendedor' | 'protocolo_interno' | 'identificador_make' | 'cliente_nome' | 'cpf_cnpj' | 'plano' | 'valor' | 'status_interno' | 'status_make' | 'data_venda' | 'data_instalacao';
+type SortKeyVendas = 'vendedor' | 'protocolo_interno' | 'identificador_make' | 'cliente_nome' | 'cpf_cnpj' | 'plano' | 'valor' | 'status_interno' | 'status_make' | 'data_venda' | 'data_instalacao';
+type SortKeyLinhas = 'operadora' | 'protocolo_operadora' | 'cliente_nome' | 'cpf_cnpj' | 'plano' | 'valor' | 'status_operadora' | 'apelido' | 'data_status';
 type SortDir = 'asc' | 'desc';
 
 export default function Divergencias() {
   const { user, vendedor, isAdmin, isSupervisor } = useAuth();
 
+  // Context selection
+  const [tipoDivergencia, setTipoDivergencia] = useState<TipoDivergencia>(null);
+
+  // Data
   const [vendasSemMatch, setVendasSemMatch] = useState<VendaComVendedor[]>([]);
   const [linhasSemMatch, setLinhasSemMatch] = useState<LinhaOperadora[]>([]);
   const [operadoras, setOperadoras] = useState<Operadora[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasFetched, setHasFetched] = useState(false);
   const [loadProgress, setLoadProgress] = useState(0);
+  const [visibleCount, setVisibleCount] = useState(50);
 
+  // Shared
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState('vendas');
+
+  // Vendas-specific filters
+  const [dataVendaInicio, setDataVendaInicio] = useState<Date | null>(null);
+  const [dataVendaFim, setDataVendaFim] = useState<Date | null>(null);
+  const [dataInstalacaoInicio, setDataInstalacaoInicio] = useState<Date | null>(null);
+  const [dataInstalacaoFim, setDataInstalacaoFim] = useState<Date | null>(null);
   const [operadoraFilter, setOperadoraFilter] = useState<string>('all');
   const [vendedorFilter, setVendedorFilter] = useState<string>('all');
   const [statusMakeFilter, setStatusMakeFilter] = useState<string>('all');
   const [idMakeSearch, setIdMakeSearch] = useState('');
   const [protocoloSearch, setProtocoloSearch] = useState('');
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-  const [visibleCount, setVisibleCount] = useState(50);
   const [statusMakeOptions, setStatusMakeOptions] = useState<string[]>([]);
+
+  // Linhas-specific filters
   const [linhaALinhaFilter, setLinhaALinhaFilter] = useState<string>('all');
   const [linhaALinhaOptions, setLinhaALinhaOptions] = useState<string[]>([]);
-
-  // Independent date filters
-  const [dataVendaInicio, setDataVendaInicio] = useState<Date | null>(null);
-  const [dataVendaFim, setDataVendaFim] = useState<Date | null>(null);
-  const [dataInstalacaoInicio, setDataInstalacaoInicio] = useState<Date | null>(null);
-  const [dataInstalacaoFim, setDataInstalacaoFim] = useState<Date | null>(null);
+  const [linhaOperadoraFilter, setLinhaOperadoraFilter] = useState<string>('all');
+  const [linhaCpfSearch, setLinhaCpfSearch] = useState('');
+  const [linhaProtocoloSearch, setLinhaProtocoloSearch] = useState('');
+  const [linhaDataStatusInicio, setLinhaDataStatusInicio] = useState<Date | null>(null);
+  const [linhaDataStatusFim, setLinhaDataStatusFim] = useState<Date | null>(null);
 
   // Sorting
-  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortKeyVendas, setSortKeyVendas] = useState<SortKeyVendas | null>(null);
+  const [sortKeyLinhas, setSortKeyLinhas] = useState<SortKeyLinhas | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>('asc');
 
-  const toggleSort = (key: SortKey) => {
-    if (sortKey === key) {
+  const toggleSortVendas = (key: SortKeyVendas) => {
+    if (sortKeyVendas === key) {
       setSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
-      setSortKey(key);
+      setSortKeyVendas(key);
       setSortDir('asc');
     }
   };
 
-  const SortIcon = ({ col }: { col: SortKey }) => {
-    if (sortKey !== col) return <ArrowUpDown className="h-3 w-3 ml-1 opacity-40" />;
+  const toggleSortLinhas = (key: SortKeyLinhas) => {
+    if (sortKeyLinhas === key) {
+      setSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortKeyLinhas(key);
+      setSortDir('asc');
+    }
+  };
+
+  const SortIconVendas = ({ col }: { col: SortKeyVendas }) => {
+    if (sortKeyVendas !== col) return <ArrowUpDown className="h-3 w-3 ml-1 opacity-40" />;
     return sortDir === 'asc'
       ? <ArrowUp className="h-3 w-3 ml-1" />
       : <ArrowDown className="h-3 w-3 ml-1" />;
   };
 
+  const SortIconLinhas = ({ col }: { col: SortKeyLinhas }) => {
+    if (sortKeyLinhas !== col) return <ArrowUpDown className="h-3 w-3 ml-1 opacity-40" />;
+    return sortDir === 'asc'
+      ? <ArrowUp className="h-3 w-3 ml-1" />
+      : <ArrowDown className="h-3 w-3 ml-1" />;
+  };
+
+  // Load filter options on mount
   useEffect(() => {
     fetchOperadoras();
     fetchStatusMakeOptions();
     fetchLinhaALinhaOptions();
   }, []);
+
+  // Reset data when context changes
+  useEffect(() => {
+    setHasFetched(false);
+    setVendasSemMatch([]);
+    setLinhasSemMatch([]);
+    setVisibleCount(50);
+    clearFilters();
+  }, [tipoDivergencia]);
 
   const fetchLinhaALinhaOptions = async () => {
     try {
@@ -165,21 +205,45 @@ export default function Divergencias() {
     return operadoras.find(o => o.id === operadoraId)?.nome || '-';
   };
 
+  const clearFilters = () => {
+    setSearchTerm('');
+    setOperadoraFilter('all');
+    setVendedorFilter('all');
+    setStatusMakeFilter('all');
+    setIdMakeSearch('');
+    setProtocoloSearch('');
+    setDataVendaInicio(null);
+    setDataVendaFim(null);
+    setDataInstalacaoInicio(null);
+    setDataInstalacaoFim(null);
+    setLinhaALinhaFilter('all');
+    setLinhaOperadoraFilter('all');
+    setLinhaCpfSearch('');
+    setLinhaProtocoloSearch('');
+    setLinhaDataStatusInicio(null);
+    setLinhaDataStatusFim(null);
+    setVisibleCount(50);
+  };
+
   const handleBuscar = () => {
     setHasFetched(true);
     setVisibleCount(50);
     setIsLoading(true);
     setLoadProgress(0);
-    fetchDivergencias();
+    if (tipoDivergencia === 'vendas') {
+      fetchVendasSemMatch();
+    } else if (tipoDivergencia === 'linhas') {
+      fetchLinhasSemMatch();
+    }
   };
 
-  const fetchDivergencias = async () => {
+  const fetchVendasSemMatch = async () => {
     try {
       setLoadProgress(5);
-
-      // Fetch vendas in batches with conditional date filters
-      const allVendas: any[] = [];
       const batchSize = 1000;
+
+      // Fetch vendas in batches
+      const allVendas: any[] = [];
       let from = 0;
       let hasMore = true;
       let batchNum = 0;
@@ -187,10 +251,7 @@ export default function Divergencias() {
       while (hasMore) {
         let query = supabase
           .from('vendas_internas')
-          .select(`
-            *,
-            usuario:usuarios(nome, email)
-          `)
+          .select(`*, usuario:usuarios(nome, email)`)
           .order('created_at', { ascending: false })
           .range(from, from + batchSize - 1);
 
@@ -200,7 +261,6 @@ export default function Divergencias() {
         if (dataInstalacaoFim) query = query.lte('data_instalacao', format(dataInstalacaoFim, 'yyyy-MM-dd'));
 
         const { data, error } = await query;
-
         if (error) throw error;
         batchNum++;
 
@@ -208,22 +268,22 @@ export default function Divergencias() {
           allVendas.push(...data);
           from += batchSize;
           hasMore = data.length === batchSize;
-          setLoadProgress(Math.min(40, 5 + batchNum * 15));
+          setLoadProgress(Math.min(50, 5 + batchNum * 15));
         } else {
           hasMore = false;
         }
       }
 
-      setLoadProgress(45);
+      setLoadProgress(55);
 
-      // Fetch conciliacoes with status_final = 'conciliado'
+      // Fetch conciliacoes
       const allConciliacoes: any[] = [];
       from = 0;
       hasMore = true;
       while (hasMore) {
         const { data, error } = await supabase
           .from('conciliacoes')
-          .select('venda_interna_id, linha_operadora_id')
+          .select('venda_interna_id')
           .eq('status_final', 'conciliado')
           .range(from, from + batchSize - 1);
         if (error) throw error;
@@ -236,21 +296,72 @@ export default function Divergencias() {
         }
       }
 
-      setLoadProgress(65);
+      setLoadProgress(85);
+
+      const vendasComMatch = new Set(allConciliacoes.map(c => c.venda_interna_id));
+      const vendasSem = allVendas.filter(v => !vendasComMatch.has(v.id));
+
+      setLoadProgress(95);
+      setVendasSemMatch(vendasSem as VendaComVendedor[]);
+      setLoadProgress(100);
+    } catch (error) {
+      console.error('Error fetching vendas divergentes:', error);
+      toast.error('Erro ao carregar vendas divergentes');
+    } finally {
+      setTimeout(() => { setIsLoading(false); setLoadProgress(0); }, 300);
+    }
+  };
+
+  const fetchLinhasSemMatch = async () => {
+    try {
+      setLoadProgress(5);
+      const batchSize = 1000;
 
       // Fetch linhas in batches
       const allLinhas: any[] = [];
-      from = 0;
-      hasMore = true;
+      let from = 0;
+      let hasMore = true;
+      let batchNum = 0;
+
       while (hasMore) {
-        const { data, error } = await supabase
+        let query = supabase
           .from('linha_operadora')
           .select('*')
           .order('created_at', { ascending: false })
           .range(from, from + batchSize - 1);
+
+        if (linhaDataStatusInicio) query = query.gte('data_status', format(linhaDataStatusInicio, 'yyyy-MM-dd'));
+        if (linhaDataStatusFim) query = query.lte('data_status', format(linhaDataStatusFim, 'yyyy-MM-dd'));
+
+        const { data, error } = await query;
         if (error) throw error;
+        batchNum++;
+
         if (data && data.length > 0) {
           allLinhas.push(...data);
+          from += batchSize;
+          hasMore = data.length === batchSize;
+          setLoadProgress(Math.min(50, 5 + batchNum * 15));
+        } else {
+          hasMore = false;
+        }
+      }
+
+      setLoadProgress(55);
+
+      // Fetch conciliacoes
+      const allConciliacoes: any[] = [];
+      from = 0;
+      hasMore = true;
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('conciliacoes')
+          .select('linha_operadora_id')
+          .eq('status_final', 'conciliado')
+          .range(from, from + batchSize - 1);
+        if (error) throw error;
+        if (data && data.length > 0) {
+          allConciliacoes.push(...data);
           from += batchSize;
           hasMore = data.length === batchSize;
         } else {
@@ -260,25 +371,17 @@ export default function Divergencias() {
 
       setLoadProgress(85);
 
-      // Filter: only non-conciliado
-      const vendasComMatch = new Set(allConciliacoes.map(c => c.venda_interna_id));
       const linhasComMatch = new Set(allConciliacoes.map(c => c.linha_operadora_id));
-
-      const vendasSem = allVendas.filter(v => !vendasComMatch.has(v.id));
       const linhasSem = allLinhas.filter(l => !linhasComMatch.has(l.id));
 
       setLoadProgress(95);
-      setVendasSemMatch(vendasSem as VendaComVendedor[]);
       setLinhasSemMatch(linhasSem as LinhaOperadora[]);
       setLoadProgress(100);
     } catch (error) {
-      console.error('Error fetching divergencias:', error);
-      toast.error('Erro ao carregar divergências');
+      console.error('Error fetching linhas divergentes:', error);
+      toast.error('Erro ao carregar linhas divergentes');
     } finally {
-      setTimeout(() => {
-        setIsLoading(false);
-        setLoadProgress(0);
-      }, 300);
+      setTimeout(() => { setIsLoading(false); setLoadProgress(0); }, 300);
     }
   };
 
@@ -301,7 +404,7 @@ export default function Divergencias() {
       });
 
       toast.success('Contestação enviada com sucesso');
-      fetchDivergencias();
+      fetchVendasSemMatch();
     } catch (error) {
       console.error('Error sending contestacao:', error);
       toast.error('Erro ao enviar contestação');
@@ -328,46 +431,17 @@ export default function Divergencias() {
         if (error) throw error;
       }
       toast.success('Registro atualizado com sucesso');
-      fetchDivergencias();
+      if (tipoDivergencia === 'vendas') fetchVendasSemMatch();
     } catch (error) {
       console.error('Error marking record:', error);
       toast.error('Erro ao atualizar registro');
     }
   };
 
-  // Filters
-  const hasActiveFilters = operadoraFilter !== 'all' || vendedorFilter !== 'all' || statusMakeFilter !== 'all' ||
-    linhaALinhaFilter !== 'all' ||
-    idMakeSearch !== '' || protocoloSearch !== '' ||
-    dataVendaInicio !== null || dataVendaFim !== null || dataInstalacaoInicio !== null || dataInstalacaoFim !== null;
-
-  const activeFilterCount = [
-    operadoraFilter !== 'all', vendedorFilter !== 'all', statusMakeFilter !== 'all',
-    linhaALinhaFilter !== 'all',
-    idMakeSearch, protocoloSearch,
-    dataVendaInicio !== null || dataVendaFim !== null,
-    dataInstalacaoInicio !== null || dataInstalacaoFim !== null,
-  ].filter(Boolean).length;
-
-  const clearAdvancedFilters = () => {
-    setOperadoraFilter('all');
-    setVendedorFilter('all');
-    setStatusMakeFilter('all');
-    setLinhaALinhaFilter('all');
-    setIdMakeSearch('');
-    setProtocoloSearch('');
-    setDataVendaInicio(null);
-    setDataVendaFim(null);
-    setDataInstalacaoInicio(null);
-    setDataInstalacaoFim(null);
-    setVisibleCount(50);
-  };
-
-  useEffect(() => { setVisibleCount(50); }, [searchTerm, operadoraFilter, vendedorFilter, statusMakeFilter, linhaALinhaFilter, idMakeSearch, protocoloSearch]);
-
+  // Client-side filters for vendas
   const filteredVendas = (() => {
     const filtered = vendasSemMatch.filter(venda => {
-      const matchesSearch =
+      const matchesSearch = !searchTerm ||
         venda.cliente_nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
         venda.cpf_cnpj?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         venda.protocolo_interno?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -386,11 +460,11 @@ export default function Divergencias() {
       return matchesSearch && matchesOperadora && matchesVendedor && matchesStatusMake && matchesIdMake && matchesProtocolo;
     });
 
-    if (!sortKey) return filtered;
+    if (!sortKeyVendas) return filtered;
 
     return [...filtered].sort((a, b) => {
       let valA: any, valB: any;
-      switch (sortKey) {
+      switch (sortKeyVendas) {
         case 'vendedor':
           valA = a.usuario?.nome || '';
           valB = b.usuario?.nome || '';
@@ -408,27 +482,63 @@ export default function Divergencias() {
           valB = b.data_instalacao || '';
           break;
         default:
-          valA = (a as any)[sortKey] || '';
-          valB = (b as any)[sortKey] || '';
+          valA = (a as any)[sortKeyVendas] || '';
+          valB = (b as any)[sortKeyVendas] || '';
       }
       const cmp = String(valA).localeCompare(String(valB), 'pt-BR', { sensitivity: 'base' });
       return sortDir === 'asc' ? cmp : -cmp;
     });
   })();
 
-  const filteredLinhas = linhasSemMatch.filter(linha => {
-    const matchesSearch =
-      linha.cliente_nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      linha.cpf_cnpj?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      linha.protocolo_operadora?.toLowerCase().includes(searchTerm.toLowerCase());
-    const linhaLabel = linha.apelido || linha.arquivo_origem || '';
-    const matchesLinhaALinha = linhaALinhaFilter === 'all' ||
-      (linhaALinhaFilter === '_sem_' ? !linhaLabel : linhaLabel === linhaALinhaFilter);
-    return matchesSearch && matchesLinhaALinha;
-  });
+  // Client-side filters for linhas
+  const filteredLinhas = (() => {
+    const filtered = linhasSemMatch.filter(linha => {
+      const matchesSearch = !searchTerm ||
+        linha.cliente_nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        linha.cpf_cnpj?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        linha.protocolo_operadora?.toLowerCase().includes(searchTerm.toLowerCase());
 
-  const vendasContestacao = vendasSemMatch.filter(v => v.status_interno.startsWith('contestacao_'));
-  const vendasAguardando = vendasSemMatch.filter(v => !v.status_interno.startsWith('contestacao_') && v.status_interno !== 'cancelada');
+      const linhaLabel = linha.apelido || linha.arquivo_origem || '';
+      const matchesLinhaALinha = linhaALinhaFilter === 'all' ||
+        (linhaALinhaFilter === '_sem_' ? !linhaLabel : linhaLabel === linhaALinhaFilter);
+
+      const matchesOperadora = linhaOperadoraFilter === 'all' ||
+        linha.operadora === linhaOperadoraFilter;
+
+      const matchesCpf = !linhaCpfSearch ||
+        linha.cpf_cnpj?.toLowerCase().includes(linhaCpfSearch.toLowerCase());
+
+      const matchesProtocolo = !linhaProtocoloSearch ||
+        linha.protocolo_operadora?.toLowerCase().includes(linhaProtocoloSearch.toLowerCase());
+
+      return matchesSearch && matchesLinhaALinha && matchesOperadora && matchesCpf && matchesProtocolo;
+    });
+
+    if (!sortKeyLinhas) return filtered;
+
+    return [...filtered].sort((a, b) => {
+      let valA: any, valB: any;
+      switch (sortKeyLinhas) {
+        case 'valor':
+          valA = a.valor_lq ?? a.valor ?? 0;
+          valB = b.valor_lq ?? b.valor ?? 0;
+          return sortDir === 'asc' ? valA - valB : valB - valA;
+        case 'apelido':
+          valA = a.apelido || a.arquivo_origem || '';
+          valB = b.apelido || b.arquivo_origem || '';
+          break;
+        case 'data_status':
+          valA = a.data_status || '';
+          valB = b.data_status || '';
+          break;
+        default:
+          valA = (a as any)[sortKeyLinhas] || '';
+          valB = (b as any)[sortKeyLinhas] || '';
+      }
+      const cmp = String(valA).localeCompare(String(valB), 'pt-BR', { sensitivity: 'base' });
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  })();
 
   // CSV Export
   const exportVendasCSV = () => {
@@ -450,7 +560,7 @@ export default function Divergencias() {
   };
 
   const exportLinhasCSV = () => {
-    const headers = ['Operadora', 'Protocolo', 'Cliente', 'CPF/CNPJ', 'Plano', 'Valor', 'Status', 'Apelido'];
+    const headers = ['Operadora', 'Protocolo', 'Cliente', 'CPF/CNPJ', 'Plano', 'Valor', 'Status', 'Data Status', 'Lote'];
     const rows = filteredLinhas.map(l => [
       l.operadora,
       l.protocolo_operadora || '',
@@ -459,6 +569,7 @@ export default function Divergencias() {
       l.plano || '',
       (l.valor_lq || l.valor)?.toString() || '',
       l.status_operadora,
+      l.data_status ? format(new Date(l.data_status), 'dd/MM/yyyy') : '',
       l.apelido || l.arquivo_origem || '',
     ]);
     downloadCSV(headers, rows, 'divergencias_linhas');
@@ -477,12 +588,276 @@ export default function Divergencias() {
     URL.revokeObjectURL(url);
   };
 
+  // Unique operadora names from linhas data for linhas filter
+  const linhaOperadoraNames = [...new Set(linhasSemMatch.map(l => l.operadora))].sort();
+
   return (
     <AppLayout title="Divergências">
       <div className="space-y-6">
+
+        {/* Step 1: Context Selection */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Search className="h-5 w-5" />
+              Análise de Divergências
+            </CardTitle>
+            <CardDescription>
+              Selecione o tipo de análise para visualizar os filtros correspondentes
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <Label className="text-sm font-medium">Tipo de Divergência</Label>
+              <RadioGroup
+                value={tipoDivergencia || ''}
+                onValueChange={(v) => setTipoDivergencia(v as TipoDivergencia)}
+                className="grid grid-cols-1 md:grid-cols-2 gap-4"
+              >
+                <label
+                  htmlFor="ctx-vendas"
+                  className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-colors ${
+                    tipoDivergencia === 'vendas'
+                      ? 'border-destructive bg-destructive/5'
+                      : 'border-border hover:border-muted-foreground/30'
+                  }`}
+                >
+                  <RadioGroupItem value="vendas" id="ctx-vendas" className="mt-0.5" />
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <ShoppingCart className="h-4 w-4 text-destructive" />
+                      <span className="font-medium">Vendas não confirmadas pela operadora</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Vendas internas que não possuem registro correspondente nos dados da operadora
+                    </p>
+                  </div>
+                </label>
+
+                <label
+                  htmlFor="ctx-linhas"
+                  className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-colors ${
+                    tipoDivergencia === 'linhas'
+                      ? 'border-warning bg-warning/5'
+                      : 'border-border hover:border-muted-foreground/30'
+                  }`}
+                >
+                  <RadioGroupItem value="linhas" id="ctx-linhas" className="mt-0.5" />
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-warning" />
+                      <span className="font-medium">Ordens da operadora sem venda registrada</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Registros importados da operadora que não foram vinculados a vendas internas
+                    </p>
+                  </div>
+                </label>
+              </RadioGroup>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Step 2: Dynamic Filters */}
+        {tipoDivergencia && (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-muted-foreground">
+                    Filtros — {tipoDivergencia === 'vendas' ? 'Base de Vendas Internas' : 'Base da Operadora'}
+                  </p>
+                  <Button variant="ghost" size="sm" onClick={clearFilters} className="gap-1 text-xs">
+                    <X className="h-3 w-3" />
+                    Limpar filtros
+                  </Button>
+                </div>
+
+                {/* Search */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder={
+                      tipoDivergencia === 'vendas'
+                        ? 'Buscar por cliente, CPF/CNPJ, protocolo, ID Make ou vendedor...'
+                        : 'Buscar por cliente, CPF/CNPJ ou protocolo...'
+                    }
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+
+                {/* Vendas-specific filters */}
+                {tipoDivergencia === 'vendas' && (
+                  <>
+                    <div className="flex flex-wrap gap-6">
+                      <DateRangeBlock
+                        label="Data de Venda"
+                        dateFrom={dataVendaInicio}
+                        dateTo={dataVendaFim}
+                        onDateFromChange={setDataVendaInicio}
+                        onDateToChange={setDataVendaFim}
+                      />
+                      <DateRangeBlock
+                        label="Data de Instalação"
+                        dateFrom={dataInstalacaoInicio}
+                        dateTo={dataInstalacaoFim}
+                        onDateFromChange={setDataInstalacaoInicio}
+                        onDateToChange={setDataInstalacaoFim}
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      <div>
+                        <Label className="text-xs mb-1.5 block">Status Make</Label>
+                        <Select value={statusMakeFilter} onValueChange={setStatusMakeFilter}>
+                          <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Todos</SelectItem>
+                            <SelectItem value="_empty_">Sem Status</SelectItem>
+                            {statusMakeOptions.map((s) => (
+                              <SelectItem key={s} value={s}>{s}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-xs mb-1.5 block">Operadora</Label>
+                        <Select value={operadoraFilter} onValueChange={setOperadoraFilter}>
+                          <SelectTrigger className="w-full"><SelectValue placeholder="Operadora" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Todas Operadoras</SelectItem>
+                            {operadoras.map((op) => (
+                              <SelectItem key={op.id} value={op.id}>{op.nome}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {(isAdmin || isSupervisor) && (
+                        <div>
+                          <Label className="text-xs mb-1.5 block">Vendedor</Label>
+                          <Select value={vendedorFilter} onValueChange={setVendedorFilter}>
+                            <SelectTrigger className="w-full"><SelectValue placeholder="Vendedor" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">Todos Vendedores</SelectItem>
+                              {Array.from(
+                                new Map(vendasSemMatch.map(v => [v.usuario_id, v.usuario?.nome || 'Sem nome'])).entries()
+                              ).sort((a, b) => a[1].localeCompare(b[1], 'pt-BR')).map(([id, nome]) => (
+                                <SelectItem key={id} value={id}>{nome}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                      <div>
+                        <Label className="text-xs mb-1.5 block">ID Make</Label>
+                        <Input
+                          placeholder="Buscar ID Make..."
+                          value={idMakeSearch}
+                          onChange={(e) => setIdMakeSearch(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs mb-1.5 block">Protocolo</Label>
+                        <Input
+                          placeholder="Buscar protocolo..."
+                          value={protocoloSearch}
+                          onChange={(e) => setProtocoloSearch(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* Linhas-specific filters */}
+                {tipoDivergencia === 'linhas' && (
+                  <>
+                    <div className="flex flex-wrap gap-6">
+                      <DateRangeBlock
+                        label="Data do Status"
+                        dateFrom={linhaDataStatusInicio}
+                        dateTo={linhaDataStatusFim}
+                        onDateFromChange={setLinhaDataStatusInicio}
+                        onDateToChange={setLinhaDataStatusFim}
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      <div>
+                        <Label className="text-xs mb-1.5 block">Lote / Arquivo</Label>
+                        <Select value={linhaALinhaFilter} onValueChange={setLinhaALinhaFilter}>
+                          <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Todos os Lotes</SelectItem>
+                            <SelectItem value="_sem_">Sem Apelido</SelectItem>
+                            {linhaALinhaOptions.map((s) => (
+                              <SelectItem key={s} value={s}>{s}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-xs mb-1.5 block">Operadora</Label>
+                        <Select value={linhaOperadoraFilter} onValueChange={setLinhaOperadoraFilter}>
+                          <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Todas</SelectItem>
+                            {operadoras.map((op) => (
+                              <SelectItem key={op.id} value={op.nome}>{op.nome}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-xs mb-1.5 block">CPF/CNPJ</Label>
+                        <Input
+                          placeholder="Buscar CPF/CNPJ..."
+                          value={linhaCpfSearch}
+                          onChange={(e) => setLinhaCpfSearch(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs mb-1.5 block">Protocolo</Label>
+                        <Input
+                          placeholder="Buscar protocolo operadora..."
+                          value={linhaProtocoloSearch}
+                          onChange={(e) => setLinhaProtocoloSearch(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* Buscar button */}
+                <div className="flex items-center justify-between pt-2">
+                  <Button
+                    variant="outline"
+                    onClick={tipoDivergencia === 'vendas' ? exportVendasCSV : exportLinhasCSV}
+                    disabled={!hasFetched}
+                    className="gap-2"
+                  >
+                    <Download className="h-4 w-4" />
+                    Exportar CSV
+                  </Button>
+                  <Button onClick={handleBuscar} disabled={isLoading} className="gap-2">
+                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                    Buscar
+                  </Button>
+                </div>
+
+                {isLoading && (
+                  <div className="space-y-1 pt-2">
+                    <Progress value={loadProgress} className="h-2" />
+                    <p className="text-xs text-muted-foreground text-center">Carregando... {loadProgress}%</p>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Stats */}
-        {hasFetched && !isLoading && (
-          <div className="grid gap-4 md:grid-cols-4">
+        {hasFetched && !isLoading && tipoDivergencia === 'vendas' && (
+          <div className="grid gap-4 md:grid-cols-3">
             <Card>
               <CardContent className="pt-6">
                 <div className="flex items-center gap-3">
@@ -490,7 +865,7 @@ export default function Divergencias() {
                     <ShoppingCart className="h-5 w-5 text-destructive" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold">{vendasAguardando.length}</p>
+                    <p className="text-2xl font-bold">{filteredVendas.length}</p>
                     <p className="text-sm text-muted-foreground">Vendas sem Match</p>
                   </div>
                 </div>
@@ -503,7 +878,9 @@ export default function Divergencias() {
                     <Send className="h-5 w-5 text-accent-foreground" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold">{vendasContestacao.length}</p>
+                    <p className="text-2xl font-bold">
+                      {vendasSemMatch.filter(v => v.status_interno.startsWith('contestacao_')).length}
+                    </p>
                     <p className="text-sm text-muted-foreground">Em Contestação</p>
                   </div>
                 </div>
@@ -512,11 +889,29 @@ export default function Divergencias() {
             <Card>
               <CardContent className="pt-6">
                 <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
+                    <AlertTriangle className="h-5 w-5 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{vendasSemMatch.length}</p>
+                    <p className="text-sm text-muted-foreground">Total Divergente</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {hasFetched && !isLoading && tipoDivergencia === 'linhas' && (
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
                   <div className="h-10 w-10 rounded-lg bg-warning/10 flex items-center justify-center">
                     <FileText className="h-5 w-5 text-warning" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold">{linhasSemMatch.length}</p>
+                    <p className="text-2xl font-bold">{filteredLinhas.length}</p>
                     <p className="text-sm text-muted-foreground">Linhas sem Match</p>
                   </div>
                 </div>
@@ -529,10 +924,8 @@ export default function Divergencias() {
                     <AlertTriangle className="h-5 w-5 text-muted-foreground" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold">
-                      {vendasSemMatch.length + linhasSemMatch.length}
-                    </p>
-                    <p className="text-sm text-muted-foreground">Total Divergências</p>
+                    <p className="text-2xl font-bold">{linhasSemMatch.length}</p>
+                    <p className="text-sm text-muted-foreground">Total sem Vínculo</p>
                   </div>
                 </div>
               </CardContent>
@@ -540,403 +933,258 @@ export default function Divergencias() {
           </div>
         )}
 
-        {/* Filters */}
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col md:flex-row gap-4">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Buscar por cliente, CPF/CNPJ, protocolo, ID Make ou vendedor..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-9"
-                  />
-                </div>
-                <Button
-                  variant={showAdvancedFilters ? 'secondary' : 'outline'}
-                  onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-                  className="gap-2"
-                >
-                  <Filter className="h-4 w-4" />
-                  {showAdvancedFilters ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                  Filtros {activeFilterCount > 0 && `(${activeFilterCount})`}
-                </Button>
-                <Button variant="outline" onClick={activeTab === 'vendas' ? exportVendasCSV : exportLinhasCSV} disabled={!hasFetched}>
-                  <Download className="h-4 w-4 mr-2" />
-                  CSV
-                </Button>
+        {/* Results: Vendas */}
+        {tipoDivergencia === 'vendas' && hasFetched && !isLoading && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Vendas sem Correspondência</CardTitle>
+              <CardDescription>
+                Vendas que ainda não foram conciliadas com registros da operadora
+              </CardDescription>
+              {filteredVendas.length > visibleCount && (
+                <p className="text-sm text-muted-foreground">
+                  Mostrando {Math.min(visibleCount, filteredVendas.length)} de {filteredVendas.length}
+                </p>
+              )}
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-md border overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="cursor-pointer select-none" onClick={() => toggleSortVendas('vendedor')}>
+                        <span className="flex items-center">Vendedor<SortIconVendas col="vendedor" /></span>
+                      </TableHead>
+                      <TableHead className="cursor-pointer select-none" onClick={() => toggleSortVendas('protocolo_interno')}>
+                        <span className="flex items-center">Protocolo<SortIconVendas col="protocolo_interno" /></span>
+                      </TableHead>
+                      <TableHead className="cursor-pointer select-none" onClick={() => toggleSortVendas('identificador_make')}>
+                        <span className="flex items-center">ID Make<SortIconVendas col="identificador_make" /></span>
+                      </TableHead>
+                      <TableHead className="cursor-pointer select-none" onClick={() => toggleSortVendas('cliente_nome')}>
+                        <span className="flex items-center">Cliente<SortIconVendas col="cliente_nome" /></span>
+                      </TableHead>
+                      <TableHead className="cursor-pointer select-none" onClick={() => toggleSortVendas('cpf_cnpj')}>
+                        <span className="flex items-center">CPF/CNPJ<SortIconVendas col="cpf_cnpj" /></span>
+                      </TableHead>
+                      <TableHead className="cursor-pointer select-none" onClick={() => toggleSortVendas('valor')}>
+                        <span className="flex items-center">Valor<SortIconVendas col="valor" /></span>
+                      </TableHead>
+                      <TableHead className="cursor-pointer select-none" onClick={() => toggleSortVendas('status_make')}>
+                        <span className="flex items-center">Status Make<SortIconVendas col="status_make" /></span>
+                      </TableHead>
+                      <TableHead className="cursor-pointer select-none" onClick={() => toggleSortVendas('data_venda')}>
+                        <span className="flex items-center">Data Venda<SortIconVendas col="data_venda" /></span>
+                      </TableHead>
+                      <TableHead className="cursor-pointer select-none" onClick={() => toggleSortVendas('data_instalacao')}>
+                        <span className="flex items-center">Data Instalação<SortIconVendas col="data_instalacao" /></span>
+                      </TableHead>
+                      <TableHead className="text-right">Ações</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredVendas.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                          <FileX className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                          Nenhuma divergência encontrada
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredVendas.slice(0, visibleCount).map((venda) => (
+                        <TableRow key={venda.id}>
+                          <TableCell className="text-sm">{venda.usuario?.nome || '-'}</TableCell>
+                          <TableCell className="font-mono text-sm">{venda.protocolo_interno || '-'}</TableCell>
+                          <TableCell className="font-mono text-sm">{venda.identificador_make || '-'}</TableCell>
+                          <TableCell className="font-medium">{venda.cliente_nome}</TableCell>
+                          <TableCell className="font-mono text-sm">{venda.cpf_cnpj || '-'}</TableCell>
+                          <TableCell>
+                            {venda.valor
+                              ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(venda.valor)
+                              : '-'
+                            }
+                          </TableCell>
+                          <TableCell className="text-sm">{venda.status_make || '-'}</TableCell>
+                          <TableCell>
+                            {format(new Date(venda.data_venda), 'dd/MM/yyyy', { locale: ptBR })}
+                          </TableCell>
+                          <TableCell>
+                            {venda.data_instalacao
+                              ? format(new Date(venda.data_instalacao), 'dd/MM/yyyy', { locale: ptBR })
+                              : '-'
+                            }
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                {!venda.status_interno.startsWith('contestacao_') && (
+                                  <DropdownMenuItem onClick={() => handleContestacao(venda.id)}>
+                                    <Send className="h-4 w-4 mr-2" />
+                                    Enviar Contestação
+                                  </DropdownMenuItem>
+                                )}
+                                {venda.status_interno === 'contestacao_enviada' && (
+                                  <>
+                                    <DropdownMenuItem onClick={() => handleMarkAs('venda', venda.id, 'contestacao_procedente')}>
+                                      Contestação Procedente
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleMarkAs('venda', venda.id, 'contestacao_improcedente')}>
+                                      Contestação Improcedente
+                                    </DropdownMenuItem>
+                                  </>
+                                )}
+                                <DropdownMenuItem
+                                  onClick={() => handleMarkAs('venda', venda.id, 'ignorar')}
+                                  className="text-destructive"
+                                >
+                                  Cancelar Venda
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
               </div>
-
-              {showAdvancedFilters && (
-                <div className="border-t pt-4 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-muted-foreground">Filtros</p>
-                    {hasActiveFilters && (
-                      <Button variant="ghost" size="sm" onClick={clearAdvancedFilters} className="gap-1 text-xs">
-                        <X className="h-3 w-3" />
-                        Limpar filtros
-                      </Button>
-                    )}
-                  </div>
-                  {/* Independent date blocks */}
-                  <div className="flex flex-wrap gap-6">
-                    <DateRangeBlock
-                      label="Data de Venda"
-                      dateFrom={dataVendaInicio}
-                      dateTo={dataVendaFim}
-                      onDateFromChange={setDataVendaInicio}
-                      onDateToChange={setDataVendaFim}
-                    />
-                    <DateRangeBlock
-                      label="Data de Instalação"
-                      dateFrom={dataInstalacaoInicio}
-                      dateTo={dataInstalacaoFim}
-                      onDateFromChange={setDataInstalacaoInicio}
-                      onDateToChange={setDataInstalacaoFim}
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    <div>
-                      <Label className="text-xs mb-1.5 block">Status Make</Label>
-                      <Select value={statusMakeFilter} onValueChange={setStatusMakeFilter}>
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Todos</SelectItem>
-                          <SelectItem value="_empty_">Sem Status</SelectItem>
-                          {statusMakeOptions.map((s) => (
-                            <SelectItem key={s} value={s}>{s}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label className="text-xs mb-1.5 block">Operadora</Label>
-                      <Select value={operadoraFilter} onValueChange={setOperadoraFilter}>
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Operadora" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Todas Operadoras</SelectItem>
-                          {operadoras.map((op) => (
-                            <SelectItem key={op.id} value={op.id}>{op.nome}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {(isAdmin || isSupervisor) && (
-                      <div>
-                        <Label className="text-xs mb-1.5 block">Vendedor</Label>
-                        <Select value={vendedorFilter} onValueChange={setVendedorFilter}>
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Vendedor" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">Todos Vendedores</SelectItem>
-                            {Array.from(
-                              new Map(vendasSemMatch.map(v => [v.usuario_id, v.usuario?.nome || 'Sem nome'])).entries()
-                            ).sort((a, b) => a[1].localeCompare(b[1], 'pt-BR')).map(([id, nome]) => (
-                              <SelectItem key={id} value={id}>{nome}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-                    <div>
-                      <Label className="text-xs mb-1.5 block">ID Make</Label>
-                      <Input
-                        placeholder="Buscar ID Make..."
-                        value={idMakeSearch}
-                        onChange={(e) => setIdMakeSearch(e.target.value)}
-                        className="w-full"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs mb-1.5 block">Protocolo</Label>
-                      <Input
-                        placeholder="Buscar protocolo..."
-                        value={protocoloSearch}
-                        onChange={(e) => setProtocoloSearch(e.target.value)}
-                        className="w-full"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs mb-1.5 block">Linha a Linha</Label>
-                      <Select value={linhaALinhaFilter} onValueChange={setLinhaALinhaFilter}>
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Todos</SelectItem>
-                          <SelectItem value="_sem_">Sem Apelido</SelectItem>
-                          {linhaALinhaOptions.map((s) => (
-                            <SelectItem key={s} value={s}>{s}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="flex justify-end pt-2">
-                    <Button onClick={handleBuscar} disabled={isLoading} className="gap-2">
-                      {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                      Buscar
-                    </Button>
-                  </div>
-                  {isLoading && (
-                    <div className="space-y-1 pt-2">
-                      <Progress value={loadProgress} className="h-2" />
-                      <p className="text-xs text-muted-foreground text-center">Carregando... {loadProgress}%</p>
-                    </div>
-                  )}
+              {filteredVendas.length > visibleCount && (
+                <div className="flex justify-center pt-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => setVisibleCount(prev => prev + 50)}
+                    className="w-full md:w-auto"
+                  >
+                    Mostrar mais ({filteredVendas.length - visibleCount} restantes)
+                  </Button>
                 </div>
               )}
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
 
-        {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-2 max-w-md">
-            <TabsTrigger value="vendas" className="gap-2">
-              <ShoppingCart className="h-4 w-4" />
-              Vendas sem Match {hasFetched && `(${filteredVendas.length})`}
-            </TabsTrigger>
-            <TabsTrigger value="linhas" className="gap-2">
-              <FileText className="h-4 w-4" />
-              Linhas sem Match {hasFetched && `(${filteredLinhas.length})`}
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="vendas" className="mt-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Vendas sem Correspondência</CardTitle>
-                <CardDescription>
-                  Vendas que ainda não foram conciliadas com registros da operadora
-                </CardDescription>
-                {filteredVendas.length > visibleCount && (
-                  <p className="text-sm text-muted-foreground">
-                    Mostrando {Math.min(visibleCount, filteredVendas.length)} de {filteredVendas.length}
-                  </p>
-                )}
-              </CardHeader>
-              <CardContent>
-                <div className="rounded-md border overflow-x-auto">
-                  <Table>
-                    <TableHeader>
+        {/* Results: Linhas */}
+        {tipoDivergencia === 'linhas' && hasFetched && !isLoading && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Registros da Operadora sem Correspondência</CardTitle>
+              <CardDescription>
+                Registros importados que não foram vinculados a vendas internas
+              </CardDescription>
+              {filteredLinhas.length > visibleCount && (
+                <p className="text-sm text-muted-foreground">
+                  Mostrando {Math.min(visibleCount, filteredLinhas.length)} de {filteredLinhas.length}
+                </p>
+              )}
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-md border overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="cursor-pointer select-none" onClick={() => toggleSortLinhas('operadora')}>
+                        <span className="flex items-center">Operadora<SortIconLinhas col="operadora" /></span>
+                      </TableHead>
+                      <TableHead className="cursor-pointer select-none" onClick={() => toggleSortLinhas('protocolo_operadora')}>
+                        <span className="flex items-center">Protocolo<SortIconLinhas col="protocolo_operadora" /></span>
+                      </TableHead>
+                      <TableHead className="cursor-pointer select-none" onClick={() => toggleSortLinhas('cliente_nome')}>
+                        <span className="flex items-center">Cliente<SortIconLinhas col="cliente_nome" /></span>
+                      </TableHead>
+                      <TableHead className="cursor-pointer select-none" onClick={() => toggleSortLinhas('cpf_cnpj')}>
+                        <span className="flex items-center">CPF/CNPJ<SortIconLinhas col="cpf_cnpj" /></span>
+                      </TableHead>
+                      <TableHead className="cursor-pointer select-none" onClick={() => toggleSortLinhas('plano')}>
+                        <span className="flex items-center">Plano<SortIconLinhas col="plano" /></span>
+                      </TableHead>
+                      <TableHead className="cursor-pointer select-none" onClick={() => toggleSortLinhas('valor')}>
+                        <span className="flex items-center">Valor LQ<SortIconLinhas col="valor" /></span>
+                      </TableHead>
+                      <TableHead className="cursor-pointer select-none" onClick={() => toggleSortLinhas('status_operadora')}>
+                        <span className="flex items-center">Status<SortIconLinhas col="status_operadora" /></span>
+                      </TableHead>
+                      <TableHead className="cursor-pointer select-none" onClick={() => toggleSortLinhas('data_status')}>
+                        <span className="flex items-center">Data Status<SortIconLinhas col="data_status" /></span>
+                      </TableHead>
+                      <TableHead className="cursor-pointer select-none" onClick={() => toggleSortLinhas('apelido')}>
+                        <span className="flex items-center">Lote<SortIconLinhas col="apelido" /></span>
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredLinhas.length === 0 ? (
                       <TableRow>
-                        <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('vendedor')}>
-                          <span className="flex items-center">Vendedor<SortIcon col="vendedor" /></span>
-                        </TableHead>
-                        <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('protocolo_interno')}>
-                          <span className="flex items-center">Protocolo<SortIcon col="protocolo_interno" /></span>
-                        </TableHead>
-                        <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('identificador_make')}>
-                          <span className="flex items-center">ID Make<SortIcon col="identificador_make" /></span>
-                        </TableHead>
-                        <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('cliente_nome')}>
-                          <span className="flex items-center">Cliente<SortIcon col="cliente_nome" /></span>
-                        </TableHead>
-                        <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('cpf_cnpj')}>
-                          <span className="flex items-center">CPF/CNPJ<SortIcon col="cpf_cnpj" /></span>
-                        </TableHead>
-                        <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('valor')}>
-                          <span className="flex items-center">Valor<SortIcon col="valor" /></span>
-                        </TableHead>
-                        <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('status_make')}>
-                          <span className="flex items-center">Status Make<SortIcon col="status_make" /></span>
-                        </TableHead>
-                        <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('data_venda')}>
-                          <span className="flex items-center">Data Venda<SortIcon col="data_venda" /></span>
-                        </TableHead>
-                        <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('data_instalacao')}>
-                          <span className="flex items-center">Data Instalação<SortIcon col="data_instalacao" /></span>
-                        </TableHead>
-                        <TableHead className="text-right">Ações</TableHead>
+                        <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                          <FileX className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                          Nenhuma divergência encontrada
+                        </TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {!hasFetched ? (
-                        <TableRow>
-                          <TableCell colSpan={10} className="text-center py-12 text-muted-foreground">
-                            <div className="flex flex-col items-center gap-2">
-                              <Filter className="h-8 w-8 opacity-40" />
-                              <p>Utilize os filtros acima e clique em <strong>Buscar</strong> para carregar as divergências</p>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ) : isLoading ? (
-                        <TableRow>
-                          <TableCell colSpan={10} className="text-center py-12">
-                            <Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" />
-                          </TableCell>
-                        </TableRow>
-                      ) : filteredVendas.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
-                            <FileX className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                            Nenhuma divergência encontrada
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        filteredVendas.slice(0, visibleCount).map((venda) => (
-                          <TableRow key={venda.id}>
-                            <TableCell className="text-sm">{venda.usuario?.nome || '-'}</TableCell>
-                            <TableCell className="font-mono text-sm">{venda.protocolo_interno || '-'}</TableCell>
-                            <TableCell className="font-mono text-sm">{venda.identificador_make || '-'}</TableCell>
-                            <TableCell className="font-medium">{venda.cliente_nome}</TableCell>
-                            <TableCell className="font-mono text-sm">{venda.cpf_cnpj || '-'}</TableCell>
-                            <TableCell>
-                              {venda.valor
-                                ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(venda.valor)
+                    ) : (
+                      filteredLinhas.slice(0, visibleCount).map((linha) => (
+                        <TableRow key={linha.id}>
+                          <TableCell className="font-medium">{linha.operadora}</TableCell>
+                          <TableCell className="font-mono text-sm">{linha.protocolo_operadora || '-'}</TableCell>
+                          <TableCell>{linha.cliente_nome || '-'}</TableCell>
+                          <TableCell className="font-mono text-sm">{linha.cpf_cnpj || '-'}</TableCell>
+                          <TableCell>{linha.plano || '-'}</TableCell>
+                          <TableCell>
+                            {linha.valor_lq
+                              ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(linha.valor_lq)
+                              : linha.valor
+                                ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(linha.valor)
                                 : '-'
-                              }
-                            </TableCell>
-                            <TableCell className="text-sm">{venda.status_make || '-'}</TableCell>
-                            <TableCell>
-                              {format(new Date(venda.data_venda), 'dd/MM/yyyy', { locale: ptBR })}
-                            </TableCell>
-                            <TableCell>
-                              {venda.data_instalacao
-                                ? format(new Date(venda.data_instalacao), 'dd/MM/yyyy', { locale: ptBR })
-                                : '-'
-                              }
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon">
-                                    <MoreHorizontal className="h-4 w-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  {!venda.status_interno.startsWith('contestacao_') && (
-                                    <DropdownMenuItem onClick={() => handleContestacao(venda.id)}>
-                                      <Send className="h-4 w-4 mr-2" />
-                                      Enviar Contestação
-                                    </DropdownMenuItem>
-                                  )}
-                                  {venda.status_interno === 'contestacao_enviada' && (
-                                    <>
-                                      <DropdownMenuItem onClick={() => handleMarkAs('venda', venda.id, 'contestacao_procedente')}>
-                                        Contestação Procedente
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem onClick={() => handleMarkAs('venda', venda.id, 'contestacao_improcedente')}>
-                                        Contestação Improcedente
-                                      </DropdownMenuItem>
-                                    </>
-                                  )}
-                                  <DropdownMenuItem
-                                    onClick={() => handleMarkAs('venda', venda.id, 'ignorar')}
-                                    className="text-destructive"
-                                  >
-                                    Cancelar Venda
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
+                            }
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{linha.status_operadora}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            {linha.data_status
+                              ? format(new Date(linha.data_status), 'dd/MM/yyyy', { locale: ptBR })
+                              : '-'
+                            }
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {linha.apelido || linha.arquivo_origem || '-'}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+              {filteredLinhas.length > visibleCount && (
+                <div className="flex justify-center pt-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => setVisibleCount(prev => prev + 50)}
+                    className="w-full md:w-auto"
+                  >
+                    Mostrar mais ({filteredLinhas.length - visibleCount} restantes)
+                  </Button>
                 </div>
-                {hasFetched && filteredVendas.length > visibleCount && (
-                  <div className="flex justify-center pt-4">
-                    <Button
-                      variant="outline"
-                      onClick={() => setVisibleCount(prev => prev + 50)}
-                      className="w-full md:w-auto"
-                    >
-                      Mostrar mais ({filteredVendas.length - visibleCount} restantes)
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
-          <TabsContent value="linhas" className="mt-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Registros da Operadora sem Correspondência</CardTitle>
-                <CardDescription>
-                  Registros importados que não foram vinculados a vendas internas
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="rounded-md border overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Operadora</TableHead>
-                        <TableHead>Protocolo</TableHead>
-                        <TableHead>Cliente</TableHead>
-                        <TableHead>CPF/CNPJ</TableHead>
-                        <TableHead>Plano</TableHead>
-                        <TableHead>Valor LQ</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Apelido</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {!hasFetched ? (
-                        <TableRow>
-                          <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
-                            <div className="flex flex-col items-center gap-2">
-                              <Filter className="h-8 w-8 opacity-40" />
-                              <p>Utilize os filtros acima e clique em <strong>Buscar</strong> para carregar as divergências</p>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ) : isLoading ? (
-                        <TableRow>
-                          <TableCell colSpan={8} className="text-center py-12">
-                            <Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" />
-                          </TableCell>
-                        </TableRow>
-                      ) : filteredLinhas.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                            <FileX className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                            Nenhuma divergência encontrada
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        filteredLinhas.map((linha) => (
-                          <TableRow key={linha.id}>
-                            <TableCell className="font-medium">{linha.operadora}</TableCell>
-                            <TableCell className="font-mono text-sm">{linha.protocolo_operadora || '-'}</TableCell>
-                            <TableCell>{linha.cliente_nome || '-'}</TableCell>
-                            <TableCell className="font-mono text-sm">{linha.cpf_cnpj || '-'}</TableCell>
-                            <TableCell>{linha.plano || '-'}</TableCell>
-                            <TableCell>
-                              {linha.valor_lq
-                                ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(linha.valor_lq)
-                                : linha.valor
-                                  ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(linha.valor)
-                                  : '-'
-                              }
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline">{linha.status_operadora}</Badge>
-                            </TableCell>
-                            <TableCell className="text-sm text-muted-foreground">
-                              {linha.apelido || linha.arquivo_origem || '-'}
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+        {/* Empty state when no context selected */}
+        {!tipoDivergencia && (
+          <Card>
+            <CardContent className="py-16">
+              <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                <Filter className="h-10 w-10 opacity-40" />
+                <p className="text-lg font-medium">Selecione o tipo de análise acima</p>
+                <p className="text-sm">Os filtros serão exibidos de acordo com o contexto escolhido</p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </AppLayout>
   );
