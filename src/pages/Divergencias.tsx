@@ -80,6 +80,8 @@ export default function Divergencias() {
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [visibleCount, setVisibleCount] = useState(50);
   const [statusMakeOptions, setStatusMakeOptions] = useState<string[]>([]);
+  const [linhaALinhaFilter, setLinhaALinhaFilter] = useState<string>('all');
+  const [linhaALinhaOptions, setLinhaALinhaOptions] = useState<string[]>([]);
 
   // Independent date filters
   const [dataVendaInicio, setDataVendaInicio] = useState<Date | null>(null);
@@ -110,7 +112,23 @@ export default function Divergencias() {
   useEffect(() => {
     fetchOperadoras();
     fetchStatusMakeOptions();
+    fetchLinhaALinhaOptions();
   }, []);
+
+  const fetchLinhaALinhaOptions = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('linha_operadora')
+        .select('apelido')
+        .not('apelido', 'is', null)
+        .not('apelido', 'eq', '');
+      if (error) throw error;
+      const unique = [...new Set((data || []).map((d: any) => d.apelido as string))].sort();
+      setLinhaALinhaOptions(unique);
+    } catch (error) {
+      console.error('Error fetching linha a linha options:', error);
+    }
+  };
 
   const fetchOperadoras = async () => {
     try {
@@ -318,11 +336,13 @@ export default function Divergencias() {
 
   // Filters
   const hasActiveFilters = operadoraFilter !== 'all' || vendedorFilter !== 'all' || statusMakeFilter !== 'all' ||
+    linhaALinhaFilter !== 'all' ||
     idMakeSearch !== '' || protocoloSearch !== '' ||
     dataVendaInicio !== null || dataVendaFim !== null || dataInstalacaoInicio !== null || dataInstalacaoFim !== null;
 
   const activeFilterCount = [
     operadoraFilter !== 'all', vendedorFilter !== 'all', statusMakeFilter !== 'all',
+    linhaALinhaFilter !== 'all',
     idMakeSearch, protocoloSearch,
     dataVendaInicio !== null || dataVendaFim !== null,
     dataInstalacaoInicio !== null || dataInstalacaoFim !== null,
@@ -332,6 +352,7 @@ export default function Divergencias() {
     setOperadoraFilter('all');
     setVendedorFilter('all');
     setStatusMakeFilter('all');
+    setLinhaALinhaFilter('all');
     setIdMakeSearch('');
     setProtocoloSearch('');
     setDataVendaInicio(null);
@@ -341,7 +362,7 @@ export default function Divergencias() {
     setVisibleCount(50);
   };
 
-  useEffect(() => { setVisibleCount(50); }, [searchTerm, operadoraFilter, vendedorFilter, statusMakeFilter, idMakeSearch, protocoloSearch]);
+  useEffect(() => { setVisibleCount(50); }, [searchTerm, operadoraFilter, vendedorFilter, statusMakeFilter, linhaALinhaFilter, idMakeSearch, protocoloSearch]);
 
   const filteredVendas = (() => {
     const filtered = vendasSemMatch.filter(venda => {
@@ -394,11 +415,15 @@ export default function Divergencias() {
     });
   })();
 
-  const filteredLinhas = linhasSemMatch.filter(linha =>
-    linha.cliente_nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    linha.cpf_cnpj?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    linha.protocolo_operadora?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredLinhas = linhasSemMatch.filter(linha => {
+    const matchesSearch =
+      linha.cliente_nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      linha.cpf_cnpj?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      linha.protocolo_operadora?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesLinhaALinha = linhaALinhaFilter === 'all' ||
+      (linhaALinhaFilter === '_sem_' ? (!linha.apelido || linha.apelido === '') : linha.apelido === linhaALinhaFilter);
+    return matchesSearch && matchesLinhaALinha;
+  });
 
   const vendasContestacao = vendasSemMatch.filter(v => v.status_interno.startsWith('contestacao_'));
   const vendasAguardando = vendasSemMatch.filter(v => !v.status_interno.startsWith('contestacao_') && v.status_interno !== 'cancelada');
@@ -635,6 +660,21 @@ export default function Divergencias() {
                         onChange={(e) => setProtocoloSearch(e.target.value)}
                         className="w-full"
                       />
+                    </div>
+                    <div>
+                      <Label className="text-xs mb-1.5 block">Linha a Linha</Label>
+                      <Select value={linhaALinhaFilter} onValueChange={setLinhaALinhaFilter}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todos</SelectItem>
+                          <SelectItem value="_sem_">Sem Apelido</SelectItem>
+                          {linhaALinhaOptions.map((s) => (
+                            <SelectItem key={s} value={s}>{s}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
                   <div className="flex justify-end pt-2">

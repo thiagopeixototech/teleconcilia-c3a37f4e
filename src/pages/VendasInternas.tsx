@@ -81,6 +81,8 @@ export default function VendasInternas() {
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [vendedorFilter, setVendedorFilter] = useState<string>('all');
   const [statusMakeOptions, setStatusMakeOptions] = useState<string[]>([]);
+  const [linhaALinhaFilter, setLinhaALinhaFilter] = useState<string>('all');
+  const [linhaALinhaOptions, setLinhaALinhaOptions] = useState<string[]>([]);
   const [visibleCount, setVisibleCount] = useState(50);
   const [loadProgress, setLoadProgress] = useState(0);
   const [selectedVenda, setSelectedVenda] = useState<VendaComExtras | null>(null);
@@ -124,7 +126,23 @@ export default function VendasInternas() {
   useEffect(() => {
     fetchOperadoras();
     fetchStatusMakeOptions();
+    fetchLinhaALinhaOptions();
   }, []);
+
+  const fetchLinhaALinhaOptions = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('linha_operadora')
+        .select('apelido')
+        .not('apelido', 'is', null)
+        .not('apelido', 'eq', '');
+      if (error) throw error;
+      const unique = [...new Set((data || []).map((d: any) => d.apelido as string))].sort();
+      setLinhaALinhaOptions(unique);
+    } catch (error) {
+      console.error('Error fetching linha a linha options:', error);
+    }
+  };
 
   const fetchStatusMakeOptions = async () => {
     try {
@@ -396,13 +414,14 @@ export default function VendasInternas() {
   };
 
   const hasActiveFilters = statusFilter !== 'all' || operadoraFilter !== 'all' || vendedorFilter !== 'all' ||
-    statusMakeFilter !== 'all' || confirmadaFilter !== 'all' || 
+    statusMakeFilter !== 'all' || confirmadaFilter !== 'all' || linhaALinhaFilter !== 'all' ||
     idMakeSearch !== '' || protocoloSearch !== '' ||
     dataVendaInicio !== null || dataVendaFim !== null || dataInstalacaoInicio !== null || dataInstalacaoFim !== null;
 
   const activeFilterCount = [
     statusFilter !== 'all', operadoraFilter !== 'all', vendedorFilter !== 'all',
-    statusMakeFilter !== 'all', confirmadaFilter !== 'all', idMakeSearch, protocoloSearch,
+    statusMakeFilter !== 'all', confirmadaFilter !== 'all', linhaALinhaFilter !== 'all',
+    idMakeSearch, protocoloSearch,
     dataVendaInicio !== null || dataVendaFim !== null,
     dataInstalacaoInicio !== null || dataInstalacaoFim !== null,
   ].filter(Boolean).length;
@@ -413,6 +432,7 @@ export default function VendasInternas() {
     setVendedorFilter('all');
     setStatusMakeFilter('all');
     setConfirmadaFilter('all');
+    setLinhaALinhaFilter('all');
     setIdMakeSearch('');
     setProtocoloSearch('');
     setDataVendaInicio(null);
@@ -424,7 +444,7 @@ export default function VendasInternas() {
 
   useEffect(() => {
     setVisibleCount(50);
-  }, [searchTerm, statusFilter, operadoraFilter, vendedorFilter, statusMakeFilter, confirmadaFilter, idMakeSearch, protocoloSearch]);
+  }, [searchTerm, statusFilter, operadoraFilter, vendedorFilter, statusMakeFilter, confirmadaFilter, linhaALinhaFilter, idMakeSearch, protocoloSearch]);
 
   const filteredVendas = (() => {
     const filtered = vendas.filter(venda => {
@@ -449,10 +469,13 @@ export default function VendasInternas() {
       
       const matchesProtocolo = !protocoloSearch || 
         venda.protocolo_interno?.toLowerCase().includes(protocoloSearch.toLowerCase());
+
+      const matchesLinhaALinha = linhaALinhaFilter === 'all' ||
+        (linhaALinhaFilter === '_sem_' ? !venda._linha_a_linha_apelido : venda._linha_a_linha_apelido === linhaALinhaFilter);
       
       return matchesSearch && matchesStatus && matchesOperadora && matchesVendedor &&
         matchesStatusMake && matchesConfirmada &&
-        matchesIdMake && matchesProtocolo;
+        matchesIdMake && matchesProtocolo && matchesLinhaALinha;
     });
 
     if (!sortKey) return filtered;
@@ -627,6 +650,21 @@ export default function VendasInternas() {
                           <SelectItem value="all">Todos</SelectItem>
                           <SelectItem value="_empty_">Sem Status</SelectItem>
                           {statusMakeOptions.map((s) => (
+                            <SelectItem key={s} value={s}>{s}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs mb-1.5 block">Linha a Linha</Label>
+                      <Select value={linhaALinhaFilter} onValueChange={setLinhaALinhaFilter}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todos</SelectItem>
+                          <SelectItem value="_sem_">Sem Linha a Linha</SelectItem>
+                          {linhaALinhaOptions.map((s) => (
                             <SelectItem key={s} value={s}>{s}</SelectItem>
                           ))}
                         </SelectContent>
