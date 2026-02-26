@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { registrarAuditoria } from '@/services/auditService';
@@ -101,6 +101,9 @@ export default function Divergencias() {
   const [linhaProtocoloSearch, setLinhaProtocoloSearch] = useState('');
   const [linhaDataStatusInicio, setLinhaDataStatusInicio] = useState<Date | null>(null);
   const [linhaDataStatusFim, setLinhaDataStatusFim] = useState<Date | null>(null);
+
+  // Cancel ref
+  const cancelRef = useRef(false);
 
   // Sorting
   const [sortKeyVendas, setSortKeyVendas] = useState<SortKeyVendas | null>(null);
@@ -226,6 +229,7 @@ export default function Divergencias() {
   };
 
   const handleBuscar = () => {
+    cancelRef.current = false;
     setHasFetched(true);
     setVisibleCount(50);
     setIsLoading(true);
@@ -235,6 +239,13 @@ export default function Divergencias() {
     } else if (tipoDivergencia === 'linhas') {
       fetchLinhasSemMatch();
     }
+  };
+
+  const handleCancelar = () => {
+    cancelRef.current = true;
+    setIsLoading(false);
+    setLoadProgress(0);
+    toast.info('Busca cancelada');
   };
 
   const fetchVendasSemMatch = async () => {
@@ -249,6 +260,8 @@ export default function Divergencias() {
       let batchNum = 0;
 
       while (hasMore) {
+        if (cancelRef.current) return;
+
         let query = supabase
           .from('vendas_internas')
           .select(`*, usuario:usuarios(nome, email)`)
@@ -262,6 +275,7 @@ export default function Divergencias() {
 
         const { data, error } = await query;
         if (error) throw error;
+        if (cancelRef.current) return;
         batchNum++;
 
         if (data && data.length > 0) {
@@ -324,6 +338,8 @@ export default function Divergencias() {
       let batchNum = 0;
 
       while (hasMore) {
+        if (cancelRef.current) return;
+
         let query = supabase
           .from('linha_operadora')
           .select('*')
@@ -335,6 +351,7 @@ export default function Divergencias() {
 
         const { data, error } = await query;
         if (error) throw error;
+        if (cancelRef.current) return;
         batchNum++;
 
         if (data && data.length > 0) {
@@ -838,10 +855,18 @@ export default function Divergencias() {
                     <Download className="h-4 w-4" />
                     Exportar CSV
                   </Button>
-                  <Button onClick={handleBuscar} disabled={isLoading} className="gap-2">
-                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                    Buscar
-                  </Button>
+                  <div className="flex gap-2">
+                    {isLoading && (
+                      <Button variant="destructive" onClick={handleCancelar} className="gap-2">
+                        <X className="h-4 w-4" />
+                        Cancelar
+                      </Button>
+                    )}
+                    <Button onClick={handleBuscar} disabled={isLoading} className="gap-2">
+                      {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                      Buscar
+                    </Button>
+                  </div>
                 </div>
 
                 {isLoading && (

@@ -1,16 +1,21 @@
 import { useState, useMemo } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import { Loader2, ArrowUpDown, Search } from 'lucide-react';
+import { Loader2, ArrowUpDown, Search, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DateRangeBlock } from '@/components/DateRangeBlock';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import {
+  Popover, PopoverContent, PopoverTrigger,
+} from '@/components/ui/popover';
 
 interface ConsultorPerformance {
   usuario_id: string;
@@ -42,7 +47,7 @@ function irlBadge(irl: number) {
 
 export default function PerformanceConsultor() {
   const { role } = useAuth();
-  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedConsultores, setSelectedConsultores] = useState<Set<string>>(new Set());
   const [sortField, setSortField] = useState<SortField>('receita_liquida');
   const [sortAsc, setSortAsc] = useState(false);
 
@@ -137,11 +142,25 @@ export default function PerformanceConsultor() {
     });
   }, [rows, estornosPorUsuario]);
 
+  // All unique consultor names for the filter
+  const allConsultores = useMemo(() => {
+    return [...new Set(enrichedRows.map(r => r.consultor_nome))].sort((a, b) =>
+      a.localeCompare(b, 'pt-BR')
+    );
+  }, [enrichedRows]);
+
+  const toggleConsultor = (nome: string) => {
+    setSelectedConsultores(prev => {
+      const next = new Set(prev);
+      if (next.has(nome)) next.delete(nome); else next.add(nome);
+      return next;
+    });
+  };
+
   const filtered = useMemo(() => {
     let result = enrichedRows;
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      result = result.filter(r => r.consultor_nome.toLowerCase().includes(term));
+    if (selectedConsultores.size > 0) {
+      result = result.filter(r => selectedConsultores.has(r.consultor_nome));
     }
     result = [...result].sort((a, b) => {
       const aVal = (a as any)[sortField];
@@ -150,7 +169,7 @@ export default function PerformanceConsultor() {
       return sortAsc ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number);
     });
     return result;
-  }, [enrichedRows, searchTerm, sortField, sortAsc]);
+  }, [enrichedRows, selectedConsultores, sortField, sortAsc]);
 
   const totals = useMemo(() => {
     const totalVendas = filtered.reduce((s, r) => s + r.total_vendas, 0);
@@ -211,14 +230,43 @@ export default function PerformanceConsultor() {
             {!hasDateFilter && (
               <p className="text-sm text-muted-foreground">Selecione pelo menos um período de data para visualizar os dados.</p>
             )}
-            <div className="relative max-w-xs">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar consultor..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9 w-[220px]"
-              />
+            <div className="flex items-center gap-2">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="gap-2 min-w-[220px] justify-start">
+                    <Search className="h-4 w-4 text-muted-foreground" />
+                    {selectedConsultores.size === 0
+                      ? 'Todos os consultores'
+                      : `${selectedConsultores.size} selecionado(s)`}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-64 p-2 max-h-64 overflow-y-auto" align="start">
+                  {allConsultores.length === 0 ? (
+                    <p className="text-sm text-muted-foreground p-2">Nenhum consultor disponível</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {allConsultores.map((nome) => (
+                        <label
+                          key={nome}
+                          className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer text-sm"
+                        >
+                          <Checkbox
+                            checked={selectedConsultores.has(nome)}
+                            onCheckedChange={() => toggleConsultor(nome)}
+                          />
+                          {nome}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </PopoverContent>
+              </Popover>
+              {selectedConsultores.size > 0 && (
+                <Button variant="ghost" size="sm" onClick={() => setSelectedConsultores(new Set())} className="gap-1 text-xs">
+                  <X className="h-3 w-3" />
+                  Limpar
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
