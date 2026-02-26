@@ -63,39 +63,43 @@ export default function Dashboard() {
   const fetchDashboardData = async () => {
     try {
       setIsLoading(true);
-      const { data: vendas, error } = await supabase
-        .from('vendas_internas')
-        .select('*')
-        .gte('data_venda', period.dataInicioStr)
-        .lte('data_venda', period.dataFimStr);
 
-      if (error) throw error;
+      // Fetch vendas with only needed columns + conciliação status in parallel
+      const [vendasResult, estornosResult] = await Promise.all([
+        supabase
+          .from('vendas_internas')
+          .select('id, valor, status_interno, status_make, conciliacoes(status_final)')
+          .gte('data_venda', period.dataInicioStr)
+          .lte('data_venda', period.dataFimStr),
+        supabase
+          .from('estornos')
+          .select('valor_estornado')
+          .gte('referencia_desconto', format(period.dataInicio, 'yyyy-MM'))
+          .lte('referencia_desconto', format(period.dataFim, 'yyyy-MM')),
+      ]);
 
-      const totalVendas = vendas?.length || 0;
-      const vendasInstaladas = vendas?.filter(v => 
+      if (vendasResult.error) throw vendasResult.error;
+      const vendas = vendasResult.data || [];
+
+      const totalVendas = vendas.length;
+      const vendasInstaladas = vendas.filter(v => 
         v.status_make?.toLowerCase().startsWith('instalad')
-      ).length || 0;
-      const vendasConfirmadas = vendas?.filter(v => v.status_interno === 'confirmada').length || 0;
-      const vendasCanceladas = vendas?.filter(v => v.status_interno === 'cancelada').length || 0;
-      const valorTotal = vendas?.filter(v => 
-        v.status_make?.toLowerCase().startsWith('instalad')
-      ).reduce((sum, v) => sum + (Number(v.valor) || 0), 0) || 0;
+      ).length;
+      const vendasConfirmadas = vendas.filter(v => v.status_interno === 'confirmada').length;
+      const vendasCanceladas = vendas.filter(v => v.status_interno === 'cancelada').length;
+      const valorTotal = vendas
+        .filter(v => v.status_make?.toLowerCase().startsWith('instalad'))
+        .reduce((sum, v) => sum + (Number(v.valor) || 0), 0);
 
-      const vendaIds = vendas?.map(v => v.id) || [];
+      // Calculate conciliação from the joined data — no extra queries needed
       let conciliadas = 0;
       let valorConciliado = 0;
-
-      if (vendaIds.length > 0) {
-        for (let i = 0; i < vendaIds.length; i += 500) {
-          const batch = vendaIds.slice(i, i + 500);
-          const { data: conciliacoes } = await supabase
-            .from('conciliacoes')
-            .select('*, venda:vendas_internas(valor)')
-            .in('venda_interna_id', batch);
-
-          const batchConciliadas = conciliacoes?.filter(c => c.status_final === 'conciliado') || [];
-          conciliadas += batchConciliadas.length;
-          valorConciliado += batchConciliadas.reduce((sum, c) => sum + (Number((c as any).venda?.valor) || 0), 0);
+      for (const v of vendas) {
+        if (!v.status_make?.toLowerCase().startsWith('instalad')) continue;
+        const conciliacoes = (v as any).conciliacoes as { status_final: string }[] | null;
+        if (conciliacoes?.some(c => c.status_final === 'conciliado')) {
+          conciliadas++;
+          valorConciliado += Number(v.valor) || 0;
         }
       }
 
@@ -111,21 +115,12 @@ export default function Dashboard() {
         percentualConciliacao,
       });
 
-      // Fetch estornos for the period
-      const startMonth = format(period.dataInicio, 'yyyy-MM');
-      const endMonth = format(period.dataFim, 'yyyy-MM');
-      const { data: estornosData } = await (supabase as any)
-        .from('estornos')
-        .select('valor_estornado')
-        .gte('referencia_desconto', startMonth)
-        .lte('referencia_desconto', endMonth);
-      
-      const estTotal = (estornosData || []).reduce((s: number, e: any) => s + Number(e.valor_estornado), 0);
+      const estTotal = (estornosResult.data || []).reduce((s, e) => s + Number(e.valor_estornado), 0);
       setTotalEstornos(estTotal);
 
       const statusCount = {
-        nova: vendas?.filter(v => v.status_interno === 'nova').length || 0,
-        enviada: vendas?.filter(v => v.status_interno === 'enviada').length || 0,
+        nova: vendas.filter(v => v.status_interno === 'nova').length,
+        enviada: vendas.filter(v => v.status_interno === 'enviada').length,
         confirmada: vendasConfirmadas,
         cancelada: vendasCanceladas,
       };
