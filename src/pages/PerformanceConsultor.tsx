@@ -259,15 +259,6 @@ export default function PerformanceConsultor() {
                 onDateToChange={setDataInstalacaoFim}
               />
             </div>
-            <div className="flex items-center gap-3">
-              <Button onClick={handleBuscar} disabled={!hasDateFilter || isLoading} className="gap-2">
-                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                Buscar
-              </Button>
-              {!hasDateFilter && (
-                <p className="text-sm text-muted-foreground">Selecione pelo menos um período de data para visualizar os dados.</p>
-              )}
-            </div>
             <div className="flex items-center gap-2">
               <Popover>
                 <PopoverTrigger asChild>
@@ -304,6 +295,15 @@ export default function PerformanceConsultor() {
                   <X className="h-3 w-3" />
                   Limpar
                 </Button>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              <Button onClick={handleBuscar} disabled={!hasDateFilter || isLoading} className="gap-2">
+                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                Buscar
+              </Button>
+              {!hasDateFilter && (
+                <p className="text-sm text-muted-foreground">Selecione pelo menos um período de data para visualizar os dados.</p>
               )}
             </div>
           </CardContent>
