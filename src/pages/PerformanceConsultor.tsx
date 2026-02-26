@@ -65,6 +65,23 @@ export default function PerformanceConsultor() {
 
   const hasDateFilter = dataVendaInicio || dataVendaFim || dataInstalacaoInicio || dataInstalacaoFim;
 
+  // Manual search trigger
+  const [searchParams, setSearchParams] = useState<{
+    vendaInicio: string | null;
+    vendaFim: string | null;
+    instalacaoInicio: string | null;
+    instalacaoFim: string | null;
+  } | null>(null);
+
+  const handleBuscar = () => {
+    setSearchParams({
+      vendaInicio: dataVendaInicioStr,
+      vendaFim: dataVendaFimStr,
+      instalacaoInicio: dataInstalacaoInicioStr,
+      instalacaoFim: dataInstalacaoFimStr,
+    });
+  };
+
   // Fetch all consultores on mount (independent of date filters)
   useEffect(() => {
     const fetchConsultores = async () => {
@@ -84,27 +101,27 @@ export default function PerformanceConsultor() {
   }, []);
 
   const { data: rows = [], isLoading } = useQuery({
-    queryKey: ['performance-consultores', dataVendaInicioStr, dataVendaFimStr, dataInstalacaoInicioStr, dataInstalacaoFimStr],
+    queryKey: ['performance-consultores', searchParams],
     queryFn: async () => {
       const { data, error } = await (supabase as any).rpc('get_performance_consultores', {
-        _data_venda_inicio: dataVendaInicioStr,
-        _data_venda_fim: dataVendaFimStr,
-        _data_instalacao_inicio: dataInstalacaoInicioStr,
-        _data_instalacao_fim: dataInstalacaoFimStr,
+        _data_venda_inicio: searchParams!.vendaInicio,
+        _data_venda_fim: searchParams!.vendaFim,
+        _data_instalacao_inicio: searchParams!.instalacaoInicio,
+        _data_instalacao_fim: searchParams!.instalacaoFim,
       });
       if (error) throw error;
       return (data || []) as ConsultorPerformance[];
     },
-    enabled: !!hasDateFilter,
+    enabled: !!searchParams,
   });
 
   // Fetch estornos for the period reference
   const { data: estornos = [] } = useQuery({
-    queryKey: ['estornos-performance', dataVendaInicioStr, dataVendaFimStr],
+    queryKey: ['estornos-performance', searchParams?.vendaInicio, searchParams?.vendaFim],
     queryFn: async () => {
-      if (!dataVendaInicio && !dataVendaFim) return [];
-      const startMonth = dataVendaInicio ? format(dataVendaInicio, 'yyyy-MM') : '2000-01';
-      const endMonth = dataVendaFim ? format(dataVendaFim, 'yyyy-MM') : '2099-12';
+      if (!searchParams?.vendaInicio && !searchParams?.vendaFim) return [];
+      const startMonth = searchParams?.vendaInicio ? searchParams.vendaInicio.substring(0, 7) : '2000-01';
+      const endMonth = searchParams?.vendaFim ? searchParams.vendaFim.substring(0, 7) : '2099-12';
       
       const { data, error } = await (supabase as any)
         .from('estornos')
@@ -114,7 +131,7 @@ export default function PerformanceConsultor() {
       if (error) throw error;
       return (data || []) as { venda_id: string | null; valor_estornado: number }[];
     },
-    enabled: !!(dataVendaInicio || dataVendaFim),
+    enabled: !!(searchParams?.vendaInicio || searchParams?.vendaFim),
   });
 
   const vendaIds = useMemo(() => {
@@ -242,9 +259,15 @@ export default function PerformanceConsultor() {
                 onDateToChange={setDataInstalacaoFim}
               />
             </div>
-            {!hasDateFilter && (
-              <p className="text-sm text-muted-foreground">Selecione pelo menos um período de data para visualizar os dados.</p>
-            )}
+            <div className="flex items-center gap-3">
+              <Button onClick={handleBuscar} disabled={!hasDateFilter || isLoading} className="gap-2">
+                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                Buscar
+              </Button>
+              {!hasDateFilter && (
+                <p className="text-sm text-muted-foreground">Selecione pelo menos um período de data para visualizar os dados.</p>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               <Popover>
                 <PopoverTrigger asChild>
@@ -287,7 +310,7 @@ export default function PerformanceConsultor() {
         </Card>
 
         {/* Summary Cards */}
-        {!isLoading && filtered.length > 0 && (
+        {!isLoading && searchParams && filtered.length > 0 && (
           <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
             <Card>
               <CardContent className="pt-4 pb-3 text-center">
@@ -331,9 +354,9 @@ export default function PerformanceConsultor() {
         {/* Table */}
         <Card>
           <CardContent className="p-0">
-            {!hasDateFilter ? (
+            {!searchParams ? (
               <div className="flex items-center justify-center h-48 text-muted-foreground">
-                Selecione um período de data para visualizar a performance.
+                Clique em "Buscar" para visualizar a performance.
               </div>
             ) : isLoading ? (
               <div className="flex items-center justify-center h-48">
