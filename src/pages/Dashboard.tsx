@@ -64,13 +64,12 @@ export default function Dashboard() {
     try {
       setIsLoading(true);
 
-      // Fetch vendas with only needed columns + conciliação status in parallel
-      const [vendasResult, estornosResult] = await Promise.all([
-        supabase
-          .from('vendas_internas')
-          .select('id, valor, status_interno, status_make, conciliacoes(status_final)')
-          .gte('data_venda', period.dataInicioStr)
-          .lte('data_venda', period.dataFimStr),
+      // Use RPC for accurate aggregation (no 1000 row limit)
+      const [statsResult, estornosResult] = await Promise.all([
+        supabase.rpc('get_dashboard_stats', {
+          _data_inicio: period.dataInicioStr,
+          _data_fim: period.dataFimStr,
+        }),
         supabase
           .from('estornos')
           .select('valor_estornado')
@@ -78,60 +77,32 @@ export default function Dashboard() {
           .lte('referencia_desconto', format(period.dataFim, 'yyyy-MM')),
       ]);
 
-      if (vendasResult.error) throw vendasResult.error;
-      const vendas = vendasResult.data || [];
+      if (statsResult.error) throw statsResult.error;
+      const d = statsResult.data as any;
 
-      const totalVendas = vendas.length;
-      const vendasInstaladas = vendas.filter(v => 
-        v.status_make?.toLowerCase().startsWith('instalad')
-      ).length;
-      const vendasConfirmadas = vendas.filter(v => v.status_interno === 'confirmada').length;
-      const vendasCanceladas = vendas.filter(v => v.status_interno === 'cancelada').length;
-      const valorTotal = vendas
-        .filter(v => v.status_make?.toLowerCase().startsWith('instalad'))
-        .reduce((sum, v) => sum + (Number(v.valor) || 0), 0);
-
-      // Calculate conciliação from the joined data — no extra queries needed
-      let conciliadas = 0;
-      let valorConciliado = 0;
-      for (const v of vendas) {
-        if (!v.status_make?.toLowerCase().startsWith('instalad')) continue;
-        const conciliacoes = (v as any).conciliacoes as { status_final: string }[] | null;
-        if (conciliacoes?.some(c => c.status_final === 'conciliado')) {
-          conciliadas++;
-          valorConciliado += Number(v.valor) || 0;
-        }
-      }
-
-      const percentualConciliacao = vendasInstaladas > 0 ? (conciliadas / vendasInstaladas) * 100 : 0;
+      const vendasInstaladas = Number(d.vendas_instaladas) || 0;
+      const vendasConciliadas = Number(d.vendas_conciliadas) || 0;
+      const percentualConciliacao = vendasInstaladas > 0 ? (vendasConciliadas / vendasInstaladas) * 100 : 0;
 
       setStats({
-        totalVendas,
+        totalVendas: Number(d.total_vendas) || 0,
         vendasInstaladas,
-        vendasConfirmadas,
-        vendasCanceladas,
-        valorTotal,
-        valorConciliado,
+        vendasConfirmadas: Number(d.vendas_confirmadas) || 0,
+        vendasCanceladas: Number(d.vendas_canceladas) || 0,
+        valorTotal: Number(d.valor_total) || 0,
+        valorConciliado: Number(d.valor_conciliado) || 0,
         percentualConciliacao,
       });
 
       const estTotal = (estornosResult.data || []).reduce((s, e) => s + Number(e.valor_estornado), 0);
       setTotalEstornos(estTotal);
 
-      const statusCount = {
-        aguardando: vendas.filter(v => v.status_interno === 'aguardando').length,
-        nova: vendas.filter(v => v.status_interno === 'nova').length,
-        enviada: vendas.filter(v => v.status_interno === 'enviada').length,
-        confirmada: vendasConfirmadas,
-        cancelada: vendasCanceladas,
-      };
-
       setVendasPorStatus([
-        { name: 'Aguardando', value: statusCount.aguardando },
-        { name: 'Nova', value: statusCount.nova },
-        { name: 'Enviada', value: statusCount.enviada },
-        { name: 'Confirmada', value: statusCount.confirmada },
-        { name: 'Cancelada', value: statusCount.cancelada },
+        { name: 'Aguardando', value: Number(d.vendas_aguardando) || 0 },
+        { name: 'Nova', value: Number(d.vendas_nova) || 0 },
+        { name: 'Enviada', value: Number(d.vendas_enviada) || 0 },
+        { name: 'Confirmada', value: Number(d.vendas_confirmadas) || 0 },
+        { name: 'Cancelada', value: Number(d.vendas_canceladas) || 0 },
       ].filter(item => item.value > 0));
 
     } catch (error) {
