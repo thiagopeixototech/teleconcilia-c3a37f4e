@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/supabase/client';
@@ -103,6 +103,9 @@ export default function VendasInternas() {
   const [bulkStatus, setBulkStatus] = useState<StatusInterno | ''>('');
   const [isBulkSaving, setIsBulkSaving] = useState(false);
 
+  // Cancel ref
+  const cancelRef = useRef(false);
+
   // Sorting
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>('asc');
@@ -161,11 +164,19 @@ export default function VendasInternas() {
   };
 
   const handleBuscar = () => {
+    cancelRef.current = false;
     setHasFetched(true);
     setVisibleCount(50);
     setIsLoading(true);
     setLoadProgress(0);
     fetchVendas();
+  };
+
+  const handleCancelar = () => {
+    cancelRef.current = true;
+    setIsLoading(false);
+    setLoadProgress(0);
+    toast.info('Busca cancelada');
   };
 
   const fetchVendas = async () => {
@@ -179,6 +190,8 @@ export default function VendasInternas() {
       setLoadProgress(5);
 
       while (hasMore) {
+        if (cancelRef.current) return;
+
         let query = supabase
           .from('vendas_internas')
           .select(`
@@ -189,7 +202,6 @@ export default function VendasInternas() {
           .order('created_at', { ascending: false })
           .range(from, from + batchSize - 1);
 
-        // Conditional date filters
         if (dataVendaInicio) query = query.gte('data_venda', format(dataVendaInicio, 'yyyy-MM-dd'));
         if (dataVendaFim) query = query.lte('data_venda', format(dataVendaFim, 'yyyy-MM-dd'));
         if (dataInstalacaoInicio) query = query.gte('data_instalacao', format(dataInstalacaoInicio, 'yyyy-MM-dd'));
@@ -198,6 +210,7 @@ export default function VendasInternas() {
         const { data, error } = await query;
 
         if (error) throw error;
+        if (cancelRef.current) return;
 
         batchNum++;
 
@@ -690,7 +703,13 @@ export default function VendasInternas() {
                       />
                     </div>
                   </div>
-                   <div className="flex justify-end pt-2">
+                   <div className="flex justify-end gap-2 pt-2">
+                    {isLoading && (
+                      <Button variant="destructive" onClick={handleCancelar} className="gap-2">
+                        <X className="h-4 w-4" />
+                        Cancelar
+                      </Button>
+                    )}
                     <Button onClick={handleBuscar} disabled={isLoading} className="gap-2">
                       {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                       Buscar
