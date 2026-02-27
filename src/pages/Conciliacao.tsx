@@ -35,6 +35,7 @@ interface MatchResult {
   venda: VendaInterna & { vendedor?: { nome: string } | null };
   tipoMatch: TipoMatch;
   score: number;
+  statusMake?: string;
 }
 
 interface AmbiguousResult {
@@ -143,6 +144,7 @@ export default function ConciliacaoPage() {
   const [activeTab, setActiveTab] = useState('found');
   const [searchTerm, setSearchTerm] = useState('');
   const [displayLimit, setDisplayLimit] = useState(100);
+  const [statusMakeFilter, setStatusMakeFilter] = useState<string>('all');
 
   // Manual match dialog
   const [isMatchOpen, setIsMatchOpen] = useState(false);
@@ -234,11 +236,11 @@ export default function ConciliacaoPage() {
         if (l.telefone) allTelefones.add(normalizeTelefone(l.telefone));
       }
 
-      // 4. Fetch only vendas that could match (server-side filter for status_make)
+      // 4. Fetch vendas that could match (instaladas + churn)
       const vendas = await fetchAllRows<VendaInterna & { vendedor?: { nome: string } | null }>(
         () => supabase.from('vendas_internas'),
         '*, vendedor:usuarios!vendas_internas_usuario_id_fkey(nome)',
-        (q: any) => q.ilike('status_make', 'instalad%'),
+        (q: any) => q.or('status_make.ilike.instalad%,status_make.ilike.churn%'),
       );
 
       setProgress({ current: 0, total: linhas.length, phase: 'Processando matches...' });
@@ -358,6 +360,7 @@ export default function ConciliacaoPage() {
               venda: candidates[0].venda,
               tipoMatch: candidates[0].tipoMatch,
               score: candidates[0].tipoMatch === 'protocolo' ? 100 : candidates[0].tipoMatch === 'cpf' ? 90 : 70,
+              statusMake: candidates[0].venda.status_make?.toUpperCase() || 'N/A',
             });
           } else {
             ambiguous.push({ linha, candidates });
@@ -416,9 +419,15 @@ export default function ConciliacaoPage() {
 
   // ─── Batch conciliation ──────────────────────────────────────────────────
 
-  const handleConciliateAll = useCallback(async () => {
+  const handleConciliateAll = useCallback(async (overrideStatus?: 'conciliado' | 'divergente') => {
     if (!results || results.found.length === 0) return;
-
+    // Apply status filter inline
+    let itemsToProcess = results.found;
+    if (statusMakeFilter !== 'all') {
+      itemsToProcess = itemsToProcess.filter(m => (m.statusMake || '').toLowerCase().startsWith(statusMakeFilter));
+    }
+    if (itemsToProcess.length === 0) return;
+    const statusFinal = overrideStatus || 'conciliado';
     setIsConciliating(true);
     const BATCH = 50;
     let successCount = 0;
@@ -426,8 +435,9 @@ export default function ConciliacaoPage() {
     const auditEntries: AuditLogEntry[] = [];
 
     try {
-      const items = results.found;
-      setConciliationProgress({ current: 0, total: items.length, phase: 'Conciliando...' });
+      const items = itemsToProcess;
+      setConciliationProgress({ current: 0, total: items.length, phase: statusFinal === 'divergente' ? 'Marcando como divergência...' : 'Conciliando...' });
+
 
       for (let i = 0; i < items.length; i += BATCH) {
         const batch = items.slice(i, i + BATCH);
@@ -437,11 +447,11 @@ export default function ConciliacaoPage() {
           venda_interna_id: m.venda.id,
           linha_operadora_id: m.linha.id,
           tipo_match: m.tipoMatch,
-          status_final: 'conciliado' as const,
+          status_final: statusFinal as any,
           score_match: m.score,
           validado_por: user?.id,
           validado_em: new Date().toISOString(),
-          observacao: `Conciliação em lote - Arquivo: ${arquivoSelecionado}`,
+          observacao: statusFinal === 'divergente' ? `Marcado como divergência em lote - Arquivo: ${arquivoSelecionado}` : `Conciliação em lote - Arquivo: ${arquivoSelecionado}`,
         }));
 
         const { error: insertError } = await supabase
@@ -458,8 +468,8 @@ export default function ConciliacaoPage() {
             await supabase
               .from('vendas_internas')
               .update({
-                status_interno: 'confirmada',
-                ...(valorLinha !== null ? { valor: valorLinha } : {}),
+                status_interno: statusFinal === 'divergente' ? 'aguardando' as const : 'confirmada' as const,
+                ...(statusFinal !== 'divergente' && valorLinha !== null ? { valor: valorLinha } : {}),
               })
               .eq('id', m.venda.id);
 
@@ -504,7 +514,7 @@ export default function ConciliacaoPage() {
       // Invalidate cache and reprocess
       resultsCache.current.delete(arquivoSelecionado);
 
-      toast.success(`${successCount} venda(s) conciliada(s) com sucesso!${errorCount > 0 ? ` ${errorCount} falha(s).` : ''}`);
+      toast.success(`${successCount} venda(s) ${statusFinal === 'divergente' ? 'marcada(s) como divergência' : 'conciliada(s)'} com sucesso!${errorCount > 0 ? ` ${errorCount} falha(s).` : ''}`);
 
       // Reprocess to update results
       await processFile(arquivoSelecionado);
@@ -515,7 +525,7 @@ export default function ConciliacaoPage() {
       setIsConciliating(false);
       setConciliationProgress(null);
     }
-  }, [results, user, currentUser, arquivoSelecionado, processFile]);
+  }, [results, statusMakeFilter, user, currentUser, arquivoSelecionado, processFile]);
 
   // ─── Manual match (for not-found items) ──────────────────────────────────
 
@@ -610,15 +620,31 @@ export default function ConciliacaoPage() {
   }, [results, searchTerm]);
 
   const filteredFound = useMemo(() => {
-    if (!results || !searchTerm) return results?.found || [];
+    if (!results) return [];
+    let list = results.found;
+    if (statusMakeFilter !== 'all') {
+      list = list.filter(m => (m.statusMake || '').toLowerCase().startsWith(statusMakeFilter));
+    }
+    if (!searchTerm) return list;
     const s = searchTerm.toLowerCase();
-    return results.found.filter(m =>
+    return list.filter(m =>
       m.linha.protocolo_operadora?.toLowerCase().includes(s) ||
       m.venda.protocolo_interno?.toLowerCase().includes(s) ||
       m.venda.cliente_nome?.toLowerCase().includes(s) ||
       m.linha.cpf_cnpj?.toLowerCase().includes(s)
     );
-  }, [results, searchTerm]);
+  }, [results, searchTerm, statusMakeFilter]);
+
+  // Get unique status_make values from found results
+  const statusMakeOptions = useMemo(() => {
+    if (!results) return [];
+    const set = new Set<string>();
+    for (const m of results.found) {
+      const s = m.statusMake || 'N/A';
+      set.add(s);
+    }
+    return Array.from(set).sort();
+  }, [results]);
 
   // ─── Render ──────────────────────────────────────────────────────────────
 
@@ -637,7 +663,7 @@ export default function ConciliacaoPage() {
             </CardTitle>
             <CardDescription>
               Selecione um arquivo Linha a Linha importado para iniciar o processo de conciliação.
-              O sistema cruzará automaticamente os registros com as vendas instaladas.
+              O sistema cruzará automaticamente os registros com as vendas instaladas e churn.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -708,8 +734,8 @@ export default function ConciliacaoPage() {
                 <div>
                   <h3 className="text-lg font-semibold">Selecione um arquivo para começar</h3>
                   <p className="text-muted-foreground max-w-md mt-1">
-                    Escolha um arquivo Linha a Linha importado acima. O sistema irá cruzar os registros
-                    com as vendas instaladas e categorizar os resultados automaticamente.
+                     Escolha um arquivo Linha a Linha importado acima. O sistema irá cruzar os registros
+                     com as vendas instaladas e churn, categorizando os resultados automaticamente.
                   </p>
                 </div>
               </div>
@@ -793,28 +819,57 @@ export default function ConciliacaoPage() {
             {results.found.length > 0 && (
               <Card>
                 <CardContent className="pt-6">
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                    <div>
-                      <p className="font-medium">
-                        {results.found.length} venda(s) pronta(s) para conciliação automática
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        Matches confiáveis por protocolo, CPF/CNPJ ou telefone
-                      </p>
+                  <div className="flex flex-col gap-4">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                      <div>
+                        <p className="font-medium">
+                          {filteredFound.length} venda(s) {statusMakeFilter !== 'all' ? `(${statusMakeFilter.toUpperCase()})` : ''} pronta(s) para ação
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          Matches confiáveis por protocolo, CPF/CNPJ ou telefone
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Select value={statusMakeFilter} onValueChange={setStatusMakeFilter}>
+                          <SelectTrigger className="w-[180px]">
+                            <SelectValue placeholder="Filtrar por status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Todos os Status</SelectItem>
+                            {statusMakeOptions.map(s => (
+                              <SelectItem key={s} value={s.toLowerCase()}>{s}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          onClick={() => handleConciliateAll('conciliado')}
+                          disabled={isConciliating || filteredFound.length === 0}
+                          size="lg"
+                          className="gap-2"
+                        >
+                          {isConciliating ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Wand2 className="h-4 w-4" />
+                          )}
+                          Conciliar ({filteredFound.length})
+                        </Button>
+                        <Button
+                          onClick={() => handleConciliateAll('divergente')}
+                          disabled={isConciliating || filteredFound.length === 0}
+                          variant="destructive"
+                          size="lg"
+                          className="gap-2"
+                        >
+                          {isConciliating ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <XCircle className="h-4 w-4" />
+                          )}
+                          Divergência ({filteredFound.length})
+                        </Button>
+                      </div>
                     </div>
-                    <Button
-                      onClick={handleConciliateAll}
-                      disabled={isConciliating}
-                      size="lg"
-                      className="gap-2"
-                    >
-                      {isConciliating ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Wand2 className="h-4 w-4" />
-                      )}
-                      Conciliar Todas ({results.found.length})
-                    </Button>
                   </div>
                   {conciliationProgress && (
                     <div className="mt-4 space-y-2">
@@ -863,6 +918,7 @@ export default function ConciliacaoPage() {
                             <TableHead>Cliente (Arquivo)</TableHead>
                             <TableHead>Cliente (Venda)</TableHead>
                             <TableHead>Vendedor</TableHead>
+                            <TableHead>Status Make</TableHead>
                             <TableHead>Tipo Match</TableHead>
                             <TableHead>Score</TableHead>
                             <TableHead>Valor Arquivo</TableHead>
@@ -871,7 +927,7 @@ export default function ConciliacaoPage() {
                         <TableBody>
                           {filteredFound.length === 0 ? (
                             <TableRow>
-                              <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                              <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                                 Nenhum registro encontrado
                               </TableCell>
                             </TableRow>
@@ -884,6 +940,11 @@ export default function ConciliacaoPage() {
                                 <TableCell>{m.linha.cliente_nome || '-'}</TableCell>
                                 <TableCell className="font-medium">{m.venda.cliente_nome}</TableCell>
                                 <TableCell>{(m.venda as any).vendedor?.nome || '-'}</TableCell>
+                                <TableCell>
+                                  <Badge variant="outline" className={
+                                    (m.statusMake || '').toLowerCase().startsWith('churn') ? 'border-destructive text-destructive' : ''
+                                  }>{m.statusMake || '-'}</Badge>
+                                </TableCell>
                                 <TableCell>
                                   <Badge variant="outline">{tipoMatchLabels[m.tipoMatch]}</Badge>
                                 </TableCell>
