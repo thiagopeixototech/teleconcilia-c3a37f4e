@@ -487,6 +487,27 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
       await supabase.from('comissionamento_vendas').insert(batch);
     }
 
+    // Register in audit_log so it appears in import history
+    try {
+      const insertedVendaIds = Array.from(vendaIdMap.values());
+      await supabase.from('audit_log' as any).insert({
+        tabela: 'vendas_internas',
+        registro_id: '00000000-0000-0000-0000-000000000000',
+        acao: 'IMPORTACAO_MASSA',
+        usuario_id: user?.id || null,
+        dados_novos: {
+          arquivo: fonte.arquivo?.name || fonte.nome,
+          total: deduped.size,
+          novos: newVendas.length,
+          atualizados: existingVendas.length,
+          erros: errorCount,
+          origem: 'comissionamento',
+          comissionamento_id: comissionamentoId,
+          venda_ids: insertedVendaIds,
+        },
+      });
+    } catch {}
+
     updateFonte(fonte.id, {
       imported: true,
       importResult: { total: deduped.size, success: successCount, errors: errorCount },
