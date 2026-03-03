@@ -60,7 +60,7 @@ const gestaoItems = [
 { title: 'Comissionamento', url: '/comissionamento', icon: Receipt },
 { title: 'Conciliação', url: '/conciliacao', icon: GitCompare },
 { title: 'Divergências', url: '/divergencias', icon: AlertTriangle },
-{ title: 'Performance', url: '/performance', icon: BarChart3 }];
+{ title: 'Detalhado', url: '/performance', icon: BarChart3 }];
 
 
 // Submenu Importações - apenas admin
