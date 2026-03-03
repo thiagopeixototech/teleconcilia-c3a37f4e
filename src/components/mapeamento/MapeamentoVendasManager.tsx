@@ -29,6 +29,9 @@ const CAMPOS_VENDAS = [
   { key: 'valor', label: 'Valor', required: false },
   { key: 'data_instalacao', label: 'Data Instalação', required: false },
   { key: 'plano', label: 'Plano', required: false },
+  { key: 'operadora', label: 'Operadora', required: false },
+  { key: 'cep', label: 'CEP', required: false },
+  { key: 'endereco', label: 'Endereço', required: false },
   { key: 'observacoes', label: 'Observações', required: false },
 ];
 
