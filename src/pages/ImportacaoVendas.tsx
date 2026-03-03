@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { normalizeProtocolo } from '@/lib/normalizeProtocolo';
+import { normalizeCpfCnpj } from '@/lib/normalizeCpfCnpj';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -268,7 +269,7 @@ export default function ImportacaoVendas() {
   };
 
   // Normalize helpers
-  const normalizeCpfCnpj = (v: string) => v.replace(/[^\d]/g, '');
+  // normalizeCpfCnpj imported from lib
   const normalizeTelefone = (v: string) => v.replace(/[^\d]/g, '');
 
   const parseDate = (v: string): string | null => {

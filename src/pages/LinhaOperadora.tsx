@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import { normalizeCpfCnpj } from '@/lib/normalizeCpfCnpj';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { LinhaOperadora, StatusOperadora, Operadora, MapeamentoColunas, CampoSistema } from '@/types/database';
@@ -285,10 +286,7 @@ export default function LinhaOperadoraPage() {
     });
   };
 
-  const normalizeCpfCnpj = (value: string | null): string => {
-    if (!value) return '';
-    return value.replace(/[^\d]/g, '');
-  };
+  // normalizeCpfCnpj imported from lib
 
   const agruparLinhas = (
     rows: Record<string, string>[], 

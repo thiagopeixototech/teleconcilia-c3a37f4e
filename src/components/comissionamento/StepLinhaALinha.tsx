@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { normalizeCpfCnpj } from '@/lib/normalizeCpfCnpj';
 import { supabase } from '@/integrations/supabase/client';
 import { MapeamentoColunas, CampoSistema } from '@/types/database';
 import { Button } from '@/components/ui/button';
@@ -105,7 +106,7 @@ export function StepLinhaALinha({ comissionamentoId }: Props) {
   // Auto-select mapeamento when operadora changes
   const getMapeamentosForOperadora = (opId: string) => mapeamentos.filter(m => m.operadora_id === opId);
 
-  const normalizeCpfCnpj = (v: string) => v.replace(/[^\d]/g, '');
+  // normalizeCpfCnpj imported from lib
 
   const processarLal = async (lal: LalConfig) => {
     if (!lal.csvRows || !lal.mapeamentoId || !lal.apelido.trim()) {
