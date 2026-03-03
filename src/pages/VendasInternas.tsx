@@ -29,7 +29,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { Progress } from '@/components/ui/progress';
 
-type SortKey = 'vendedor' | 'protocolo_interno' | 'identificador_make' | 'cliente_nome' | 'cpf_cnpj' | 'telefone' | 'operadora' | 'empresa' | 'plano' | 'valor' | 'status_interno' | 'status_make' | 'data_venda' | 'data_instalacao' | 'linha_a_linha' | 'status_pag' | 'comissionamento_desconto' | 'receita_descontada';
+type SortKey = 'vendedor' | 'protocolo_interno' | 'identificador_make' | 'cliente_nome' | 'cpf_cnpj' | 'operadora' | 'empresa' | 'plano' | 'valor' | 'status_make' | 'data_venda' | 'data_instalacao' | 'linha_a_linha' | 'valor_lal' | 'status_pag' | 'comissionamento_desconto' | 'receita_descontada' | 'receita_interna';
 type SortDir = 'asc' | 'desc';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -61,9 +61,11 @@ type VendaComExtras = VendaInterna & {
   usuario?: { nome: string; email: string } | null;
   empresa?: { nome: string } | null;
   _linha_a_linha_apelido?: string;
+  _valor_lal?: number | null;
   _status_pag?: string | null;
   _comissionamento_desconto?: string | null;
   _receita_descontada?: number | null;
+  _receita_interna?: number | null;
 };
 
 export default function VendasInternas() {
@@ -265,7 +267,7 @@ export default function VendasInternas() {
 
       // Fetch conciliacoes to find "Linha a Linha" apelido
       const vendaIds = allVendas.map(v => v.id);
-      const conciliacaoMap: Record<string, string> = {};
+      const conciliacaoMap: Record<string, { apelido: string; valor_lal: number | null }> = {};
 
       if (vendaIds.length > 0) {
         // Fetch conciliacoes in batches
@@ -281,34 +283,40 @@ export default function VendasInternas() {
             const linhaIds = concData.map(c => c.linha_operadora_id);
             const { data: linhaData } = await supabase
               .from('linha_operadora')
-              .select('id, apelido, arquivo_origem')
+              .select('id, apelido, arquivo_origem, valor_lq')
               .in('id', linhaIds);
             
-            const linhaApelidoMap: Record<string, string> = {};
-            linhaData?.forEach(l => { const label = l.apelido || l.arquivo_origem; if (label) linhaApelidoMap[l.id] = label; });
+            const linhaMap: Record<string, { label: string; valor: number | null }> = {};
+            linhaData?.forEach(l => { 
+              const label = l.apelido || l.arquivo_origem; 
+              linhaMap[l.id] = { label: label || '', valor: l.valor_lq };
+            });
             
             concData.forEach(c => {
-              const apelido = linhaApelidoMap[c.linha_operadora_id];
-              if (apelido) conciliacaoMap[c.venda_interna_id] = apelido;
+              const info = linhaMap[c.linha_operadora_id];
+              if (info) {
+                conciliacaoMap[c.venda_interna_id] = { apelido: info.label, valor_lal: info.valor };
+              }
             });
           }
         }
       }
 
       // Fetch comissionamento_vendas data
-      const comissaoMap: Record<string, { status_pag: string | null; comissionamento_desconto: string | null; receita_descontada: number | null }> = {};
+      const comissaoMap: Record<string, { status_pag: string | null; comissionamento_desconto: string | null; receita_descontada: number | null; receita_interna: number | null }> = {};
       if (vendaIds.length > 0) {
         for (let i = 0; i < vendaIds.length; i += 500) {
           const batch = vendaIds.slice(i, i + 500);
           const { data: comData } = await supabase
             .from('comissionamento_vendas')
-            .select('venda_interna_id, status_pag, comissionamento_desconto, receita_descontada')
+            .select('venda_interna_id, status_pag, comissionamento_desconto, receita_descontada, receita_interna')
             .in('venda_interna_id', batch);
           comData?.forEach(c => {
             comissaoMap[c.venda_interna_id] = {
               status_pag: c.status_pag,
               comissionamento_desconto: c.comissionamento_desconto,
               receita_descontada: c.receita_descontada,
+              receita_interna: c.receita_interna,
             };
           });
         }
@@ -319,10 +327,12 @@ export default function VendasInternas() {
       // Enrich vendas with apelido + comissao
       const enriched = allVendas.map(v => ({
         ...v,
-        _linha_a_linha_apelido: conciliacaoMap[v.id] || '',
+        _linha_a_linha_apelido: conciliacaoMap[v.id]?.apelido || '',
+        _valor_lal: conciliacaoMap[v.id]?.valor_lal || null,
         _status_pag: comissaoMap[v.id]?.status_pag || null,
         _comissionamento_desconto: comissaoMap[v.id]?.comissionamento_desconto || null,
         _receita_descontada: comissaoMap[v.id]?.receita_descontada || null,
+        _receita_interna: comissaoMap[v.id]?.receita_interna || null,
       }));
 
       setTotalCount(enriched.length);
@@ -457,23 +467,23 @@ export default function VendasInternas() {
   };
 
   const exportToCSV = () => {
-    const headers = ['Vendedor', 'Protocolo', 'ID Make', 'Cliente', 'CPF/CNPJ', 'Telefone', 'Operadora', 'Empresa', 'Plano', 'Valor', 'Status', 'Status Make', 'Data Venda', 'Data Instalação', 'Linha a Linha', 'Status Pag', 'Desconto', 'Receita Descontada'];
+    const headers = ['Vendedor', 'Protocolo', 'ID Make', 'Cliente', 'CPF/CNPJ', 'Operadora', 'Empresa', 'Plano', 'Valor', 'Status Make', 'Data Venda', 'Data Instalação', 'Linha a Linha', 'Valor LAL', 'Valor Interno', 'Status Pag', 'Desconto', 'Receita Descontada'];
     const rows = filteredVendas.map(v => [
       v.usuario?.nome || '',
       v.protocolo_interno || '',
       v.identificador_make || '',
       v.cliente_nome,
       v.cpf_cnpj || '',
-      v.telefone || '',
       getOperadoraNome(v.operadora_id),
       v.empresa?.nome || '',
       v.plano || '',
       v.valor?.toString() || '',
-      statusLabels[v.status_interno],
       v.status_make || '',
       format(new Date(v.data_venda), 'dd/MM/yyyy'),
       v.data_instalacao ? format(new Date(v.data_instalacao), 'dd/MM/yyyy') : '',
       v._linha_a_linha_apelido || '',
+      v._valor_lal?.toString() || '',
+      v._receita_interna?.toString() || '',
       v._status_pag || '',
       v._comissionamento_desconto || '',
       v._receita_descontada?.toString() || '',
@@ -546,7 +556,7 @@ export default function VendasInternas() {
       
       const matchesConfirmada = confirmadaFilter === 'all' || 
         (confirmadaFilter === 'confirmada' ? venda.status_interno === 'confirmada' : venda.status_interno !== 'confirmada');
-      
+
       const matchesIdMake = !idMakeSearch || 
         venda.identificador_make?.toLowerCase().includes(idMakeSearch.toLowerCase());
       
@@ -602,6 +612,14 @@ export default function VendasInternas() {
         case 'receita_descontada':
           valA = a._receita_descontada ?? 0;
           valB = b._receita_descontada ?? 0;
+          return sortDir === 'asc' ? valA - valB : valB - valA;
+        case 'valor_lal':
+          valA = a._valor_lal ?? 0;
+          valB = b._valor_lal ?? 0;
+          return sortDir === 'asc' ? valA - valB : valB - valA;
+        case 'receita_interna':
+          valA = a._receita_interna ?? 0;
+          valB = b._receita_interna ?? 0;
           return sortDir === 'asc' ? valA - valB : valB - valA;
         default:
           valA = (a as any)[sortKey] || '';
@@ -721,19 +739,6 @@ export default function VendasInternas() {
                         </Select>
                       </div>
                     )}
-                    <div>
-                      <Label className="text-xs mb-1.5 block">Confirmada</Label>
-                      <Select value={confirmadaFilter} onValueChange={setConfirmadaFilter}>
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Todas</SelectItem>
-                          <SelectItem value="confirmada">Confirmadas</SelectItem>
-                          <SelectItem value="nao_confirmada">Não Confirmadas</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
                     <div>
                       <Label className="text-xs mb-1.5 block">Status Make</Label>
                       <Select value={statusMakeFilter} onValueChange={setStatusMakeFilter}>
@@ -909,23 +914,23 @@ export default function VendasInternas() {
                     <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('empresa')}>
                       <span className="flex items-center">Empresa<SortIcon col="empresa" /></span>
                     </TableHead>
-                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('telefone')}>
-                      <span className="flex items-center">Telefone<SortIcon col="telefone" /></span>
-                    </TableHead>
                     <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('plano')}>
                       <span className="flex items-center">Plano<SortIcon col="plano" /></span>
                     </TableHead>
                     <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('valor')}>
                       <span className="flex items-center">Valor<SortIcon col="valor" /></span>
                     </TableHead>
-                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('status_interno')}>
-                      <span className="flex items-center">Confirmada<SortIcon col="status_interno" /></span>
-                    </TableHead>
                     <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('status_make')}>
                       <span className="flex items-center">Status Make<SortIcon col="status_make" /></span>
                     </TableHead>
                     <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('linha_a_linha')}>
                       <span className="flex items-center">Linha a Linha<SortIcon col="linha_a_linha" /></span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('valor_lal')}>
+                      <span className="flex items-center">Valor LAL<SortIcon col="valor_lal" /></span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('receita_interna')}>
+                      <span className="flex items-center">Valor Interno<SortIcon col="receita_interna" /></span>
                     </TableHead>
                     <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('data_venda')}>
                       <span className="flex items-center">Data Venda<SortIcon col="data_venda" /></span>
@@ -985,7 +990,6 @@ export default function VendasInternas() {
                         <TableCell className="font-mono text-sm">{venda.cpf_cnpj || '-'}</TableCell>
                         <TableCell>{getOperadoraNome(venda.operadora_id)}</TableCell>
                         <TableCell className="text-sm">{venda.empresa?.nome || '-'}</TableCell>
-                        <TableCell className="text-sm">{venda.telefone || '-'}</TableCell>
                         <TableCell className="text-sm">{venda.plano || '-'}</TableCell>
                         <TableCell>
                           {venda.valor 
@@ -993,14 +997,21 @@ export default function VendasInternas() {
                             : '-'
                           }
                         </TableCell>
-                        <TableCell>
-                          <Badge className={statusColors[venda.status_interno]}>
-                            {statusLabels[venda.status_interno]}
-                          </Badge>
-                        </TableCell>
                         <TableCell className="text-sm">{venda.status_make || '-'}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {venda._linha_a_linha_apelido || '-'}
+                        </TableCell>
+                        <TableCell>
+                          {venda._valor_lal != null
+                            ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(venda._valor_lal)
+                            : '-'
+                          }
+                        </TableCell>
+                        <TableCell>
+                          {venda._receita_interna != null
+                            ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(venda._receita_interna)
+                            : '-'
+                          }
                         </TableCell>
                         <TableCell>
                           {format(new Date(venda.data_venda), 'dd/MM/yyyy', { locale: ptBR })}
