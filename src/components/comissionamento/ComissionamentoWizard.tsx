@@ -7,6 +7,10 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   ChevronLeft, ChevronRight, Check, Loader2,
   FileSpreadsheet, Upload, GitCompare, RotateCcw, BarChart3,
 } from 'lucide-react';
@@ -38,6 +42,8 @@ export function ComissionamentoWizard({ mode, comissionamentoId, onClose }: Wiza
   const { user } = useAuth();
   const [currentStep, setCurrentStep] = useState(mode === 'criar' ? 0 : 1);
   const [isSaving, setIsSaving] = useState(false);
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [isCleaningUp, setIsCleaningUp] = useState(false);
 
   // Step 0: Info
   const [nome, setNome] = useState('');
@@ -46,6 +52,8 @@ export function ComissionamentoWizard({ mode, comissionamentoId, onClose }: Wiza
   const [comNome, setComNome] = useState('');
 
   const activeComId = createdComId || comissionamentoId || '';
+  const isLastStep = currentStep === STEPS.length - 1;
+  const hasDataImported = !!activeComId && currentStep > 0;
 
   // Load comissionamento name when updating
   useEffect(() => {
@@ -91,12 +99,85 @@ export function ComissionamentoWizard({ mode, comissionamentoId, onClose }: Wiza
   };
 
   const goPrev = () => {
-    if (currentStep > (mode === 'criar' && !createdComId ? 0 : 0)) {
+    if (currentStep > 0) {
       setCurrentStep(currentStep - 1);
     }
   };
 
   const canGoNext = currentStep === 0 ? !!createdComId : true;
+
+  const handleRequestClose = () => {
+    if (isLastStep) {
+      onClose();
+      return;
+    }
+    if (hasDataImported) {
+      setShowExitConfirm(true);
+    } else {
+      onClose();
+    }
+  };
+
+  const handleConfirmExit = async () => {
+    if (!activeComId) {
+      onClose();
+      return;
+    }
+    setIsCleaningUp(true);
+    try {
+      // 1. Get venda_ids linked to this comissionamento
+      const { data: cvRows } = await supabase
+        .from('comissionamento_vendas')
+        .select('venda_interna_id')
+        .eq('comissionamento_id', activeComId);
+      
+      const vendaIds = cvRows?.map(r => r.venda_interna_id) || [];
+
+      // 2. Get apelidos of LAL before deleting
+      const { data: lalRows } = await supabase
+        .from('comissionamento_lal')
+        .select('apelido')
+        .eq('comissionamento_id', activeComId);
+      
+      const apelidos = lalRows?.map(r => r.apelido) || [];
+
+      // 3. Delete comissionamento cascade (vendas, fontes, lal)
+      await supabase.from('comissionamento_vendas').delete().eq('comissionamento_id', activeComId);
+      await supabase.from('comissionamento_lal').delete().eq('comissionamento_id', activeComId);
+      await supabase.from('comissionamento_fontes').delete().eq('comissionamento_id', activeComId);
+
+      // 4. Delete linked conciliacoes, estornos, audit for these vendas
+      if (vendaIds.length > 0) {
+        const batchSize = 50;
+        for (let i = 0; i < vendaIds.length; i += batchSize) {
+          const batch = vendaIds.slice(i, i + batchSize);
+          await supabase.from('conciliacoes').delete().in('venda_interna_id', batch);
+          await supabase.from('estornos').delete().in('venda_id', batch);
+          await supabase.from('audit_log_vendas').delete().in('venda_id', batch);
+          await supabase.from('vendas_internas').delete().in('id', batch);
+        }
+      }
+
+      // 5. Delete linha_operadora imported for this comissionamento
+      if (apelidos.length > 0) {
+        await supabase.from('linha_operadora').delete().in('apelido', apelidos);
+      }
+
+      // 6. Delete the comissionamento itself (only if we created it in this session)
+      if (mode === 'criar') {
+        await supabase.from('comissionamentos').delete().eq('id', activeComId);
+      }
+
+      toast.success('Dados importados foram removidos');
+    } catch (err: any) {
+      console.error('Erro ao limpar dados:', err);
+      toast.error('Erro ao limpar dados: ' + err.message);
+    } finally {
+      setIsCleaningUp(false);
+      setShowExitConfirm(false);
+      onClose();
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -176,9 +257,11 @@ export function ComissionamentoWizard({ mode, comissionamentoId, onClose }: Wiza
         </Button>
 
         <div className="flex gap-2">
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Fechar
-          </Button>
+          {!isLastStep && (
+            <Button variant="ghost" size="sm" onClick={handleRequestClose}>
+              Fechar
+            </Button>
+          )}
           {currentStep < STEPS.length - 1 && (
             <Button
               size="sm"
@@ -190,7 +273,7 @@ export function ComissionamentoWizard({ mode, comissionamentoId, onClose }: Wiza
               <ChevronRight className="h-4 w-4" />
             </Button>
           )}
-          {currentStep === STEPS.length - 1 && (
+          {isLastStep && (
             <Button size="sm" onClick={onClose} className="gap-1.5">
               <Check className="h-4 w-4" />
               Concluir
@@ -198,6 +281,33 @@ export function ComissionamentoWizard({ mode, comissionamentoId, onClose }: Wiza
           )}
         </div>
       </div>
+
+      {/* Exit confirmation dialog */}
+      <AlertDialog open={showExitConfirm} onOpenChange={setShowExitConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Sair sem finalizar?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div>
+                O processo de comissionamento não foi concluído. Ao sair agora, <strong>todos os arquivos importados e os registros gerados por eles</strong> (vendas internas, linhas da operadora, conciliações e estornos) <strong>serão apagados permanentemente</strong>.
+                <br /><br />
+                Deseja realmente sair e apagar os dados importados?
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isCleaningUp}>Continuar editando</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmExit}
+              disabled={isCleaningUp}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isCleaningUp ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Sair e apagar dados
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
