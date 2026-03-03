@@ -454,8 +454,12 @@ export default function ComissionamentoPage() {
       </div>
 
       {/* Wizard Dialog */}
-      <Dialog open={wizardOpen} onOpenChange={setWizardOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <Dialog open={wizardOpen} onOpenChange={(open) => {
+        // Don't allow closing via overlay/X - let the wizard handle it
+        if (!open) return;
+        setWizardOpen(open);
+      }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto" onPointerDownOutside={e => e.preventDefault()} onEscapeKeyDown={e => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>
               {wizardMode === 'criar' ? 'Novo Comissionamento' : 'Atualizar Comissionamento'}
