@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { normalizeCpfCnpj } from '@/lib/normalizeCpfCnpj';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -207,7 +208,7 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
     return null;
   };
 
-  const normalizeCpfCnpj = (v: string) => v.replace(/[^\d]/g, '');
+  // normalizeCpfCnpj imported from lib
 
   // Recursive fetch to get ALL records beyond 1000 limit
   const fetchAllRecords = async (query: any): Promise<any[]> => {
