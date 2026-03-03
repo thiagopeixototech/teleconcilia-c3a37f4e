@@ -16,7 +16,8 @@ import {
   BarChart3,
   Upload,
   PackageOpen,
-  RotateCcw } from
+  RotateCcw,
+  Receipt } from
 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/contexts/AuthContext';
@@ -56,6 +57,7 @@ const cadastrosItems = [
 
 // Submenu Gestão - visível para admin e supervisor
 const gestaoItems = [
+{ title: 'Comissionamento', url: '/comissionamento', icon: Receipt },
 { title: 'Conciliação', url: '/conciliacao', icon: GitCompare },
 { title: 'Divergências', url: '/divergencias', icon: AlertTriangle },
 { title: 'Performance', url: '/performance', icon: BarChart3 }];

@@ -24,6 +24,7 @@ import PerformanceConsultor from "./pages/PerformanceConsultor";
 import ImportacaoVendas from "./pages/ImportacaoVendas";
 import ImportacaoEstornos from "./pages/ImportacaoEstornos";
 import CadastroMassa from "./pages/CadastroMassa";
+import Comissionamento from "./pages/Comissionamento";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -171,6 +172,15 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={['admin']}>
                   <CadastroMassa />
+                </ProtectedRoute>
+              }
+            />
+            
+            <Route
+              path="/comissionamento"
+              element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <Comissionamento />
                 </ProtectedRoute>
               }
             />

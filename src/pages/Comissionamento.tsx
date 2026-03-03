@@ -1,0 +1,355 @@
+import { useState, useEffect, useCallback } from 'react';
+import { AppLayout } from '@/components/layout/AppLayout';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  ShoppingCart, CheckCircle, TrendingDown, DollarSign,
+  Plus, RefreshCw, Loader2, GitCompare, RotateCcw,
+  FileSpreadsheet, Receipt,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
+import { ComissionamentoWizard } from '@/components/comissionamento/ComissionamentoWizard';
+
+interface Comissionamento {
+  id: string;
+  nome: string;
+  competencia: string;
+  status: 'rascunho' | 'em_andamento' | 'finalizado';
+  created_at: string;
+}
+
+interface ComissionamentoStats {
+  totalVendas: number;
+  vendasInstaladas: number;
+  vendasConciliadas: number;
+  receitaInterna: number;
+  receitaConciliada: number;
+  totalEstornos: number;
+  churn: number;
+  receitaLiquida: number;
+}
+
+const formatBRL = (value: number) =>
+  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+
+const statusLabels: Record<string, string> = {
+  rascunho: 'Rascunho',
+  em_andamento: 'Em andamento',
+  finalizado: 'Finalizado',
+};
+
+const statusVariant: Record<string, string> = {
+  rascunho: 'bg-muted text-muted-foreground',
+  em_andamento: 'bg-warning/20 text-warning',
+  finalizado: 'bg-success/20 text-success',
+};
+
+export default function ComissionamentoPage() {
+  const { user } = useAuth();
+  const [comissionamentos, setComissionamentos] = useState<Comissionamento[]>([]);
+  const [selectedId, setSelectedId] = useState<string>('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [stats, setStats] = useState<ComissionamentoStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardMode, setWizardMode] = useState<'criar' | 'atualizar'>('criar');
+
+  // Load comissionamentos list
+  const loadComissionamentos = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('comissionamentos')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setComissionamentos(data || []);
+
+      // Auto-select last one if none selected
+      if (!selectedId && data && data.length > 0) {
+        setSelectedId(data[0].id);
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error('Erro ao carregar comissionamentos');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [selectedId]);
+
+  // Load stats for selected comissionamento
+  const loadStats = useCallback(async (comId: string) => {
+    if (!comId) return;
+    setStatsLoading(true);
+    try {
+      // Fetch comissionamento_vendas for this comissionamento
+      const { data: vendas, error } = await supabase
+        .from('comissionamento_vendas')
+        .select(`
+          status_pag,
+          receita_interna,
+          receita_lal,
+          receita_descontada,
+          venda_interna_id,
+          vendas_internas!comissionamento_vendas_venda_interna_id_fkey(
+            status_make,
+            valor
+          )
+        `)
+        .eq('comissionamento_id', comId);
+
+      if (error) throw error;
+
+      const rows = vendas || [];
+      const totalVendas = rows.length;
+      let vendasInstaladas = 0;
+      let vendasConciliadas = 0;
+      let receitaInterna = 0;
+      let receitaConciliada = 0;
+      let totalEstornos = 0;
+      let churn = 0;
+
+      for (const row of rows) {
+        const vi = row.vendas_internas as any;
+        const statusMake = (vi?.status_make || '').toLowerCase();
+        const isInstalada = statusMake.startsWith('instalad');
+        const isChurn = statusMake.startsWith('churn');
+
+        if (isInstalada) vendasInstaladas++;
+        if (isChurn) churn += Number(row.receita_interna || vi?.valor || 0);
+
+        receitaInterna += Number(row.receita_interna || 0);
+
+        if (row.status_pag === 'OK') {
+          vendasConciliadas++;
+          receitaConciliada += Number(row.receita_lal || row.receita_interna || 0);
+        }
+
+        totalEstornos += Number(row.receita_descontada || 0);
+      }
+
+      const receitaLiquida = receitaConciliada - totalEstornos - churn;
+
+      setStats({
+        totalVendas,
+        vendasInstaladas,
+        vendasConciliadas,
+        receitaInterna,
+        receitaConciliada,
+        totalEstornos,
+        churn,
+        receitaLiquida,
+      });
+    } catch (err) {
+      console.error(err);
+      toast.error('Erro ao carregar estatísticas');
+    } finally {
+      setStatsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadComissionamentos();
+  }, []);
+
+  useEffect(() => {
+    if (selectedId) {
+      loadStats(selectedId);
+    }
+  }, [selectedId, loadStats]);
+
+  const selectedCom = comissionamentos.find(c => c.id === selectedId);
+
+  const handleOpenWizard = (mode: 'criar' | 'atualizar') => {
+    setWizardMode(mode);
+    setWizardOpen(true);
+  };
+
+  const handleWizardClose = () => {
+    setWizardOpen(false);
+    loadComissionamentos();
+    if (selectedId) loadStats(selectedId);
+  };
+
+  return (
+    <AppLayout title="Comissionamento">
+      <div className="space-y-6">
+        {/* Seletor + Ações */}
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+              <div className="flex-1 min-w-0">
+                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+                  Comissionamento
+                </label>
+                {isLoading ? (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Carregando...
+                  </div>
+                ) : (
+                  <Select value={selectedId} onValueChange={setSelectedId}>
+                    <SelectTrigger className="w-full sm:w-[400px]">
+                      <SelectValue placeholder="Selecione um comissionamento" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {comissionamentos.map(c => (
+                        <SelectItem key={c.id} value={c.id}>
+                          <span className="flex items-center gap-2">
+                            {c.nome}
+                            <span className="text-xs text-muted-foreground">({c.competencia})</span>
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+
+              {selectedCom && (
+                <Badge className={cn('shrink-0', statusVariant[selectedCom.status])}>
+                  {statusLabels[selectedCom.status]}
+                </Badge>
+              )}
+
+              <div className="flex gap-2 shrink-0">
+                <Button onClick={() => handleOpenWizard('criar')} size="sm" className="gap-1.5">
+                  <Plus className="h-4 w-4" />
+                  Novo
+                </Button>
+                {selectedId && (
+                  <Button
+                    onClick={() => handleOpenWizard('atualizar')}
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                    Atualizar
+                  </Button>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Stats Cards */}
+        {selectedId && (
+          statsLoading ? (
+            <div className="flex items-center justify-center h-32">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            </div>
+          ) : stats ? (
+            <>
+              <div className="grid gap-4 grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+                <StatCard
+                  title="Vendas Totais"
+                  value={stats.totalVendas.toString()}
+                  icon={<FileSpreadsheet className="h-4 w-4" />}
+                />
+                <StatCard
+                  title="Instaladas"
+                  value={stats.vendasInstaladas.toString()}
+                  icon={<ShoppingCart className="h-4 w-4" />}
+                />
+                <StatCard
+                  title="Churn"
+                  value={formatBRL(stats.churn)}
+                  icon={<TrendingDown className="h-4 w-4" />}
+                  className="text-destructive"
+                />
+                <StatCard
+                  title="Conciliadas"
+                  value={stats.vendasConciliadas.toString()}
+                  icon={<GitCompare className="h-4 w-4" />}
+                />
+                <StatCard
+                  title="Receita Bruta"
+                  value={formatBRL(stats.receitaInterna)}
+                  icon={<DollarSign className="h-4 w-4" />}
+                />
+                <StatCard
+                  title="Estornos"
+                  value={formatBRL(stats.totalEstornos)}
+                  icon={<RotateCcw className="h-4 w-4" />}
+                  className="text-destructive"
+                />
+                <StatCard
+                  title="Receita Líquida"
+                  value={formatBRL(stats.receitaLiquida)}
+                  icon={<Receipt className="h-4 w-4" />}
+                  className={stats.receitaLiquida >= 0 ? 'text-success' : 'text-destructive'}
+                />
+              </div>
+            </>
+          ) : (
+            <div className="text-center text-muted-foreground py-8">
+              Nenhum dado encontrado para este comissionamento.
+            </div>
+          )
+        )}
+
+        {!selectedId && !isLoading && (
+          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
+            <Receipt className="h-12 w-12 opacity-30" />
+            <p>
+              {comissionamentos.length === 0
+                ? 'Nenhum comissionamento encontrado. Crie o primeiro!'
+                : 'Selecione um comissionamento acima para visualizar.'}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Wizard Dialog */}
+      <Dialog open={wizardOpen} onOpenChange={setWizardOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {wizardMode === 'criar' ? 'Novo Comissionamento' : 'Atualizar Comissionamento'}
+            </DialogTitle>
+          </DialogHeader>
+          <ComissionamentoWizard
+            mode={wizardMode}
+            comissionamentoId={wizardMode === 'atualizar' ? selectedId : undefined}
+            onClose={handleWizardClose}
+          />
+        </DialogContent>
+      </Dialog>
+    </AppLayout>
+  );
+}
+
+function StatCard({
+  title,
+  value,
+  icon,
+  className,
+}: {
+  title: string;
+  value: string;
+  icon: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <CardTitle className="text-xs font-medium text-muted-foreground">{title}</CardTitle>
+        <span className="text-muted-foreground">{icon}</span>
+      </CardHeader>
+      <CardContent>
+        <div className={cn('text-lg font-bold', className)}>{value}</div>
+      </CardContent>
+    </Card>
+  );
+}

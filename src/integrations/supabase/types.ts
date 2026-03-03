@@ -89,6 +89,249 @@ export type Database = {
         }
         Relationships: []
       }
+      comissionamento_fontes: {
+        Row: {
+          arquivo_nome: string | null
+          comissionamento_id: string
+          created_at: string
+          empresa_id: string | null
+          filtros: Json | null
+          id: string
+          mapeamento_id: string | null
+          nome: string
+          operadora_fixa_id: string | null
+          tipo: Database["public"]["Enums"]["tipo_fonte_comissionamento"]
+          vendedor_fixo_id: string | null
+        }
+        Insert: {
+          arquivo_nome?: string | null
+          comissionamento_id: string
+          created_at?: string
+          empresa_id?: string | null
+          filtros?: Json | null
+          id?: string
+          mapeamento_id?: string | null
+          nome: string
+          operadora_fixa_id?: string | null
+          tipo: Database["public"]["Enums"]["tipo_fonte_comissionamento"]
+          vendedor_fixo_id?: string | null
+        }
+        Update: {
+          arquivo_nome?: string | null
+          comissionamento_id?: string
+          created_at?: string
+          empresa_id?: string | null
+          filtros?: Json | null
+          id?: string
+          mapeamento_id?: string | null
+          nome?: string
+          operadora_fixa_id?: string | null
+          tipo?: Database["public"]["Enums"]["tipo_fonte_comissionamento"]
+          vendedor_fixo_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comissionamento_fontes_comissionamento_id_fkey"
+            columns: ["comissionamento_id"]
+            isOneToOne: false
+            referencedRelation: "comissionamentos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comissionamento_fontes_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comissionamento_fontes_mapeamento_id_fkey"
+            columns: ["mapeamento_id"]
+            isOneToOne: false
+            referencedRelation: "mapeamento_vendas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comissionamento_fontes_operadora_fixa_id_fkey"
+            columns: ["operadora_fixa_id"]
+            isOneToOne: false
+            referencedRelation: "operadoras"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comissionamento_fontes_vendedor_fixo_id_fkey"
+            columns: ["vendedor_fixo_id"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      comissionamento_lal: {
+        Row: {
+          apelido: string
+          arquivo_nome: string | null
+          comissionamento_id: string
+          created_at: string
+          id: string
+          mapeamento_id: string | null
+          operadora_id: string
+          qtd_registros: number | null
+          tipo_match: string
+        }
+        Insert: {
+          apelido: string
+          arquivo_nome?: string | null
+          comissionamento_id: string
+          created_at?: string
+          id?: string
+          mapeamento_id?: string | null
+          operadora_id: string
+          qtd_registros?: number | null
+          tipo_match: string
+        }
+        Update: {
+          apelido?: string
+          arquivo_nome?: string | null
+          comissionamento_id?: string
+          created_at?: string
+          id?: string
+          mapeamento_id?: string | null
+          operadora_id?: string
+          qtd_registros?: number | null
+          tipo_match?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comissionamento_lal_comissionamento_id_fkey"
+            columns: ["comissionamento_id"]
+            isOneToOne: false
+            referencedRelation: "comissionamentos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comissionamento_lal_mapeamento_id_fkey"
+            columns: ["mapeamento_id"]
+            isOneToOne: false
+            referencedRelation: "mapeamento_colunas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comissionamento_lal_operadora_id_fkey"
+            columns: ["operadora_id"]
+            isOneToOne: false
+            referencedRelation: "operadoras"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      comissionamento_vendas: {
+        Row: {
+          comissionamento_desconto: string | null
+          comissionamento_id: string
+          created_at: string
+          fonte_id: string | null
+          id: string
+          lal_apelido: string | null
+          linha_operadora_id: string | null
+          receita_descontada: number | null
+          receita_interna: number | null
+          receita_lal: number | null
+          status_pag: Database["public"]["Enums"]["status_pag"] | null
+          updated_at: string
+          venda_interna_id: string
+        }
+        Insert: {
+          comissionamento_desconto?: string | null
+          comissionamento_id: string
+          created_at?: string
+          fonte_id?: string | null
+          id?: string
+          lal_apelido?: string | null
+          linha_operadora_id?: string | null
+          receita_descontada?: number | null
+          receita_interna?: number | null
+          receita_lal?: number | null
+          status_pag?: Database["public"]["Enums"]["status_pag"] | null
+          updated_at?: string
+          venda_interna_id: string
+        }
+        Update: {
+          comissionamento_desconto?: string | null
+          comissionamento_id?: string
+          created_at?: string
+          fonte_id?: string | null
+          id?: string
+          lal_apelido?: string | null
+          linha_operadora_id?: string | null
+          receita_descontada?: number | null
+          receita_interna?: number | null
+          receita_lal?: number | null
+          status_pag?: Database["public"]["Enums"]["status_pag"] | null
+          updated_at?: string
+          venda_interna_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comissionamento_vendas_comissionamento_id_fkey"
+            columns: ["comissionamento_id"]
+            isOneToOne: false
+            referencedRelation: "comissionamentos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comissionamento_vendas_fonte_id_fkey"
+            columns: ["fonte_id"]
+            isOneToOne: false
+            referencedRelation: "comissionamento_fontes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comissionamento_vendas_linha_operadora_id_fkey"
+            columns: ["linha_operadora_id"]
+            isOneToOne: false
+            referencedRelation: "linha_operadora"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comissionamento_vendas_venda_interna_id_fkey"
+            columns: ["venda_interna_id"]
+            isOneToOne: false
+            referencedRelation: "vendas_internas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      comissionamentos: {
+        Row: {
+          competencia: string
+          created_at: string
+          created_by: string
+          id: string
+          nome: string
+          status: Database["public"]["Enums"]["status_comissionamento"]
+          updated_at: string
+        }
+        Insert: {
+          competencia: string
+          created_at?: string
+          created_by: string
+          id?: string
+          nome: string
+          status?: Database["public"]["Enums"]["status_comissionamento"]
+          updated_at?: string
+        }
+        Update: {
+          competencia?: string
+          created_at?: string
+          created_by?: string
+          id?: string
+          nome?: string
+          status?: Database["public"]["Enums"]["status_comissionamento"]
+          updated_at?: string
+        }
+        Relationships: []
+      }
       conciliacoes: {
         Row: {
           created_at: string
@@ -617,6 +860,7 @@ export type Database = {
         | "CONCILIAR_LOTE"
       app_role: "admin" | "supervisor" | "vendedor"
       match_status: "MATCHED" | "NO_MATCH"
+      status_comissionamento: "rascunho" | "em_andamento" | "finalizado"
       status_conciliacao: "conciliado" | "divergente" | "nao_encontrado"
       status_interno:
         | "nova"
@@ -628,6 +872,8 @@ export type Database = {
         | "contestacao_procedente"
         | "contestacao_improcedente"
       status_operadora: "aprovado" | "instalado" | "cancelado" | "pendente"
+      status_pag: "OK" | "DESCONTADA"
+      tipo_fonte_comissionamento: "sistema" | "arquivo"
       tipo_match: "protocolo" | "cpf" | "telefone" | "manual"
     }
     CompositeTypes: {
@@ -771,6 +1017,7 @@ export const Constants = {
       ],
       app_role: ["admin", "supervisor", "vendedor"],
       match_status: ["MATCHED", "NO_MATCH"],
+      status_comissionamento: ["rascunho", "em_andamento", "finalizado"],
       status_conciliacao: ["conciliado", "divergente", "nao_encontrado"],
       status_interno: [
         "nova",
@@ -783,6 +1030,8 @@ export const Constants = {
         "contestacao_improcedente",
       ],
       status_operadora: ["aprovado", "instalado", "cancelado", "pendente"],
+      status_pag: ["OK", "DESCONTADA"],
+      tipo_fonte_comissionamento: ["sistema", "arquivo"],
       tipo_match: ["protocolo", "cpf", "telefone", "manual"],
     },
   },
