@@ -307,15 +307,6 @@ export default function ComissionamentoPage() {
                 </Button>
                 {selectedId && (
                   <>
-                    <Button
-                      onClick={() => handleOpenWizard('atualizar')}
-                      variant="outline"
-                      size="sm"
-                      className="gap-1.5"
-                    >
-                      <RefreshCw className="h-4 w-4" />
-                      Atualizar
-                    </Button>
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
                         <Button variant="outline" size="sm" className="gap-1.5 text-destructive hover:text-destructive">
