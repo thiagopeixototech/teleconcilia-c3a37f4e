@@ -39,6 +39,12 @@ interface ImportResult {
   errors: { line: number; reason: string }[];
 }
 
+interface MapeamentoEstornoModel {
+  id: string;
+  nome: string;
+  mapeamento: Record<string, string>;
+}
+
 export function StepEstornos({ comissionamentoId, comissionamentoNome }: Props) {
   const { user } = useAuth();
   const [step, setStep] = useState<'upload' | 'mapping' | 'result'>('upload');
@@ -49,6 +55,14 @@ export function StepEstornos({ comissionamentoId, comissionamentoNome }: Props) 
   const [isProcessing, setIsProcessing] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [modelos, setModelos] = useState<MapeamentoEstornoModel[]>([]);
+  const [selectedModelId, setSelectedModelId] = useState<string>('');
+
+  useEffect(() => {
+    supabase.from('mapeamento_estornos' as any).select('id, nome, mapeamento').order('nome').then(({ data }) => {
+      if (data) setModelos(data as unknown as MapeamentoEstornoModel[]);
+    });
+  }, []);
 
   const parseCSV = (content: string) => {
     const lines = content.split('\n').filter(l => l.trim());
@@ -217,6 +231,25 @@ export function StepEstornos({ comissionamentoId, comissionamentoNome }: Props) 
             <CardTitle className="text-sm">Mapeamento de Colunas</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {modelos.length > 0 && (
+              <div className="space-y-1">
+                <Label className="text-xs font-medium">Modelo Salvo</Label>
+                <Select
+                  value={selectedModelId}
+                  onValueChange={v => {
+                    setSelectedModelId(v);
+                    const model = modelos.find(m => m.id === v);
+                    if (model) setMapping({ ...model.mapeamento });
+                  }}
+                >
+                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Modelo (opcional)" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">— Manual —</SelectItem>
+                    {modelos.map(m => <SelectItem key={m.id} value={m.id}>{m.nome}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="grid gap-3 sm:grid-cols-2">
               {CAMPOS_ESTORNO.map(campo => (
                 <div key={campo.key} className="space-y-1">
