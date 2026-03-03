@@ -508,6 +508,20 @@ export default function ImportacaoVendas() {
         await new Promise(r => setTimeout(r, 30));
       }
 
+      // Fetch IDs of imported vendas for deletion capability
+      let importedVendaIds: string[] = [];
+      try {
+        const allIdMakes = rowsToInsert.map(r => r.identificador_make).filter(Boolean);
+        for (let i = 0; i < allIdMakes.length; i += 200) {
+          const batch = allIdMakes.slice(i, i + 200);
+          const { data: ids } = await supabase
+            .from('vendas_internas')
+            .select('id')
+            .in('identificador_make', batch);
+          if (ids) importedVendaIds.push(...ids.map(d => d.id));
+        }
+      } catch {}
+
       // Audit log
       try {
         await supabase.from('audit_log' as any).insert({
@@ -523,6 +537,7 @@ export default function ImportacaoVendas() {
             erros: importResult.errors.length,
             operadora_id: operadoraId,
             empresa_id: empresaId,
+            venda_ids: importedVendaIds,
           },
         });
       } catch {}

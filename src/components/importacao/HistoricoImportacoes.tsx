@@ -4,10 +4,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { History, FileSpreadsheet, CheckCircle2, XCircle, RefreshCw } from 'lucide-react';
+import { History, FileSpreadsheet, CheckCircle2, XCircle, RefreshCw, Trash2, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { toast } from 'sonner';
 
 interface ImportRecord {
   id: string;
@@ -20,6 +25,9 @@ interface ImportRecord {
     erros?: number;
     operadora_id?: string;
     empresa_id?: string;
+    origem?: string;
+    comissionamento_id?: string;
+    venda_ids?: string[];
   } | null;
   user_nome?: string;
 }
@@ -27,6 +35,7 @@ interface ImportRecord {
 export function HistoricoImportacoes() {
   const [records, setRecords] = useState<ImportRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadHistory = async () => {
     setLoading(true);
@@ -39,7 +48,6 @@ export function HistoricoImportacoes() {
         .limit(20);
 
       if (data) {
-        // Fetch user names for the records
         const userIds = [...new Set(data.map(d => d.usuario_id).filter(Boolean))];
         let userMap = new Map<string, string>();
 
@@ -64,6 +72,41 @@ export function HistoricoImportacoes() {
       // silently fail
     } finally {
       setLoading(false);
+    }
+  };
+
+  const deleteImport = async (record: ImportRecord) => {
+    setDeletingId(record.id);
+    try {
+      const vendaIds = record.dados_novos?.venda_ids;
+      
+      if (vendaIds && vendaIds.length > 0) {
+        // Delete related records first (comissionamento_vendas, conciliacoes, etc.)
+        for (let i = 0; i < vendaIds.length; i += 200) {
+          const batch = vendaIds.slice(i, i + 200);
+          await Promise.all([
+            supabase.from('comissionamento_vendas').delete().in('venda_interna_id', batch),
+            supabase.from('conciliacoes').delete().in('venda_interna_id', batch),
+            supabase.from('audit_log_vendas').delete().in('venda_id', batch),
+            supabase.from('estornos').delete().in('venda_id', batch),
+          ]);
+        }
+        // Delete the vendas themselves
+        for (let i = 0; i < vendaIds.length; i += 200) {
+          const batch = vendaIds.slice(i, i + 200);
+          await supabase.from('vendas_internas').delete().in('id', batch);
+        }
+      }
+
+      // Delete the audit log record
+      await supabase.from('audit_log').delete().eq('id', record.id);
+      
+      toast.success(`Importação excluída (${vendaIds?.length || 0} vendas removidas)`);
+      loadHistory();
+    } catch (err: any) {
+      toast.error('Erro ao excluir: ' + err.message);
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -125,19 +168,22 @@ export function HistoricoImportacoes() {
               <TableRow>
                 <TableHead className="text-xs">Data</TableHead>
                 <TableHead className="text-xs">Arquivo</TableHead>
+                <TableHead className="text-xs">Origem</TableHead>
                 <TableHead className="text-xs">Usuário</TableHead>
                 <TableHead className="text-xs text-center">Total</TableHead>
                 <TableHead className="text-xs text-center">Novas</TableHead>
                 <TableHead className="text-xs text-center">Atualizadas</TableHead>
                 <TableHead className="text-xs text-center">Erros</TableHead>
                 <TableHead className="text-xs text-center">Status</TableHead>
+                <TableHead className="text-xs text-center">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {records.map(record => {
                 const d = record.dados_novos;
                 const hasErrors = (d?.erros || 0) > 0;
-                const totalSuccess = (d?.novos || 0) + (d?.atualizados || 0);
+                const isFromComissionamento = d?.origem === 'comissionamento';
+                const hasVendaIds = d?.venda_ids && d.venda_ids.length > 0;
 
                 return (
                   <TableRow key={record.id}>
@@ -149,6 +195,13 @@ export function HistoricoImportacoes() {
                         <FileSpreadsheet className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                         {d?.arquivo || '—'}
                       </span>
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {isFromComissionamento ? (
+                        <Badge variant="outline" className="text-[10px]">Comissão</Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-[10px]">Importação</Badge>
+                      )}
                     </TableCell>
                     <TableCell className="text-xs">{record.user_nome || '—'}</TableCell>
                     <TableCell className="text-xs text-center font-medium">{d?.total || 0}</TableCell>
@@ -172,6 +225,33 @@ export function HistoricoImportacoes() {
                           <CheckCircle2 className="h-3 w-3 mr-0.5" />
                           OK
                         </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {hasVendaIds ? (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive hover:text-destructive" disabled={deletingId === record.id}>
+                              {deletingId === record.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Excluir importação?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Isso removerá {d?.venda_ids?.length || 0} vendas e todos os vínculos associados (conciliações, comissionamentos, estornos). Esta ação não pode ser desfeita.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => deleteImport(record)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                                Excluir
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
                       )}
                     </TableCell>
                   </TableRow>
