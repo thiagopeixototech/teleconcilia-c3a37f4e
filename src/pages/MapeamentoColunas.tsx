@@ -4,7 +4,10 @@ import { MapeamentoColunasManager } from '@/components/mapeamento/MapeamentoColu
 import { supabase } from '@/integrations/supabase/client';
 import { Operadora } from '@/types/database';
 import { Card, CardContent } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Loader2 } from 'lucide-react';
+import { MapeamentoVendasManager } from '@/components/mapeamento/MapeamentoVendasManager';
+import { MapeamentoEstornosManager } from '@/components/mapeamento/MapeamentoEstornosManager';
 
 export default function MapeamentoColunasPage() {
   const [operadoras, setOperadoras] = useState<Operadora[]>([]);
@@ -33,7 +36,7 @@ export default function MapeamentoColunasPage() {
 
   if (isLoading) {
     return (
-      <AppLayout title="Mapeamento de Colunas">
+      <AppLayout title="Modelos de Importação">
         <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
@@ -42,15 +45,36 @@ export default function MapeamentoColunasPage() {
   }
 
   return (
-    <AppLayout title="Mapeamento de Colunas">
+    <AppLayout title="Modelos de Importação">
       <div className="space-y-6">
-        <Card>
-          <CardContent className="pt-6">
-            <MapeamentoColunasManager 
-              operadoras={operadoras} 
-            />
-          </CardContent>
-        </Card>
+        <Tabs defaultValue="lal" className="w-full">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="lal">Linha a Linha</TabsTrigger>
+            <TabsTrigger value="vendas">Vendas Internas</TabsTrigger>
+            <TabsTrigger value="estornos">Estornos</TabsTrigger>
+          </TabsList>
+          <TabsContent value="lal">
+            <Card>
+              <CardContent className="pt-6">
+                <MapeamentoColunasManager operadoras={operadoras} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="vendas">
+            <Card>
+              <CardContent className="pt-6">
+                <MapeamentoVendasManager />
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="estornos">
+            <Card>
+              <CardContent className="pt-6">
+                <MapeamentoEstornosManager />
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     </AppLayout>
   );

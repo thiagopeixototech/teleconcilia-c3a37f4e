@@ -68,7 +68,7 @@ const importacoesItems = [
 { title: 'Vendas', url: '/importacao-vendas', icon: Upload },
 { title: 'Linha a Linha', url: '/linha-operadora', icon: FileText },
 { title: 'Estornos', url: '/importacao-estornos', icon: RotateCcw },
-{ title: 'Mapeamento Colunas', url: '/mapeamento-colunas', icon: Columns }];
+{ title: 'Modelos de Importação', url: '/mapeamento-colunas', icon: Columns }];
 
 
 export function AppSidebar() {
