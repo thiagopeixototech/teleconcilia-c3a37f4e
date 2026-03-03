@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -48,13 +49,21 @@ interface FonteConfig {
   csvHeaders?: string[];
   csvRows?: Record<string, string>[];
   mapeamentoId?: string;
-  // Comum
+  // Comum - multi-select
   vendedorMode: 'column_cpf' | 'column_email' | 'fixed';
   vendedorColumn: string;
   fixedVendedorId: string;
   operadoraMode: 'fixed' | 'column';
   operadoraId: string;
   operadoraColumn: string;
+  // Multi-select for sistema
+  selectedEmpresaIds: string[];
+  selectedOperadoraIds: string[];
+  selectedVendedorIds: string[];
+  allEmpresas: boolean;
+  allOperadoras: boolean;
+  allVendedores: boolean;
+  // Legacy single for arquivo
   empresaId: string;
   // State
   imported: boolean;
@@ -115,7 +124,13 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
       nome: tipo === 'sistema' ? 'Vendas do Sistema' : `Arquivo ${prev.filter(f => f.tipo === 'arquivo').length + 1}`,
       vendedorMode: 'column_cpf', vendedorColumn: '', fixedVendedorId: '',
       operadoraMode: 'fixed', operadoraId: '', operadoraColumn: '',
-      empresaId: empresas[0]?.id || '',
+      empresaId: '',
+      selectedEmpresaIds: [],
+      selectedOperadoraIds: [],
+      selectedVendedorIds: [],
+      allEmpresas: true,
+      allOperadoras: true,
+      allVendedores: true,
       imported: false,
     }]);
   };
@@ -177,7 +192,23 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
     return null;
   };
 
-  const normalizeCpfCnpj = (v: string) => v.replace(/[^\\d]/g, '');
+  const normalizeCpfCnpj = (v: string) => v.replace(/[^\d]/g, '');
+
+  // Recursive fetch to get ALL records beyond 1000 limit
+  const fetchAllRecords = async (query: any): Promise<any[]> => {
+    const allData: any[] = [];
+    let offset = 0;
+    const batchSize = 1000;
+    while (true) {
+      const { data, error } = await query.range(offset, offset + batchSize - 1);
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      allData.push(...data);
+      if (data.length < batchSize) break;
+      offset += batchSize;
+    }
+    return allData;
+  };
 
   const processarFonte = async (fonte: FonteConfig) => {
     setIsProcessing(true);
@@ -195,16 +226,47 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
   };
 
   const processarFonteSistema = async (fonte: FonteConfig) => {
-    // Fetch vendas from the system with optional date filters
-    let query = supabase.from('vendas_internas').select('id, valor');
-    if (fonte.filtroDataInicio) query = query.gte('data_venda', fonte.filtroDataInicio);
-    if (fonte.filtroDataFim) query = query.lte('data_venda', fonte.filtroDataFim);
-    if (fonte.empresaId) query = query.eq('empresa_id', fonte.empresaId);
-    if (fonte.operadoraId) query = query.eq('operadora_id', fonte.operadoraId);
+    // Fetch ALL vendas from the system with filters - using recursive fetch
+    let allVendas: any[] = [];
+    
+    // Build base filters
+    const buildQuery = (offset: number, limit: number) => {
+      let query = supabase.from('vendas_internas').select('id, valor').range(offset, offset + limit - 1);
+      if (fonte.filtroDataInicio) query = query.gte('data_venda', fonte.filtroDataInicio);
+      if (fonte.filtroDataFim) query = query.lte('data_venda', fonte.filtroDataFim);
+      
+      // Multi-select empresa filter
+      if (!fonte.allEmpresas && fonte.selectedEmpresaIds.length > 0) {
+        query = query.in('empresa_id', fonte.selectedEmpresaIds);
+      }
+      
+      // Multi-select operadora filter
+      if (!fonte.allOperadoras && fonte.selectedOperadoraIds.length > 0) {
+        query = query.in('operadora_id', fonte.selectedOperadoraIds);
+      }
+      
+      // Multi-select vendedor filter
+      if (!fonte.allVendedores && fonte.selectedVendedorIds.length > 0) {
+        query = query.in('usuario_id', fonte.selectedVendedorIds);
+      }
+      
+      return query;
+    };
 
-    const { data: vendas, error } = await query;
-    if (error) throw error;
-    if (!vendas || vendas.length === 0) {
+    // Fetch all records in batches
+    let offset = 0;
+    const batchSize = 1000;
+    while (true) {
+      const query = buildQuery(offset, batchSize);
+      const { data, error } = await query;
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      allVendas.push(...data);
+      if (data.length < batchSize) break;
+      offset += batchSize;
+    }
+
+    if (allVendas.length === 0) {
       toast.info('Nenhuma venda encontrada com os filtros selecionados');
       return;
     }
@@ -219,18 +281,17 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
         filtros: {
           data_inicio: fonte.filtroDataInicio,
           data_fim: fonte.filtroDataFim,
-          empresa_id: fonte.empresaId,
-          operadora_id: fonte.operadoraId,
+          empresa_ids: fonte.allEmpresas ? 'all' : fonte.selectedEmpresaIds,
+          operadora_ids: fonte.allOperadoras ? 'all' : fonte.selectedOperadoraIds,
+          vendedor_ids: fonte.allVendedores ? 'all' : fonte.selectedVendedorIds,
         },
-        empresa_id: fonte.empresaId || null,
-        operadora_fixa_id: fonte.operadoraId || null,
       })
       .select('id')
       .single();
     if (fonteErr) throw fonteErr;
 
     // Link vendas to comissionamento
-    const rows = vendas.map(v => ({
+    const rows = allVendas.map(v => ({
       comissionamento_id: comissionamentoId,
       venda_interna_id: v.id,
       fonte_id: fonteData.id,
@@ -245,9 +306,9 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
 
     updateFonte(fonte.id, {
       imported: true,
-      importResult: { total: vendas.length, success: vendas.length, errors: 0 },
+      importResult: { total: allVendas.length, success: allVendas.length, errors: 0 },
     });
-    toast.success(`${vendas.length} vendas vinculadas ao comissionamento`);
+    toast.success(`${allVendas.length} vendas vinculadas ao comissionamento`);
   };
 
   const processarFonteArquivo = async (fonte: FonteConfig) => {
@@ -260,7 +321,6 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
     if (!mapeamento) { toast.error('Mapeamento não encontrado'); return; }
     const map = mapeamento.mapeamento;
 
-    // Determine vendedor/operadora from fonte config or mapeamento config
     const vMode = fonte.vendedorMode || mapeamento.config?.vendedor_mode || 'column_cpf';
     const oMode = fonte.operadoraMode || mapeamento.config?.operadora_mode || 'fixed';
     const vCol = fonte.vendedorColumn || mapeamento.config?.vendedor_column || '';
@@ -268,7 +328,6 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
     const fixedOId = fonte.operadoraId || mapeamento.config?.operadora_id || '';
     const oCol = fonte.operadoraColumn || mapeamento.config?.operadora_column || '';
 
-    // Save fonte record
     const { data: fonteData, error: fonteErr } = await supabase
       .from('comissionamento_fontes')
       .insert({
@@ -289,7 +348,6 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
     let errorCount = 0;
     const vendaRows: any[] = [];
 
-    // Deduplicate by identificador_make
     const deduped = new Map<string, Record<string, string>>();
     for (const row of fonte.csvRows!) {
       const idMake = row[map.identificador_make]?.trim();
@@ -326,7 +384,7 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
       if (!operadoraId) { errorCount++; continue; }
 
       const cpf = map.cpf_cnpj ? normalizeCpfCnpj(row[map.cpf_cnpj] || '') : null;
-      const valorStr = map.valor ? row[map.valor]?.replace(',', '.').replace(/[^\\d.-]/g, '') : null;
+      const valorStr = map.valor ? row[map.valor]?.replace(',', '.').replace(/[^\d.-]/g, '') : null;
       const valor = valorStr ? parseFloat(valorStr) : null;
       const dataInstalacao = map.data_instalacao ? parseDate(row[map.data_instalacao]?.trim() || '') : null;
 
@@ -361,7 +419,6 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
       data?.forEach(d => { if (d.identificador_make) existingIds.set(d.identificador_make, d.id); });
     }
 
-    // Insert new vendas
     const newVendas = vendaRows.filter(r => !existingIds.has(r.identificador_make));
     const existingVendas = vendaRows.filter(r => existingIds.has(r.identificador_make));
 
@@ -370,7 +427,6 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
       await supabase.from('vendas_internas').insert(batch);
     }
 
-    // Now link ALL vendas (new + existing) to comissionamento
     const allIdMakes = vendaRows.map(r => r.identificador_make);
     const vendaIdMap = new Map<string, string>();
 
@@ -404,6 +460,26 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
       importResult: { total: deduped.size, success: successCount, errors: errorCount },
     });
     toast.success(`${successCount} vendas processadas (${newVendas.length} novas, ${existingVendas.length} existentes), ${errorCount} erros`);
+  };
+
+  // Check if fonte is valid for processing (P1 fix)
+  const isFonteValid = (fonte: FonteConfig): boolean => {
+    if (fonte.tipo === 'arquivo') {
+      return !!(fonte.csvRows && fonte.csvRows.length > 0 && fonte.mapeamentoId);
+    }
+    return true; // sistema fontes are always processable (filters optional)
+  };
+
+  // Multi-select toggle helpers
+  const toggleMultiSelect = (fonteId: string, field: 'selectedEmpresaIds' | 'selectedOperadoraIds' | 'selectedVendedorIds', itemId: string) => {
+    setFontes(prev => prev.map(f => {
+      if (f.id !== fonteId) return f;
+      const current = f[field];
+      const next = current.includes(itemId)
+        ? current.filter(id => id !== itemId)
+        : [...current, itemId];
+      return { ...f, [field]: next };
+    }));
   };
 
   return (
@@ -471,16 +547,104 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
                 </div>
 
                 {fonte.tipo === 'sistema' && (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="space-y-1">
-                      <Label className="text-xs">Data Início</Label>
-                      <Input type="date" value={fonte.filtroDataInicio || ''} onChange={e => updateFonte(fonte.id, { filtroDataInicio: e.target.value })} className="h-8 text-sm" />
+                  <>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Data Início</Label>
+                        <Input type="date" value={fonte.filtroDataInicio || ''} onChange={e => updateFonte(fonte.id, { filtroDataInicio: e.target.value })} className="h-8 text-sm" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Data Fim</Label>
+                        <Input type="date" value={fonte.filtroDataFim || ''} onChange={e => updateFonte(fonte.id, { filtroDataFim: e.target.value })} className="h-8 text-sm" />
+                      </div>
                     </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Data Fim</Label>
-                      <Input type="date" value={fonte.filtroDataFim || ''} onChange={e => updateFonte(fonte.id, { filtroDataFim: e.target.value })} className="h-8 text-sm" />
+
+                    <Separator />
+
+                    {/* Multi-select Empresas */}
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Label className="text-xs font-medium">Empresas</Label>
+                        <div className="flex items-center gap-1.5">
+                          <Checkbox
+                            id={`all-emp-${fonte.id}`}
+                            checked={fonte.allEmpresas}
+                            onCheckedChange={(checked) => updateFonte(fonte.id, { allEmpresas: !!checked, selectedEmpresaIds: [] })}
+                          />
+                          <label htmlFor={`all-emp-${fonte.id}`} className="text-xs text-muted-foreground">Todas</label>
+                        </div>
+                      </div>
+                      {!fonte.allEmpresas && (
+                        <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto border rounded-md p-2">
+                          {empresas.map(e => (
+                            <label key={e.id} className="flex items-center gap-1 text-xs cursor-pointer">
+                              <Checkbox
+                                checked={fonte.selectedEmpresaIds.includes(e.id)}
+                                onCheckedChange={() => toggleMultiSelect(fonte.id, 'selectedEmpresaIds', e.id)}
+                              />
+                              {e.nome}
+                            </label>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  </div>
+
+                    {/* Multi-select Operadoras */}
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Label className="text-xs font-medium">Operadoras</Label>
+                        <div className="flex items-center gap-1.5">
+                          <Checkbox
+                            id={`all-op-${fonte.id}`}
+                            checked={fonte.allOperadoras}
+                            onCheckedChange={(checked) => updateFonte(fonte.id, { allOperadoras: !!checked, selectedOperadoraIds: [] })}
+                          />
+                          <label htmlFor={`all-op-${fonte.id}`} className="text-xs text-muted-foreground">Todas</label>
+                        </div>
+                      </div>
+                      {!fonte.allOperadoras && (
+                        <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto border rounded-md p-2">
+                          {operadoras.map(o => (
+                            <label key={o.id} className="flex items-center gap-1 text-xs cursor-pointer">
+                              <Checkbox
+                                checked={fonte.selectedOperadoraIds.includes(o.id)}
+                                onCheckedChange={() => toggleMultiSelect(fonte.id, 'selectedOperadoraIds', o.id)}
+                              />
+                              {o.nome}
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Multi-select Vendedores */}
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Label className="text-xs font-medium">Vendedores</Label>
+                        <div className="flex items-center gap-1.5">
+                          <Checkbox
+                            id={`all-vend-${fonte.id}`}
+                            checked={fonte.allVendedores}
+                            onCheckedChange={(checked) => updateFonte(fonte.id, { allVendedores: !!checked, selectedVendedorIds: [] })}
+                          />
+                          <label htmlFor={`all-vend-${fonte.id}`} className="text-xs text-muted-foreground">Todos</label>
+                        </div>
+                      </div>
+                      {!fonte.allVendedores && (
+                        <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto border rounded-md p-2">
+                          {usuarios.map(u => (
+                            <label key={u.id} className="flex items-center gap-1 text-xs cursor-pointer">
+                              <Checkbox
+                                checked={fonte.selectedVendedorIds.includes(u.id)}
+                                onCheckedChange={() => toggleMultiSelect(fonte.id, 'selectedVendedorIds', u.id)}
+                              />
+                              {u.nome}
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
                 )}
 
                 {fonte.tipo === 'arquivo' && (
@@ -515,91 +679,96 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
                         </SelectContent>
                       </Select>
                     </div>
+
+                    <Separator />
+
+                    {/* Common: empresa, operadora, vendedor for arquivo */}
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Empresa</Label>
+                        <Select value={fonte.empresaId} onValueChange={v => updateFonte(fonte.id, { empresaId: v })}>
+                          <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Empresa" /></SelectTrigger>
+                          <SelectContent>
+                            {empresas.map(e => <SelectItem key={e.id} value={e.id}>{e.nome}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label className="text-xs">Operadora</Label>
+                        <div className="space-y-1">
+                          <Select value={fonte.operadoraMode} onValueChange={(v: 'fixed' | 'column') => updateFonte(fonte.id, { operadoraMode: v })}>
+                            <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="fixed">Fixa</SelectItem>
+                              <SelectItem value="column">Coluna do CSV</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          {fonte.operadoraMode === 'fixed' ? (
+                            <Select value={fonte.operadoraId} onValueChange={v => updateFonte(fonte.id, { operadoraId: v })}>
+                              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                              <SelectContent>
+                                {operadoras.map(o => <SelectItem key={o.id} value={o.id}>{o.nome}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <Select value={fonte.operadoraColumn} onValueChange={v => updateFonte(fonte.id, { operadoraColumn: v })}>
+                              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Coluna" /></SelectTrigger>
+                              <SelectContent>
+                                {(fonte.csvHeaders || []).map(h => <SelectItem key={h} value={h}>{h}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label className="text-xs">Vendedor</Label>
+                        <div className="space-y-1">
+                          <Select value={fonte.vendedorMode} onValueChange={(v: any) => updateFonte(fonte.id, { vendedorMode: v })}>
+                            <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="fixed">Fixo</SelectItem>
+                              <SelectItem value="column_cpf">Coluna CPF</SelectItem>
+                              <SelectItem value="column_email">Coluna E-mail</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          {fonte.vendedorMode === 'fixed' ? (
+                            <Select value={fonte.fixedVendedorId} onValueChange={v => updateFonte(fonte.id, { fixedVendedorId: v })}>
+                              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                              <SelectContent>
+                                {usuarios.map(u => <SelectItem key={u.id} value={u.id}>{u.nome}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <Select value={fonte.vendedorColumn} onValueChange={v => updateFonte(fonte.id, { vendedorColumn: v })}>
+                              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Coluna" /></SelectTrigger>
+                              <SelectContent>
+                                {(fonte.csvHeaders || []).map(h => <SelectItem key={h} value={h}>{h}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   </>
                 )}
-
-                <Separator />
-
-                {/* Common: empresa, operadora, vendedor */}
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <div className="space-y-1">
-                    <Label className="text-xs">Empresa</Label>
-                    <Select value={fonte.empresaId} onValueChange={v => updateFonte(fonte.id, { empresaId: v })}>
-                      <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Empresa" /></SelectTrigger>
-                      <SelectContent>
-                        {empresas.map(e => <SelectItem key={e.id} value={e.id}>{e.nome}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-1">
-                    <Label className="text-xs">Operadora</Label>
-                    <div className="space-y-1">
-                      <Select value={fonte.operadoraMode} onValueChange={(v: 'fixed' | 'column') => updateFonte(fonte.id, { operadoraMode: v })}>
-                        <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="fixed">Fixa</SelectItem>
-                          {fonte.tipo === 'arquivo' && <SelectItem value="column">Coluna do CSV</SelectItem>}
-                        </SelectContent>
-                      </Select>
-                      {fonte.operadoraMode === 'fixed' ? (
-                        <Select value={fonte.operadoraId} onValueChange={v => updateFonte(fonte.id, { operadoraId: v })}>
-                          <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecione" /></SelectTrigger>
-                          <SelectContent>
-                            {operadoras.map(o => <SelectItem key={o.id} value={o.id}>{o.nome}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <Select value={fonte.operadoraColumn} onValueChange={v => updateFonte(fonte.id, { operadoraColumn: v })}>
-                          <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Coluna" /></SelectTrigger>
-                          <SelectContent>
-                            {(fonte.csvHeaders || []).map(h => <SelectItem key={h} value={h}>{h}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <Label className="text-xs">Vendedor</Label>
-                    <div className="space-y-1">
-                      <Select value={fonte.vendedorMode} onValueChange={(v: any) => updateFonte(fonte.id, { vendedorMode: v })}>
-                        <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="fixed">Fixo</SelectItem>
-                          {fonte.tipo === 'arquivo' && <SelectItem value="column_cpf">Coluna CPF</SelectItem>}
-                          {fonte.tipo === 'arquivo' && <SelectItem value="column_email">Coluna E-mail</SelectItem>}
-                        </SelectContent>
-                      </Select>
-                      {fonte.vendedorMode === 'fixed' ? (
-                        <Select value={fonte.fixedVendedorId} onValueChange={v => updateFonte(fonte.id, { fixedVendedorId: v })}>
-                          <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecione" /></SelectTrigger>
-                          <SelectContent>
-                            {usuarios.map(u => <SelectItem key={u.id} value={u.id}>{u.nome}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <Select value={fonte.vendedorColumn} onValueChange={v => updateFonte(fonte.id, { vendedorColumn: v })}>
-                          <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Coluna" /></SelectTrigger>
-                          <SelectContent>
-                            {(fonte.csvHeaders || []).map(h => <SelectItem key={h} value={h}>{h}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    </div>
-                  </div>
-                </div>
 
                 {/* Process button */}
                 <Button
                   onClick={() => processarFonte(fonte)}
-                  disabled={isProcessing}
+                  disabled={isProcessing || !isFonteValid(fonte)}
                   size="sm"
                   className="w-full"
                 >
                   {isProcessing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                   Importar Fonte
                 </Button>
+                {fonte.tipo === 'arquivo' && !isFonteValid(fonte) && (
+                  <p className="text-xs text-muted-foreground text-center">
+                    Selecione um arquivo CSV e um mapeamento para importar.
+                  </p>
+                )}
               </>
             )}
           </CardContent>

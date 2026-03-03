@@ -14,7 +14,7 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
-  Loader2, GitCompare, CheckCircle2, Search, Download,
+  Loader2, GitCompare, CheckCircle2, Search, Download, AlertCircle,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
@@ -32,7 +32,6 @@ interface ComVenda {
   receita_lal: number | null;
   lal_apelido: string | null;
   linha_operadora_id: string | null;
-  // Joined
   cliente_nome?: string;
   cpf_cnpj?: string;
   protocolo_interno?: string;
@@ -49,20 +48,22 @@ export function StepConciliacao({ comissionamentoId }: Props) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
 
-  // Filters
   const [statusPagFilter, setStatusPagFilter] = useState<string>('all');
   const [statusMakeFilter, setStatusMakeFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectAll, setSelectAll] = useState(false);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [vendasRes, lalRes] = await Promise.all([
-        supabase
+      // Fetch ALL comissionamento_vendas using recursive batching
+      const allVendas: any[] = [];
+      let offset = 0;
+      const batchSize = 1000;
+      while (true) {
+        const { data, error } = await supabase
           .from('comissionamento_vendas')
           .select(`
             id, venda_interna_id, status_pag, receita_interna, receita_lal, lal_apelido, linha_operadora_id,
@@ -72,16 +73,24 @@ export function StepConciliacao({ comissionamentoId }: Props) {
             )
           `)
           .eq('comissionamento_id', comissionamentoId)
-          .order('created_at', { ascending: false }),
+          .order('created_at', { ascending: false })
+          .range(offset, offset + batchSize - 1);
+        
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        allVendas.push(...data);
+        if (data.length < batchSize) break;
+        offset += batchSize;
+      }
+
+      const [lalRes] = await Promise.all([
         supabase
           .from('comissionamento_lal')
           .select('*')
           .eq('comissionamento_id', comissionamentoId),
       ]);
 
-      if (vendasRes.error) throw vendasRes.error;
-
-      const mapped = (vendasRes.data || []).map((row: any) => {
+      const mapped = allVendas.map((row: any) => {
         const vi = row.vendas_internas;
         return {
           id: row.id,
@@ -111,7 +120,6 @@ export function StepConciliacao({ comissionamentoId }: Props) {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Filtered vendas
   const filteredVendas = useMemo(() => {
     let result = vendas;
     if (statusPagFilter !== 'all') {
@@ -156,7 +164,6 @@ export function StepConciliacao({ comissionamentoId }: Props) {
     });
   };
 
-  // Run conciliation: match vendas with LAL using tipo_match
   const runConciliacao = async () => {
     if (lals.length === 0) {
       toast.error('Nenhum LAL importado neste comissionamento');
@@ -168,12 +175,10 @@ export function StepConciliacao({ comissionamentoId }: Props) {
     setProgress({ current: 0, total: vendasToProcess.length });
 
     try {
-      // Load linhas from LALs
       const lalApelidos = lals.map((l: any) => l.apelido);
-      const lalMatchMap = new Map<string, string>(); // apelido -> tipo_match
+      const lalMatchMap = new Map<string, string>();
       lals.forEach((l: any) => lalMatchMap.set(l.apelido, l.tipo_match));
 
-      // Fetch linhas for these apelidos
       const allLinhas: any[] = [];
       for (const apelido of lalApelidos) {
         let offset = 0;
@@ -190,7 +195,6 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         }
       }
 
-      // Build lookup indexes per LAL
       const normDoc = (v: string) => v.replace(/[^\d]/g, '');
       const linhasByProtocolo = new Map<string, any>();
       const linhasByCpf = new Map<string, any>();
@@ -205,7 +209,6 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         }
       }
 
-      // Check already used linhas
       const existingConcIds = vendas.filter(v => v.linha_operadora_id).map(v => v.linha_operadora_id!);
       existingConcIds.forEach(id => usedLinhaIds.add(id));
 
@@ -217,7 +220,6 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         let matchedLinha: any = null;
         let matchedApelido: string | null = null;
 
-        // Try matching per LAL tipo_match
         for (const lal of lals) {
           const tipoMatch = lal.tipo_match;
 
@@ -260,7 +262,6 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         }
       }
 
-      // Apply updates in batches
       for (let i = 0; i < updates.length; i += 50) {
         const batch = updates.slice(i, i + 50);
         await Promise.all(
@@ -278,7 +279,6 @@ export function StepConciliacao({ comissionamentoId }: Props) {
     }
   };
 
-  // Bulk update status_pag
   const bulkUpdateStatusPag = async (newStatus: 'OK' | 'DESCONTADA') => {
     if (selectedIds.size === 0) { toast.error('Selecione vendas primeiro'); return; }
     setIsProcessing(true);
@@ -310,6 +310,15 @@ export function StepConciliacao({ comissionamentoId }: Props) {
     return <Badge className="bg-destructive/20 text-destructive text-xs">DESCONTADA</Badge>;
   };
 
+  // Match indicators (P5) - moved before early return
+  const matchStats = useMemo(() => {
+    const total = vendas.length;
+    const found = vendas.filter(v => v.linha_operadora_id).length;
+    const notFound = total - found;
+    const percentage = total > 0 ? ((found / total) * 100).toFixed(1) : '0';
+    return { total, found, notFound, percentage };
+  }, [vendas]);
+
   if (isLoading) {
     return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
   }
@@ -323,6 +332,31 @@ export function StepConciliacao({ comissionamentoId }: Props) {
 
   return (
     <div className="space-y-4">
+      {/* Match Indicators - P5 */}
+      <Card className="border-primary/20 bg-primary/5">
+        <CardContent className="pt-4 pb-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground">Total no Comissionamento</p>
+              <p className="text-xl font-bold">{matchStats.total}</p>
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground">Encontradas no LAL</p>
+              <p className="text-xl font-bold text-success">{matchStats.found}</p>
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground">Não Encontradas</p>
+              <p className="text-xl font-bold text-destructive">{matchStats.notFound}</p>
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground">% Match</p>
+              <p className="text-xl font-bold">{matchStats.percentage}%</p>
+            </div>
+          </div>
+          <Progress value={Number(matchStats.percentage)} className="h-2 mt-3" />
+        </CardContent>
+      </Card>
+
       {/* Summary */}
       <div className="grid grid-cols-4 gap-3">
         <Card className="p-3 text-center">

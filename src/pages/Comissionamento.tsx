@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -11,6 +11,9 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table';
 import {
   ShoppingCart, CheckCircle, TrendingDown, DollarSign,
   Plus, RefreshCw, Loader2, GitCompare, RotateCcw,
@@ -39,6 +42,15 @@ interface ComissionamentoStats {
   receitaLiquida: number;
 }
 
+interface VendedorRow {
+  vendedor_nome: string;
+  receita_interna: number;
+  receita_lal: number;
+  estorno: number;
+  churn: number;
+  receita_liquida: number;
+}
+
 const formatBRL = (value: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
@@ -60,11 +72,11 @@ export default function ComissionamentoPage() {
   const [selectedId, setSelectedId] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
   const [stats, setStats] = useState<ComissionamentoStats | null>(null);
+  const [vendedorRows, setVendedorRows] = useState<VendedorRow[]>([]);
   const [statsLoading, setStatsLoading] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardMode, setWizardMode] = useState<'criar' | 'atualizar'>('criar');
 
-  // Load comissionamentos list
   const loadComissionamentos = useCallback(async () => {
     try {
       const { data, error } = await supabase
@@ -75,7 +87,6 @@ export default function ComissionamentoPage() {
       if (error) throw error;
       setComissionamentos(data || []);
 
-      // Auto-select last one if none selected
       if (!selectedId && data && data.length > 0) {
         setSelectedId(data[0].id);
       }
@@ -87,30 +98,40 @@ export default function ComissionamentoPage() {
     }
   }, [selectedId]);
 
-  // Load stats for selected comissionamento
   const loadStats = useCallback(async (comId: string) => {
     if (!comId) return;
     setStatsLoading(true);
     try {
-      // Fetch comissionamento_vendas for this comissionamento
-      const { data: vendas, error } = await supabase
-        .from('comissionamento_vendas')
-        .select(`
-          status_pag,
-          receita_interna,
-          receita_lal,
-          receita_descontada,
-          venda_interna_id,
-          vendas_internas!comissionamento_vendas_venda_interna_id_fkey(
-            status_make,
-            valor
-          )
-        `)
-        .eq('comissionamento_id', comId);
+      // Fetch ALL comissionamento_vendas using recursive batching
+      const allRows: any[] = [];
+      let offset = 0;
+      const batchSize = 1000;
+      while (true) {
+        const { data, error } = await supabase
+          .from('comissionamento_vendas')
+          .select(`
+            status_pag,
+            receita_interna,
+            receita_lal,
+            receita_descontada,
+            venda_interna_id,
+            vendas_internas!comissionamento_vendas_venda_interna_id_fkey(
+              status_make,
+              valor,
+              usuarios!vendas_internas_usuario_id_fkey(nome)
+            )
+          `)
+          .eq('comissionamento_id', comId)
+          .range(offset, offset + batchSize - 1);
 
-      if (error) throw error;
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        allRows.push(...data);
+        if (data.length < batchSize) break;
+        offset += batchSize;
+      }
 
-      const rows = vendas || [];
+      const rows = allRows;
       const totalVendas = rows.length;
       let vendasInstaladas = 0;
       let vendasConciliadas = 0;
@@ -119,23 +140,53 @@ export default function ComissionamentoPage() {
       let totalEstornos = 0;
       let churn = 0;
 
+      // Vendedor aggregation
+      const vendedorMap = new Map<string, VendedorRow>();
+
       for (const row of rows) {
         const vi = row.vendas_internas as any;
         const statusMake = (vi?.status_make || '').toLowerCase();
         const isInstalada = statusMake.startsWith('instalad');
         const isChurn = statusMake.startsWith('churn');
+        const vendedorNome = vi?.usuarios?.nome || 'Não identificado';
 
         if (isInstalada) vendasInstaladas++;
-        if (isChurn) churn += Number(row.receita_interna || vi?.valor || 0);
+        const churnVal = isChurn ? Number(row.receita_interna || vi?.valor || 0) : 0;
+        if (isChurn) churn += churnVal;
 
         receitaInterna += Number(row.receita_interna || 0);
 
+        let lalVal = 0;
         if (row.status_pag === 'OK') {
           vendasConciliadas++;
-          receitaConciliada += Number(row.receita_lal || row.receita_interna || 0);
+          lalVal = Number(row.receita_lal || row.receita_interna || 0);
+          receitaConciliada += lalVal;
         }
 
-        totalEstornos += Number(row.receita_descontada || 0);
+        const estornoVal = Number(row.receita_descontada || 0);
+        totalEstornos += estornoVal;
+
+        // Aggregate per vendedor
+        if (!vendedorMap.has(vendedorNome)) {
+          vendedorMap.set(vendedorNome, {
+            vendedor_nome: vendedorNome,
+            receita_interna: 0,
+            receita_lal: 0,
+            estorno: 0,
+            churn: 0,
+            receita_liquida: 0,
+          });
+        }
+        const vr = vendedorMap.get(vendedorNome)!;
+        vr.receita_interna += Number(row.receita_interna || 0);
+        vr.receita_lal += lalVal;
+        vr.estorno += estornoVal;
+        vr.churn += churnVal;
+      }
+
+      // Calculate receita_liquida per vendedor
+      for (const vr of vendedorMap.values()) {
+        vr.receita_liquida = vr.receita_lal - vr.estorno - vr.churn;
       }
 
       const receitaLiquida = receitaConciliada - totalEstornos - churn;
@@ -150,6 +201,10 @@ export default function ComissionamentoPage() {
         churn,
         receitaLiquida,
       });
+
+      setVendedorRows(
+        Array.from(vendedorMap.values()).sort((a, b) => b.receita_liquida - a.receita_liquida)
+      );
     } catch (err) {
       console.error(err);
       toast.error('Erro ao carregar estatísticas');
@@ -291,6 +346,45 @@ export default function ComissionamentoPage() {
                   className={stats.receitaLiquida >= 0 ? 'text-success' : 'text-destructive'}
                 />
               </div>
+
+              {/* Vendedor Breakdown Table */}
+              {vendedorRows.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm">Detalhamento por Vendedor</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="overflow-x-auto border rounded-lg">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="text-xs">Vendedor</TableHead>
+                            <TableHead className="text-xs text-right">Receita Interna</TableHead>
+                            <TableHead className="text-xs text-right">Receita LAL</TableHead>
+                            <TableHead className="text-xs text-right">Estorno</TableHead>
+                            <TableHead className="text-xs text-right">Churn</TableHead>
+                            <TableHead className="text-xs text-right">Receita Líquida</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {vendedorRows.map((vr, i) => (
+                            <TableRow key={i}>
+                              <TableCell className="text-sm font-medium">{vr.vendedor_nome}</TableCell>
+                              <TableCell className="text-sm text-right">{formatBRL(vr.receita_interna)}</TableCell>
+                              <TableCell className="text-sm text-right">{formatBRL(vr.receita_lal)}</TableCell>
+                              <TableCell className="text-sm text-right text-destructive">{formatBRL(vr.estorno)}</TableCell>
+                              <TableCell className="text-sm text-right text-destructive">{formatBRL(vr.churn)}</TableCell>
+                              <TableCell className={cn("text-sm text-right font-bold", vr.receita_liquida >= 0 ? 'text-success' : 'text-destructive')}>
+                                {formatBRL(vr.receita_liquida)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </>
           ) : (
             <div className="text-center text-muted-foreground py-8">
