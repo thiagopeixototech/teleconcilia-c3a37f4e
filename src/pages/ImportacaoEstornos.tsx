@@ -57,6 +57,12 @@ interface ImportResult {
   errors: { line: number; reason: string; data: Record<string, string> }[];
 }
 
+interface MapeamentoEstornoModel {
+  id: string;
+  nome: string;
+  mapeamento: Record<string, string>;
+}
+
 export default function ImportacaoEstornos() {
   const { user } = useAuth();
 
@@ -68,6 +74,14 @@ export default function ImportacaoEstornos() {
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [isProcessing, setIsProcessing] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [modelos, setModelos] = useState<MapeamentoEstornoModel[]>([]);
+  const [selectedModelId, setSelectedModelId] = useState<string>('');
+
+  useEffect(() => {
+    supabase.from('mapeamento_estornos' as any).select('id, nome, mapeamento').order('nome').then(({ data }) => {
+      if (data) setModelos(data as unknown as MapeamentoEstornoModel[]);
+    });
+  }, []);
 
   const parseCSV = (content: string) => {
     const lines = content.split('\n').filter(l => l.trim());
@@ -359,9 +373,30 @@ export default function ImportacaoEstornos() {
           <Card>
             <CardHeader>
               <CardTitle>Mapeamento de Colunas</CardTitle>
-              <CardDescription>Associe as colunas do CSV aos campos do sistema</CardDescription>
+              <CardDescription>Selecione um modelo salvo ou mapeie manualmente</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {modelos.length > 0 && (
+                <div className="space-y-1">
+                  <Label className="text-sm font-medium">Modelo Salvo</Label>
+                  <Select
+                    value={selectedModelId}
+                    onValueChange={v => {
+                      setSelectedModelId(v);
+                      const model = modelos.find(m => m.id === v);
+                      if (model) setMapping({ ...model.mapeamento });
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione um modelo (opcional)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">— Mapeamento manual —</SelectItem>
+                      {modelos.map(m => <SelectItem key={m.id} value={m.id}>{m.nome}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="grid gap-4 sm:grid-cols-2">
                 {CAMPOS_ESTORNO.map(campo => (
                   <div key={campo.key} className="space-y-1">
