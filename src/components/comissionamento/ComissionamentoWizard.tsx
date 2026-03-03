@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -7,14 +7,17 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
-import {
   ChevronLeft, ChevronRight, Check, Loader2,
   FileSpreadsheet, Upload, GitCompare, RotateCcw, BarChart3,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+
+import { StepVendasInternas } from './StepVendasInternas';
+import { StepLinhaALinha } from './StepLinhaALinha';
+import { StepConciliacao } from './StepConciliacao';
+import { StepEstornos } from './StepEstornos';
+import { StepPainelFinal } from './StepPainelFinal';
 
 interface WizardProps {
   mode: 'criar' | 'atualizar';
@@ -40,8 +43,17 @@ export function ComissionamentoWizard({ mode, comissionamentoId, onClose }: Wiza
   const [nome, setNome] = useState('');
   const [competencia, setCompetencia] = useState('');
   const [createdComId, setCreatedComId] = useState(comissionamentoId || '');
+  const [comNome, setComNome] = useState('');
 
   const activeComId = createdComId || comissionamentoId || '';
+
+  // Load comissionamento name when updating
+  useEffect(() => {
+    if (comissionamentoId && mode === 'atualizar') {
+      supabase.from('comissionamentos').select('nome').eq('id', comissionamentoId).single()
+        .then(({ data }) => { if (data) setComNome(data.nome); });
+    }
+  }, [comissionamentoId, mode]);
 
   const handleCreateComissionamento = async () => {
     if (!nome.trim() || !competencia.trim()) {
@@ -63,6 +75,7 @@ export function ComissionamentoWizard({ mode, comissionamentoId, onClose }: Wiza
 
       if (error) throw error;
       setCreatedComId(data.id);
+      setComNome(nome.trim());
       toast.success('Comissionamento criado!');
       setCurrentStep(1);
     } catch (err: any) {
@@ -73,20 +86,17 @@ export function ComissionamentoWizard({ mode, comissionamentoId, onClose }: Wiza
     }
   };
 
-  const canGoNext = () => {
-    if (currentStep === 0 && mode === 'criar') return false; // must use create button
-    return true;
-  };
-
   const goNext = () => {
     if (currentStep < STEPS.length - 1) setCurrentStep(currentStep + 1);
   };
 
   const goPrev = () => {
-    if (currentStep > (mode === 'criar' && !createdComId ? 0 : 1)) {
+    if (currentStep > (mode === 'criar' && !createdComId ? 0 : 0)) {
       setCurrentStep(currentStep - 1);
     }
   };
+
+  const canGoNext = currentStep === 0 ? !!createdComId : true;
 
   return (
     <div className="space-y-6">
@@ -96,7 +106,7 @@ export function ComissionamentoWizard({ mode, comissionamentoId, onClose }: Wiza
           const StepIcon = step.icon;
           const isActive = i === currentStep;
           const isDone = i < currentStep;
-          const isDisabled = mode === 'criar' && !createdComId && i > 0;
+          const isDisabled = !activeComId && i > 0;
 
           return (
             <button
@@ -135,35 +145,20 @@ export function ComissionamentoWizard({ mode, comissionamentoId, onClose }: Wiza
             mode={mode}
           />
         )}
-        {currentStep === 1 && (
-          <StepPlaceholder
-            title="Etapa 1 — Vendas Internas"
-            description="Configure as fontes de vendas internas (sistema ou arquivo). Esta etapa será implementada em breve."
-          />
+        {currentStep === 1 && activeComId && (
+          <StepVendasInternas comissionamentoId={activeComId} />
         )}
-        {currentStep === 2 && (
-          <StepPlaceholder
-            title="Etapa 2 — Linha a Linha"
-            description="Importe arquivos de operadoras com diferentes tipos de match. Esta etapa será implementada em breve."
-          />
+        {currentStep === 2 && activeComId && (
+          <StepLinhaALinha comissionamentoId={activeComId} />
         )}
-        {currentStep === 3 && (
-          <StepPlaceholder
-            title="Etapa 3 — Conciliação"
-            description="Cruze vendas internas com linhas de operadoras e atualize status_pag. Esta etapa será implementada em breve."
-          />
+        {currentStep === 3 && activeComId && (
+          <StepConciliacao comissionamentoId={activeComId} />
         )}
-        {currentStep === 4 && (
-          <StepPlaceholder
-            title="Etapa 4 — Estornos"
-            description="Importe arquivo de estornos/descontos. Esta etapa será implementada em breve."
-          />
+        {currentStep === 4 && activeComId && (
+          <StepEstornos comissionamentoId={activeComId} comissionamentoNome={comNome || nome} />
         )}
-        {currentStep === 5 && (
-          <StepPlaceholder
-            title="Etapa 5 — Painel Final"
-            description="Resumo por vendedor, ajustes manuais e exportação. Esta etapa será implementada em breve."
-          />
+        {currentStep === 5 && activeComId && (
+          <StepPainelFinal comissionamentoId={activeComId} />
         )}
       </div>
 
@@ -188,7 +183,7 @@ export function ComissionamentoWizard({ mode, comissionamentoId, onClose }: Wiza
             <Button
               size="sm"
               onClick={goNext}
-              disabled={!canGoNext() || (currentStep === 0 && !createdComId)}
+              disabled={!canGoNext}
               className="gap-1.5"
             >
               Próximo
@@ -264,18 +259,6 @@ function StepInfo({
           Criar Comissionamento
         </Button>
       )}
-    </div>
-  );
-}
-
-function StepPlaceholder({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
-      <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center">
-        <FileSpreadsheet className="h-8 w-8 text-muted-foreground" />
-      </div>
-      <h3 className="text-lg font-semibold">{title}</h3>
-      <p className="text-sm text-muted-foreground max-w-md">{description}</p>
     </div>
   );
 }
