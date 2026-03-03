@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { normalizeCpfCnpj } from '@/lib/normalizeCpfCnpj';
+import { normalizeCpfCnpj, normalizeCpfCnpjForMatch } from '@/lib/normalizeCpfCnpj';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -91,7 +91,7 @@ export function StepEstornos({ comissionamentoId, comissionamentoNome }: Props) 
     toast.success(`${rows.length} linhas encontradas`);
   };
 
-  const normDoc = normalizeCpfCnpj;
+  const normDoc = normalizeCpfCnpjForMatch;
 
   const processImport = async () => {
     // Validate
