@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { normalizeCpfCnpj } from '@/lib/normalizeCpfCnpj';
+import { normalizeCpfCnpj, normalizeCpfCnpjForMatch } from '@/lib/normalizeCpfCnpj';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -164,7 +164,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         }
       }
 
-      const normDoc = normalizeCpfCnpj;
+      const normDoc = normalizeCpfCnpjForMatch;
       const linhasByProtocolo = new Map<string, any>();
       const linhasByCpf = new Map<string, any>();
       const usedLinhaIds = new Set<string>();
