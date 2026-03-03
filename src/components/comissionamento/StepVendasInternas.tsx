@@ -37,6 +37,17 @@ interface MapeamentoVendas {
   };
 }
 
+interface ErrorRow {
+  rowIndex: number;
+  row: Record<string, string>;
+  reason: 'vendedor' | 'operadora' | 'data';
+  idMake: string;
+  // For correction
+  correctedVendedorId?: string;
+  correctedOperadoraId?: string;
+  correctedDate?: string;
+}
+
 interface FonteConfig {
   id: string;
   tipo: 'sistema' | 'arquivo';
@@ -68,6 +79,8 @@ interface FonteConfig {
   // State
   imported: boolean;
   importResult?: { total: number; success: number; errors: number };
+  errorRows?: ErrorRow[];
+  showErrors?: boolean;
 }
 
 const CAMPOS_VENDAS = [
@@ -347,16 +360,27 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
     let successCount = 0;
     let errorCount = 0;
     const vendaRows: any[] = [];
+    const errorRows: ErrorRow[] = [];
 
     const deduped = new Map<string, Record<string, string>>();
+    let rowIdx = 0;
+    const rowIndexMap = new Map<string, number>();
     for (const row of fonte.csvRows!) {
       const idMake = row[map.identificador_make]?.trim();
-      if (idMake) deduped.set(idMake, row);
+      if (idMake) {
+        deduped.set(idMake, row);
+        rowIndexMap.set(idMake, rowIdx);
+      }
+      rowIdx++;
     }
 
     for (const [idMake, row] of deduped) {
       const dataVenda = parseDate(row[map.data_venda]?.trim() || '');
-      if (!dataVenda) { errorCount++; continue; }
+      if (!dataVenda) {
+        errorCount++;
+        errorRows.push({ rowIndex: rowIndexMap.get(idMake) || 0, row, reason: 'data', idMake });
+        continue;
+      }
 
       let vendedorId: string | null = null;
       if (vMode === 'fixed') {
@@ -371,7 +395,11 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
           vendedorId = found?.id || null;
         }
       }
-      if (!vendedorId) { errorCount++; continue; }
+      if (!vendedorId) {
+        errorCount++;
+        errorRows.push({ rowIndex: rowIndexMap.get(idMake) || 0, row, reason: 'vendedor', idMake });
+        continue;
+      }
 
       let operadoraId: string | null = null;
       if (oMode === 'fixed') {
@@ -381,7 +409,11 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
         const found = operadoras.find(o => o.nome.toLowerCase() === val);
         operadoraId = found?.id || null;
       }
-      if (!operadoraId) { errorCount++; continue; }
+      if (!operadoraId) {
+        errorCount++;
+        errorRows.push({ rowIndex: rowIndexMap.get(idMake) || 0, row, reason: 'operadora', idMake });
+        continue;
+      }
 
       const cpf = map.cpf_cnpj ? normalizeCpfCnpj(row[map.cpf_cnpj] || '') : null;
       const valorStr = map.valor ? row[map.valor]?.replace(',', '.').replace(/[^\d.-]/g, '') : null;
@@ -458,6 +490,8 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
     updateFonte(fonte.id, {
       imported: true,
       importResult: { total: deduped.size, success: successCount, errors: errorCount },
+      errorRows: errorRows.length > 0 ? errorRows : undefined,
+      showErrors: errorRows.length > 0,
     });
     toast.success(`${successCount} vendas processadas (${newVendas.length} novas, ${existingVendas.length} existentes), ${errorCount} erros`);
   };
@@ -480,6 +514,185 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
         : [...current, itemId];
       return { ...f, [field]: next };
     }));
+  };
+
+  const updateErrorRow = (fonteId: string, rowIndex: number, updates: Partial<ErrorRow>) => {
+    setFontes(prev => prev.map(f => {
+      if (f.id !== fonteId || !f.errorRows) return f;
+      return {
+        ...f,
+        errorRows: f.errorRows.map(er =>
+          er.rowIndex === rowIndex ? { ...er, ...updates } : er
+        ),
+      };
+    }));
+  };
+
+  const reprocessErrorRows = async (fonte: FonteConfig) => {
+    if (!fonte.errorRows || !fonte.mapeamentoId) return;
+    setIsProcessing(true);
+    try {
+      const mapeamento = mapeamentos.find(m => m.id === fonte.mapeamentoId);
+      if (!mapeamento) return;
+      const map = mapeamento.mapeamento;
+
+      // Find the fonteData id from existing fontes
+      const existingFonte = existingFontes.find(ef => ef.nome === fonte.nome && ef.comissionamento_id === comissionamentoId);
+      const fonteDbId = existingFonte?.id;
+
+      const correctedRows = fonte.errorRows.filter(er => {
+        if (er.reason === 'vendedor' && er.correctedVendedorId) return true;
+        if (er.reason === 'operadora' && er.correctedOperadoraId) return true;
+        if (er.reason === 'data' && er.correctedDate) return true;
+        return false;
+      });
+
+      if (correctedRows.length === 0) {
+        toast.info('Nenhuma correção para processar. Preencha os campos de correção.');
+        setIsProcessing(false);
+        return;
+      }
+
+      const vendaRows: any[] = [];
+      const stillErrorRows: ErrorRow[] = [];
+      const oMode = fonte.operadoraMode || mapeamento.config?.operadora_mode || 'fixed';
+      const fixedOId = fonte.operadoraId || mapeamento.config?.operadora_id || '';
+      const oCol = fonte.operadoraColumn || mapeamento.config?.operadora_column || '';
+      const vMode = fonte.vendedorMode || mapeamento.config?.vendedor_mode || 'column_cpf';
+      const fixedVId = fonte.fixedVendedorId || mapeamento.config?.fixed_vendedor_id || '';
+      const vCol = fonte.vendedorColumn || mapeamento.config?.vendedor_column || '';
+
+      for (const er of fonte.errorRows) {
+        const row = er.row;
+        const idMake = er.idMake;
+
+        let dataVenda = parseDate(row[map.data_venda]?.trim() || '');
+        if (er.reason === 'data' && er.correctedDate) {
+          dataVenda = er.correctedDate;
+        }
+        if (!dataVenda) { stillErrorRows.push(er); continue; }
+
+        let vendedorId: string | null = null;
+        if (er.reason === 'vendedor' && er.correctedVendedorId) {
+          vendedorId = er.correctedVendedorId;
+        } else if (vMode === 'fixed') {
+          vendedorId = fixedVId;
+        } else {
+          const val = row[vCol]?.trim();
+          if (val) {
+            const normalized = normalizeCpfCnpj(val);
+            const found = vMode === 'column_cpf'
+              ? usuarios.find(u => u.cpf && normalizeCpfCnpj(u.cpf) === normalized)
+              : usuarios.find(u => u.email.toLowerCase() === val.toLowerCase());
+            vendedorId = found?.id || null;
+          }
+        }
+        if (!vendedorId) { stillErrorRows.push(er); continue; }
+
+        let operadoraId: string | null = null;
+        if (er.reason === 'operadora' && er.correctedOperadoraId) {
+          operadoraId = er.correctedOperadoraId;
+        } else if (oMode === 'fixed') {
+          operadoraId = fixedOId;
+        } else {
+          const val = row[oCol]?.trim()?.toLowerCase();
+          const found = operadoras.find(o => o.nome.toLowerCase() === val);
+          operadoraId = found?.id || null;
+        }
+        if (!operadoraId) { stillErrorRows.push(er); continue; }
+
+        const cpf = map.cpf_cnpj ? normalizeCpfCnpj(row[map.cpf_cnpj] || '') : null;
+        const valorStr = map.valor ? row[map.valor]?.replace(',', '.').replace(/[^\d.-]/g, '') : null;
+        const valor = valorStr ? parseFloat(valorStr) : null;
+        const dataInstalacao = map.data_instalacao ? parseDate(row[map.data_instalacao]?.trim() || '') : null;
+
+        vendaRows.push({
+          identificador_make: idMake,
+          status_make: row[map.status_make]?.trim() || null,
+          data_venda: dataVenda,
+          data_instalacao: dataInstalacao,
+          cliente_nome: row[map.cliente_nome]?.trim() || 'N/A',
+          cpf_cnpj: cpf || null,
+          telefone: map.telefone ? row[map.telefone]?.trim() : null,
+          protocolo_interno: map.protocolo_interno ? row[map.protocolo_interno]?.trim() : null,
+          valor,
+          plano: map.plano ? row[map.plano]?.trim() : null,
+          observacoes: map.observacoes ? row[map.observacoes]?.trim() : null,
+          usuario_id: vendedorId,
+          operadora_id: operadoraId,
+          empresa_id: fonte.empresaId || null,
+        });
+      }
+
+      if (vendaRows.length === 0) {
+        toast.info('Nenhuma linha corrigida com sucesso');
+        setIsProcessing(false);
+        return;
+      }
+
+      // Check existing
+      const existingIds = new Map<string, string>();
+      const idsToCheck = vendaRows.map(r => r.identificador_make);
+      for (let i = 0; i < idsToCheck.length; i += 200) {
+        const batch = idsToCheck.slice(i, i + 200);
+        const { data } = await supabase.from('vendas_internas').select('id, identificador_make').in('identificador_make', batch);
+        data?.forEach(d => { if (d.identificador_make) existingIds.set(d.identificador_make, d.id); });
+      }
+
+      const newVendas = vendaRows.filter(r => !existingIds.has(r.identificador_make));
+      for (let i = 0; i < newVendas.length; i += 500) {
+        await supabase.from('vendas_internas').insert(newVendas.slice(i, i + 500));
+      }
+
+      // Get IDs for comissionamento_vendas
+      const allIdMakes = vendaRows.map(r => r.identificador_make);
+      const vendaIdMap = new Map<string, string>();
+      for (let i = 0; i < allIdMakes.length; i += 200) {
+        const batch = allIdMakes.slice(i, i + 200);
+        const { data } = await supabase.from('vendas_internas').select('id, identificador_make, valor').in('identificador_make', batch);
+        data?.forEach(d => { if (d.identificador_make) vendaIdMap.set(d.identificador_make, d.id); });
+      }
+
+      if (fonteDbId) {
+        const comRows = allIdMakes.filter(idm => vendaIdMap.has(idm)).map(idm => ({
+          comissionamento_id: comissionamentoId,
+          venda_interna_id: vendaIdMap.get(idm)!,
+          fonte_id: fonteDbId,
+          receita_interna: vendaRows.find(r => r.identificador_make === idm)?.valor || null,
+        }));
+        for (let i = 0; i < comRows.length; i += 500) {
+          await supabase.from('comissionamento_vendas').insert(comRows.slice(i, i + 500));
+        }
+      }
+
+      const prevResult = fonte.importResult || { total: 0, success: 0, errors: 0 };
+      updateFonte(fonte.id, {
+        errorRows: stillErrorRows.length > 0 ? stillErrorRows : undefined,
+        showErrors: stillErrorRows.length > 0,
+        importResult: {
+          total: prevResult.total,
+          success: prevResult.success + vendaRows.length,
+          errors: stillErrorRows.length,
+        },
+      });
+      toast.success(`${vendaRows.length} linhas corrigidas com sucesso!`);
+
+      // Reload existing fontes
+      const { data: fontesData } = await supabase.from('comissionamento_fontes').select('*').eq('comissionamento_id', comissionamentoId);
+      if (fontesData) setExistingFontes(fontesData);
+    } catch (err: any) {
+      toast.error('Erro ao reprocessar: ' + err.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const getReasonLabel = (reason: ErrorRow['reason']) => {
+    switch (reason) {
+      case 'vendedor': return 'Vendedor não encontrado';
+      case 'operadora': return 'Operadora não encontrada';
+      case 'data': return 'Data inválida';
+    }
   };
 
   return (
@@ -525,11 +738,144 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
           </CardHeader>
           <CardContent className="space-y-4">
             {fonte.imported && fonte.importResult && (
-              <div className="flex gap-4 text-sm">
-                <span>Total: <strong>{fonte.importResult.total}</strong></span>
-                <span className="text-success">Sucesso: <strong>{fonte.importResult.success}</strong></span>
-                {fonte.importResult.errors > 0 && (
-                  <span className="text-destructive">Erros: <strong>{fonte.importResult.errors}</strong></span>
+              <div className="space-y-3">
+                <div className="flex gap-4 text-sm">
+                  <span>Total: <strong>{fonte.importResult.total}</strong></span>
+                  <span className="text-success">Sucesso: <strong>{fonte.importResult.success}</strong></span>
+                  {fonte.importResult.errors > 0 && (
+                    <span
+                      className="text-destructive cursor-pointer underline"
+                      onClick={() => updateFonte(fonte.id, { showErrors: !fonte.showErrors })}
+                    >
+                      Erros: <strong>{fonte.importResult.errors}</strong> {fonte.showErrors ? '▲' : '▼'}
+                    </span>
+                  )}
+                </div>
+
+                {fonte.showErrors && fonte.errorRows && fonte.errorRows.length > 0 && (
+                  <div className="space-y-3 border rounded-md p-3 bg-destructive/5">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-medium text-destructive flex items-center gap-1.5">
+                        <AlertCircle className="h-4 w-4" />
+                        Linhas com erro ({fonte.errorRows.length})
+                      </h4>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => reprocessErrorRows(fonte)}
+                        disabled={isProcessing}
+                        className="gap-1.5"
+                      >
+                        {isProcessing ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+                        Reprocessar Corrigidos
+                      </Button>
+                    </div>
+                    <div className="max-h-64 overflow-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="text-xs w-[60px]">Linha</TableHead>
+                            <TableHead className="text-xs">ID Make</TableHead>
+                            <TableHead className="text-xs">Motivo</TableHead>
+                            <TableHead className="text-xs w-[200px]">Correção</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {fonte.errorRows.map((er) => (
+                            <TableRow key={er.rowIndex}>
+                              <TableCell className="text-xs">{er.rowIndex + 2}</TableCell>
+                              <TableCell className="text-xs font-mono">{er.idMake}</TableCell>
+                              <TableCell className="text-xs">
+                                <Badge variant="destructive" className="text-[10px]">
+                                  {getReasonLabel(er.reason)}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-xs">
+                                {er.reason === 'vendedor' && (
+                                  <Select
+                                    value={er.correctedVendedorId || ''}
+                                    onValueChange={v => updateErrorRow(fonte.id, er.rowIndex, { correctedVendedorId: v })}
+                                  >
+                                    <SelectTrigger className="h-7 text-xs">
+                                      <SelectValue placeholder="Selecione vendedor" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {usuarios.map(u => (
+                                        <SelectItem key={u.id} value={u.id} className="text-xs">{u.nome}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                )}
+                                {er.reason === 'operadora' && (
+                                  <Select
+                                    value={er.correctedOperadoraId || ''}
+                                    onValueChange={v => updateErrorRow(fonte.id, er.rowIndex, { correctedOperadoraId: v })}
+                                  >
+                                    <SelectTrigger className="h-7 text-xs">
+                                      <SelectValue placeholder="Selecione operadora" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {operadoras.map(o => (
+                                        <SelectItem key={o.id} value={o.id} className="text-xs">{o.nome}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                )}
+                                {er.reason === 'data' && (
+                                  <Input
+                                    type="date"
+                                    className="h-7 text-xs"
+                                    value={er.correctedDate || ''}
+                                    onChange={e => updateErrorRow(fonte.id, er.rowIndex, { correctedDate: e.target.value })}
+                                  />
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+
+                    {/* Bulk correction for vendedor/operadora */}
+                    {fonte.errorRows.filter(er => er.reason === 'vendedor').length > 1 && (
+                      <div className="flex items-center gap-2 pt-1">
+                        <span className="text-xs text-muted-foreground">Aplicar a todos erros de vendedor:</span>
+                        <Select onValueChange={v => {
+                          fonte.errorRows?.filter(er => er.reason === 'vendedor').forEach(er => {
+                            updateErrorRow(fonte.id, er.rowIndex, { correctedVendedorId: v });
+                          });
+                        }}>
+                          <SelectTrigger className="h-7 text-xs w-48">
+                            <SelectValue placeholder="Vendedor em massa" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {usuarios.map(u => (
+                              <SelectItem key={u.id} value={u.id} className="text-xs">{u.nome}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                    {fonte.errorRows.filter(er => er.reason === 'operadora').length > 1 && (
+                      <div className="flex items-center gap-2 pt-1">
+                        <span className="text-xs text-muted-foreground">Aplicar a todos erros de operadora:</span>
+                        <Select onValueChange={v => {
+                          fonte.errorRows?.filter(er => er.reason === 'operadora').forEach(er => {
+                            updateErrorRow(fonte.id, er.rowIndex, { correctedOperadoraId: v });
+                          });
+                        }}>
+                          <SelectTrigger className="h-7 text-xs w-48">
+                            <SelectValue placeholder="Operadora em massa" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {operadoras.map(o => (
+                              <SelectItem key={o.id} value={o.id} className="text-xs">{o.nome}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             )}
