@@ -1,237 +1,131 @@
----
+# Plano: Módulo de Comissionamento por Competência
 
-# 🔥 Plano de Alterações Estruturais – Teleconcilia (Versão Corrigida)
-
-## 📌 Resumo Real das Mudanças
-
-Seis mudanças principais:
-
-1. Transformar Divergências em fila automática de vendas não conciliadas
-2. Apelido obrigatório na importação do Linha a Linha (nível de lote)
-3. Manter coluna "Confirmada" e adicionar nova coluna separada "Linha a Linha"
-4. Ajustar filtros da tela Divergências
-5. Redesenhar filtros de data para serem independentes (Data Venda + Data Instalação)
-6. Aplicar mesma lógica de datas nas telas relevantes
+## Visão Geral
+Migrar o sistema de "conciliação avulsa" para um fluxo guiado de **comissionamento por competência**, com wizard de etapas.
 
 ---
 
-# 1️⃣ Banco de Dados – Apelido é do LOTE, não da linha individual
+## Modelagem de Dados
 
-A coluna `apelido` na tabela `linha_operadora` está correta.
+### 1. Nova tabela: `comissionamentos`
+Registro principal de cada comissionamento (competência mensal).
 
-Mas a regra precisa ser entendida assim:
+| Campo | Tipo | Obrigatório | Descrição |
+|---|---|---|---|
+| id | uuid PK | Sim | |
+| nome | text | Sim | Ex: "Comissionamento Março 2026" |
+| competencia | text | Sim | Ex: "2026-03" (YYYY-MM) |
+| status | enum | Sim | rascunho / em_andamento / finalizado |
+| created_by | uuid | Sim | auth.uid() do criador |
+| created_at | timestamptz | Sim | |
+| updated_at | timestamptz | Sim | |
 
-- O apelido representa o **lote importado**
-- Todas as linhas daquele lote compartilham o mesmo apelido
-- Ele não é um campo decorativo, ele será usado para rastrear conciliações
+**Enum `status_comissionamento`**: `rascunho`, `em_andamento`, `finalizado`
 
-Migração correta:
+### 2. Nova tabela: `comissionamento_fontes`
+Cada fonte de vendas internas vinculada a um comissionamento (etapa 1).
 
-```
-ALTER TABLE public.linha_operadora ADD COLUMN apelido TEXT;
-```
+| Campo | Tipo | Obrigatório | Descrição |
+|---|---|---|---|
+| id | uuid PK | Sim | |
+| comissionamento_id | uuid FK→comissionamentos | Sim | |
+| tipo | enum | Sim | `sistema` ou `arquivo` |
+| nome | text | Sim | Nome amigável da fonte |
+| mapeamento_id | uuid FK→mapeamento_vendas | Não | Para tipo=arquivo |
+| filtros | jsonb | Não | Para tipo=sistema (filtros de data, etc.) |
+| vendedor_fixo_id | uuid FK→usuarios | Não | Se vendedor fixo |
+| operadora_fixa_id | uuid FK→operadoras | Não | Se operadora fixa |
+| empresa_id | uuid FK→empresas | Não | Empresa associada |
+| arquivo_nome | text | Não | Nome do arquivo original |
+| created_at | timestamptz | Sim | |
 
----
+**Enum `tipo_fonte_comissionamento`**: `sistema`, `arquivo`
 
-# 2️⃣ Tela Linha a Linha – Apelido Obrigatório
+### 3. Nova tabela: `comissionamento_vendas`
+Vínculo entre vendas internas e comissionamento (tabela principal de dados por venda).
 
-Arquivo: `LinhaOperadora.tsx`
+| Campo | Tipo | Obrigatório | Descrição |
+|---|---|---|---|
+| id | uuid PK | Sim | |
+| comissionamento_id | uuid FK→comissionamentos | Sim | |
+| venda_interna_id | uuid FK→vendas_internas | Sim | |
+| fonte_id | uuid FK→comissionamento_fontes | Não | De qual fonte veio |
+| status_pag | enum | Não | OK / DESCONTADA (null=não processada) |
+| receita_interna | numeric | Não | Valor da venda interna (R$) |
+| receita_lal | numeric | Não | Valor encontrado no LAL (R$) |
+| linha_operadora_id | uuid FK→linha_operadora | Não | LAL que fez match |
+| lal_apelido | text | Não | Apelido do lote LAL |
+| comissionamento_desconto | text | Não | Nome do comissionamento onde apareceu como estorno |
+| receita_descontada | numeric | Não | Valor estornado (R$) |
+| created_at | timestamptz | Sim | |
+| updated_at | timestamptz | Sim | |
 
-Regras:
+**Enum `status_pag`**: `OK`, `DESCONTADA`
 
-- Campo "Apelido do Lote" obrigatório
-- Não permitir importação sem apelido
-- O valor deve ser salvo na coluna `apelido`
-- A listagem deve exibir o apelido no lugar de `arquivo_origem` (ou como principal identificador do lote)
+**Unique constraint**: (comissionamento_id, venda_interna_id)
 
-⚠️ O apelido é o identificador oficial do lote a partir de agora.
+### 4. Nova tabela: `comissionamento_lal`
+Lotes de Linha a Linha vinculados a um comissionamento (etapa 2).
 
----
-
-# 3️⃣ Tela Vendas Internas – DUAS COLUNAS SEPARADAS
-
-⚠️ Aqui estava o erro de interpretação.
-
-## ✔️ Manter coluna atual de status
-
-A coluna que hoje mostra:
-
-- "Confirmada"
-- Ou vazio
-
-DEVE continuar existindo exatamente como está.
-
-Essa coluna é apenas um indicador binário de conciliação.
-
----
-
-## ✔️ Criar nova coluna adicional
-
-Nova coluna separada chamada:
-
-```
-Linha a Linha
-```
-
-ou
-
-```
-Confirmado no Linha a Linha
-```
-
-Essa coluna deve:
-
-- Buscar o apelido do `linha_operadora` vinculado à conciliação
-- Mostrar o apelido se conciliada
-- Ficar vazia se não conciliada
-
----
-
-### Exemplo esperado:
-
-
-| Protocolo | Status     | Linha a Linha         |
-| --------- | ---------- | --------------------- |
-| 12345     | Confirmada | Claro Nov 1ª Quinzena |
-| 67890     | &nbsp;     | &nbsp;                |
-
+| Campo | Tipo | Obrigatório | Descrição |
+|---|---|---|---|
+| id | uuid PK | Sim | |
+| comissionamento_id | uuid FK→comissionamentos | Sim | |
+| mapeamento_id | uuid FK→mapeamento_colunas | Não | Modelo de mapeamento |
+| operadora_id | uuid FK→operadoras | Sim | |
+| apelido | text | Sim | Nome amigável do lote |
+| tipo_match | text | Sim | "protocolo" ou "cpf" |
+| arquivo_nome | text | Não | Nome do arquivo original |
+| qtd_registros | integer | Não | Quantidade importada |
+| created_at | timestamptz | Sim | |
 
 ---
 
-🚫 NÃO substituir a coluna Confirmada  
-  
-🚫 NÃO juntar status + apelido na mesma coluna
+## Mapeamento de campos existentes → novos nomes (apenas UI)
 
-São informações diferentes.
+| Campo atual (BD) | Nome na UI |
+|---|---|
+| data_instalacao | dt_atv (data de ativação) |
+| identificador_make | id_externo |
+| protocolo_interno | protocolo |
 
----
-
-# 4️⃣ Redesenho dos Filtros de Data (Mudança Estrutural Real)
-
-Substituir completamente o modelo atual de:
-
-Radio Button:
-
-- Data Venda OU
-- Data Instalação
-
-Por:
-
-## Dois blocos fixos independentes
-
-### 🔹 Bloco Data de Venda
-
-- Data Início
-- Data Fim
-
-### 🔹 Bloco Data de Instalação
-
-- Data Início
-- Data Fim
+> ⚠️ **NÃO renomear no banco.** Só mudar os labels na interface.
 
 ---
 
-## Regras Obrigatórias
+## Fluxo do Wizard (telas)
 
-- Nenhum campo vem preenchido automaticamente
-- Se apenas Data Venda preenchida → filtra só por venda
-- Se apenas Data Instalação preenchida → filtra só por instalação
-- Se ambos preenchidos → aplicar AND
-- Se nenhum preenchido → não aplicar filtro de data
-- A busca só executa ao clicar em "Buscar"
+### Tela Principal: `/comissionamento`
+- Seletor de comissionamento no topo (dropdown com competências)
+- Cards de resumo (instaladas, churn, conciliadas, receita bruta, conciliada, estorno, líquida)
+- Botões: "Criar novo" / "Atualizar existente"
 
----
+### Wizard (modal/drawer com etapas):
+1. **Etapa 1.1** - Selecionar fontes de vendas internas
+2. **Etapa 1.2** - Validar importação de vendas
+3. **Etapa 2.1** - Importar LAL (múltiplos lotes)
+4. **Etapa 2.2** - Validar LAL
+5. **Etapa 3** - Conciliação (com status_pag)
+6. **Etapa 4** - Estornos
+7. **Etapa 5** - Painel Final (resumo + detalhes + ajustes)
 
-## Query condicional correta
-
-```
-(_data_venda_inicio IS NULL OR vi.data_venda >= _data_venda_inicio)
-AND (_data_venda_fim IS NULL OR vi.data_venda <= _data_venda_fim)
-AND (_data_instalacao_inicio IS NULL OR vi.data_instalacao >= _data_instalacao_inicio)
-AND (_data_instalacao_fim IS NULL OR vi.data_instalacao <= _data_instalacao_fim)
-```
+### Telas existentes: manter funcionando em paralelo durante migração gradual.
 
 ---
 
-# 5️⃣ Tela Divergências – Agora é 100% Automática
-
-Arquivo: `Divergencias.tsx`
-
-## ❌ Remover totalmente:
-
-- Filtro de status_interno
-- Qualquer controle manual de status
+## RLS
+- Admin: acesso total a todos os comissionamentos
+- Supervisor: visualizar comissionamentos que contenham vendas do seu time
+- Vendedor: visualizar apenas dados das próprias vendas dentro do comissionamento
 
 ---
 
-## ✅ Nova regra da tela
-
-Essa tela deve exibir automaticamente:
-
-Vendas que NÃO possuem registro em `conciliacoes` com:
-
-```
-status_final = 'conciliado'
-```
-
-Ou seja:
-
-Se está conciliada → não aparece  
-  
-Se não está conciliada → aparece
-
-Simples.
-
----
-
-## Filtros que devem existir:
-
-- Status Make
-- Operadora
-- ID Make
-- Protocolo
-- Vendedor
-- Data Venda (bloco independente)
-- Data Instalação (bloco independente)
-
-⚠️ Não existe mais filtro de conciliação aqui.
-
----
-
-# 6️⃣ Tela Performance – Atualizar RPC
-
-Arquivo: `PerformanceConsultor.tsx`
-
-Atualizar RPC para aceitar 4 parâmetros opcionais:
-
-```
-_data_venda_inicio
-_data_venda_fim
-_data_instalacao_inicio
-_data_instalacao_fim
-```
-
-Remover modelo antigo baseado em um único campo de data.
-
----
-
-# 7️⃣ Ordem Correta de Execução
-
-1. Migração coluna apelido
-2. Migração RPC performance
-3. Criar componente reutilizável DateRangeBlock
-4. Atualizar LinhaOperadora.tsx
-5. Atualizar VendasInternas.tsx
-6. Atualizar Divergencias.tsx
-7. Atualizar PerformanceConsultor.tsx
-
----
-
-# 🎯 Objetivo Final
-
-- Divergência 100% automática
-- Rastreabilidade por lote
-- Status e lote separados corretamente
-- Filtros de data flexíveis
-- Performance preservada
-- Sem ambiguidade de regra
+## Ordem de execução
+1. ✅ Plano documentado
+2. ⬜ Criar enums e tabelas no banco (migration)
+3. ⬜ Criar tela principal de Comissionamento
+4. ⬜ Wizard Etapa 1 (fontes + validação)
+5. ⬜ Wizard Etapa 2 (LAL + validação)
+6. ⬜ Wizard Etapa 3 (conciliação com status_pag)
+7. ⬜ Wizard Etapa 4 (estornos)
+8. ⬜ Wizard Etapa 5 (painel final)
