@@ -468,14 +468,16 @@ export default function ImportacaoVendas() {
         const batch = rowsToInsert.slice(i, i + INSERT_BATCH);
         const { error } = await supabase.from('vendas_internas').insert(batch);
         if (error) {
-          // Fallback: try one by one
-          for (const row of batch) {
-            const { error: singleError } = await supabase.from('vendas_internas').insert(row);
+          // Fallback: try one by one with yielding
+          for (let j = 0; j < batch.length; j++) {
+            const { error: singleError } = await supabase.from('vendas_internas').insert(batch[j]);
             if (singleError) {
-              importResult.errors.push({ line: 0, reason: singleError.message, data: row });
+              importResult.errors.push({ line: 0, reason: singleError.message, data: batch[j] });
             } else {
               importResult.success++;
             }
+            // Yield every 10 rows to prevent freeze
+            if (j % 10 === 0) await new Promise(r => setTimeout(r, 5));
           }
         } else {
           importResult.success += batch.length;

@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Progress } from '@/components/ui/progress';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -110,6 +111,7 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
   const [mapeamentos, setMapeamentos] = useState<MapeamentoVendas[]>([]);
   const [existingFontes, setExistingFontes] = useState<any[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingProgress, setProcessingProgress] = useState<{ phase: string; current: number; total: number } | null>(null);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   useEffect(() => {
@@ -225,6 +227,7 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
 
   const processarFonte = async (fonte: FonteConfig) => {
     setIsProcessing(true);
+    setProcessingProgress(null);
     try {
       if (fonte.tipo === 'sistema') {
         await processarFonteSistema(fonte);
@@ -235,6 +238,7 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
       toast.error('Erro: ' + err.message);
     } finally {
       setIsProcessing(false);
+      setProcessingProgress(null);
     }
   };
 
@@ -275,8 +279,10 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
       if (error) throw error;
       if (!data || data.length === 0) break;
       allVendas.push(...data);
+      setProcessingProgress({ phase: 'Carregando vendas do sistema...', current: allVendas.length, total: allVendas.length });
       if (data.length < batchSize) break;
       offset += batchSize;
+      await new Promise(r => setTimeout(r, 10));
     }
 
     if (allVendas.length === 0) {
@@ -311,10 +317,13 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
       receita_interna: v.valor,
     }));
 
+    setProcessingProgress({ phase: 'Vinculando vendas...', current: 0, total: rows.length });
     for (let i = 0; i < rows.length; i += 500) {
       const batch = rows.slice(i, i + 500);
       const { error: insertErr } = await supabase.from('comissionamento_vendas').insert(batch);
       if (insertErr) throw insertErr;
+      setProcessingProgress({ phase: 'Vinculando vendas...', current: Math.min(i + 500, rows.length), total: rows.length });
+      await new Promise(r => setTimeout(r, 30));
     }
 
     updateFonte(fonte.id, {
@@ -440,8 +449,9 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
     }
 
     // Check existing vendas
-    const existingIds = new Map<string, string>();
     const idsToCheck = vendaRows.map(r => r.identificador_make).filter(Boolean);
+    setProcessingProgress({ phase: 'Verificando duplicatas...', current: 0, total: idsToCheck.length });
+    const existingIds = new Map<string, string>();
     for (let i = 0; i < idsToCheck.length; i += 200) {
       const batch = idsToCheck.slice(i, i + 200);
       const { data } = await supabase
@@ -449,19 +459,37 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
         .select('id, identificador_make')
         .in('identificador_make', batch);
       data?.forEach(d => { if (d.identificador_make) existingIds.set(d.identificador_make, d.id); });
+      setProcessingProgress({ phase: 'Verificando duplicatas...', current: Math.min(i + 200, idsToCheck.length), total: idsToCheck.length });
+      await new Promise(r => setTimeout(r, 10));
     }
 
     const newVendas = vendaRows.filter(r => !existingIds.has(r.identificador_make));
     const existingVendas = vendaRows.filter(r => existingIds.has(r.identificador_make));
 
+    setProcessingProgress({ phase: 'Inserindo vendas...', current: 0, total: newVendas.length });
     for (let i = 0; i < newVendas.length; i += 500) {
       const batch = newVendas.slice(i, i + 500);
-      await supabase.from('vendas_internas').insert(batch);
+      const { error: batchErr } = await supabase.from('vendas_internas').insert(batch);
+      if (batchErr) {
+        // Fallback: one by one
+        for (const row of batch) {
+          await supabase.from('vendas_internas').insert(row);
+        }
+      }
+      setProcessingProgress({ phase: 'Inserindo vendas...', current: Math.min(i + 500, newVendas.length), total: newVendas.length });
+      await new Promise(r => setTimeout(r, 30));
+    }
+
+    // Build valor lookup map (O(n) instead of O(n²))
+    const valorMap = new Map<string, number | null>();
+    for (const r of vendaRows) {
+      valorMap.set(r.identificador_make, r.valor);
     }
 
     const allIdMakes = vendaRows.map(r => r.identificador_make);
     const vendaIdMap = new Map<string, string>();
 
+    setProcessingProgress({ phase: 'Vinculando ao comissionamento...', current: 0, total: allIdMakes.length });
     for (let i = 0; i < allIdMakes.length; i += 200) {
       const batch = allIdMakes.slice(i, i + 200);
       const { data } = await supabase
@@ -471,6 +499,8 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
       data?.forEach(d => {
         if (d.identificador_make) vendaIdMap.set(d.identificador_make, d.id);
       });
+      setProcessingProgress({ phase: 'Vinculando ao comissionamento...', current: Math.min(i + 200, allIdMakes.length), total: allIdMakes.length });
+      await new Promise(r => setTimeout(r, 10));
     }
 
     const comRows = allIdMakes
@@ -479,12 +509,13 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
         comissionamento_id: comissionamentoId,
         venda_interna_id: vendaIdMap.get(idm)!,
         fonte_id: fonteData.id,
-        receita_interna: vendaRows.find(r => r.identificador_make === idm)?.valor || null,
+        receita_interna: valorMap.get(idm) || null,
       }));
 
     for (let i = 0; i < comRows.length; i += 500) {
       const batch = comRows.slice(i, i + 500);
       await supabase.from('comissionamento_vendas').insert(batch);
+      await new Promise(r => setTimeout(r, 30));
     }
 
     // Register in audit_log so it appears in import history
@@ -508,6 +539,7 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
       });
     } catch {}
 
+    setProcessingProgress(null);
     updateFonte(fonte.id, {
       imported: true,
       importResult: { total: deduped.size, success: successCount, errors: errorCount },
@@ -1121,6 +1153,13 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
                   </>
                 )}
 
+                {/* Progress indicator */}
+                {isProcessing && processingProgress && (
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">{processingProgress.phase} ({processingProgress.current}/{processingProgress.total})</p>
+                    <Progress value={processingProgress.total > 0 ? (processingProgress.current / processingProgress.total) * 100 : 0} className="h-2" />
+                  </div>
+                )}
                 {/* Process button */}
                 <Button
                   onClick={() => processarFonte(fonte)}
