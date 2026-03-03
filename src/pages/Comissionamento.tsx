@@ -17,8 +17,12 @@ import {
 import {
   ShoppingCart, CheckCircle, TrendingDown, DollarSign,
   Plus, RefreshCw, Loader2, GitCompare, RotateCcw,
-  FileSpreadsheet, Receipt,
+  FileSpreadsheet, Receipt, Trash2,
 } from 'lucide-react';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { ComissionamentoWizard } from '@/components/comissionamento/ComissionamentoWizard';
@@ -236,6 +240,25 @@ export default function ComissionamentoPage() {
     if (selectedId) loadStats(selectedId);
   };
 
+  const handleDeleteComissionamento = async () => {
+    if (!selectedId) return;
+    try {
+      // CASCADE will handle comissionamento_vendas, fontes, lal
+      const { error } = await supabase
+        .from('comissionamentos')
+        .delete()
+        .eq('id', selectedId);
+      if (error) throw error;
+      toast.success('Comissionamento excluído com sucesso');
+      setSelectedId('');
+      setStats(null);
+      setVendedorRows([]);
+      loadComissionamentos();
+    } catch (err: any) {
+      toast.error('Erro ao excluir: ' + err.message);
+    }
+  };
+
   return (
     <AppLayout title="Comissionamento">
       <div className="space-y-6">
@@ -283,15 +306,40 @@ export default function ComissionamentoPage() {
                   Novo
                 </Button>
                 {selectedId && (
-                  <Button
-                    onClick={() => handleOpenWizard('atualizar')}
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5"
-                  >
-                    <RefreshCw className="h-4 w-4" />
-                    Atualizar
-                  </Button>
+                  <>
+                    <Button
+                      onClick={() => handleOpenWizard('atualizar')}
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                      Atualizar
+                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="outline" size="sm" className="gap-1.5 text-destructive hover:text-destructive">
+                          <Trash2 className="h-4 w-4" />
+                          Excluir
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Excluir Comissionamento</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Tem certeza que deseja excluir o comissionamento "{selectedCom?.nome}"? 
+                            Todas as vendas vinculadas, fontes, LALs e dados de conciliação deste comissionamento serão removidos permanentemente.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                          <AlertDialogAction onClick={handleDeleteComissionamento} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                            Excluir
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </>
                 )}
               </div>
             </div>
