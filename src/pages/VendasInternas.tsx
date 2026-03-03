@@ -29,7 +29,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { Progress } from '@/components/ui/progress';
 
-type SortKey = 'vendedor' | 'protocolo_interno' | 'identificador_make' | 'cliente_nome' | 'cpf_cnpj' | 'operadora' | 'valor' | 'status_interno' | 'status_make' | 'data_venda' | 'data_instalacao' | 'linha_a_linha';
+type SortKey = 'vendedor' | 'protocolo_interno' | 'identificador_make' | 'cliente_nome' | 'cpf_cnpj' | 'telefone' | 'operadora' | 'empresa' | 'plano' | 'valor' | 'status_interno' | 'status_make' | 'data_venda' | 'data_instalacao' | 'linha_a_linha' | 'status_pag' | 'comissionamento_desconto' | 'receita_descontada';
 type SortDir = 'asc' | 'desc';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -61,6 +61,9 @@ type VendaComExtras = VendaInterna & {
   usuario?: { nome: string; email: string } | null;
   empresa?: { nome: string } | null;
   _linha_a_linha_apelido?: string;
+  _status_pag?: string | null;
+  _comissionamento_desconto?: string | null;
+  _receita_descontada?: number | null;
 };
 
 export default function VendasInternas() {
@@ -84,6 +87,9 @@ export default function VendasInternas() {
   const [statusMakeOptions, setStatusMakeOptions] = useState<string[]>([]);
   const [linhaALinhaFilter, setLinhaALinhaFilter] = useState<string>('all');
   const [linhaALinhaOptions, setLinhaALinhaOptions] = useState<string[]>([]);
+  const [statusPagFilter, setStatusPagFilter] = useState<string>('all');
+  const [empresaFilter, setEmpresaFilter] = useState<string>('all');
+  const [empresaOptions, setEmpresaOptions] = useState<{ id: string; nome: string }[]>([]);
   const [visibleCount, setVisibleCount] = useState(50);
   const [loadProgress, setLoadProgress] = useState(0);
   const [selectedVenda, setSelectedVenda] = useState<VendaComExtras | null>(null);
@@ -132,7 +138,22 @@ export default function VendasInternas() {
     fetchStatusMakeOptions();
     fetchLinhaALinhaOptions();
     fetchVendedorOptions();
+    fetchEmpresaOptions();
   }, []);
+
+  const fetchEmpresaOptions = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('empresas')
+        .select('id, nome')
+        .eq('ativa', true)
+        .order('nome');
+      if (error) throw error;
+      setEmpresaOptions((data || []).map((e: any) => ({ id: e.id, nome: e.nome })));
+    } catch (error) {
+      console.error('Error fetching empresa options:', error);
+    }
+  };
 
   const fetchLinhaALinhaOptions = async () => {
     try {
@@ -274,12 +295,34 @@ export default function VendasInternas() {
         }
       }
 
+      // Fetch comissionamento_vendas data
+      const comissaoMap: Record<string, { status_pag: string | null; comissionamento_desconto: string | null; receita_descontada: number | null }> = {};
+      if (vendaIds.length > 0) {
+        for (let i = 0; i < vendaIds.length; i += 500) {
+          const batch = vendaIds.slice(i, i + 500);
+          const { data: comData } = await supabase
+            .from('comissionamento_vendas')
+            .select('venda_interna_id, status_pag, comissionamento_desconto, receita_descontada')
+            .in('venda_interna_id', batch);
+          comData?.forEach(c => {
+            comissaoMap[c.venda_interna_id] = {
+              status_pag: c.status_pag,
+              comissionamento_desconto: c.comissionamento_desconto,
+              receita_descontada: c.receita_descontada,
+            };
+          });
+        }
+      }
+
       setLoadProgress(95);
 
-      // Enrich vendas with apelido
+      // Enrich vendas with apelido + comissao
       const enriched = allVendas.map(v => ({
         ...v,
         _linha_a_linha_apelido: conciliacaoMap[v.id] || '',
+        _status_pag: comissaoMap[v.id]?.status_pag || null,
+        _comissionamento_desconto: comissaoMap[v.id]?.comissionamento_desconto || null,
+        _receita_descontada: comissaoMap[v.id]?.receita_descontada || null,
       }));
 
       setTotalCount(enriched.length);
@@ -414,13 +457,16 @@ export default function VendasInternas() {
   };
 
   const exportToCSV = () => {
-    const headers = ['Protocolo', 'ID Make', 'Cliente', 'CPF/CNPJ', 'Operadora', 'Plano', 'Valor', 'Status', 'Status Make', 'Data Venda', 'Data Instalação', 'Linha a Linha'];
+    const headers = ['Vendedor', 'Protocolo', 'ID Make', 'Cliente', 'CPF/CNPJ', 'Telefone', 'Operadora', 'Empresa', 'Plano', 'Valor', 'Status', 'Status Make', 'Data Venda', 'Data Instalação', 'Linha a Linha', 'Status Pag', 'Desconto', 'Receita Descontada'];
     const rows = filteredVendas.map(v => [
+      v.usuario?.nome || '',
       v.protocolo_interno || '',
       v.identificador_make || '',
       v.cliente_nome,
       v.cpf_cnpj || '',
+      v.telefone || '',
       getOperadoraNome(v.operadora_id),
+      v.empresa?.nome || '',
       v.plano || '',
       v.valor?.toString() || '',
       statusLabels[v.status_interno],
@@ -428,6 +474,9 @@ export default function VendasInternas() {
       format(new Date(v.data_venda), 'dd/MM/yyyy'),
       v.data_instalacao ? format(new Date(v.data_instalacao), 'dd/MM/yyyy') : '',
       v._linha_a_linha_apelido || '',
+      v._status_pag || '',
+      v._comissionamento_desconto || '',
+      v._receita_descontada?.toString() || '',
     ]);
 
     const csvContent = [headers, ...rows]
@@ -445,12 +494,14 @@ export default function VendasInternas() {
 
   const hasActiveFilters = statusFilter !== 'all' || operadoraFilter !== 'all' || vendedorFilter !== 'all' ||
     statusMakeFilter !== 'all' || confirmadaFilter !== 'all' || linhaALinhaFilter !== 'all' ||
+    statusPagFilter !== 'all' || empresaFilter !== 'all' ||
     idMakeSearch !== '' || protocoloSearch !== '' ||
     dataVendaInicio !== null || dataVendaFim !== null || dataInstalacaoInicio !== null || dataInstalacaoFim !== null;
 
   const activeFilterCount = [
     statusFilter !== 'all', operadoraFilter !== 'all', vendedorFilter !== 'all',
     statusMakeFilter !== 'all', confirmadaFilter !== 'all', linhaALinhaFilter !== 'all',
+    statusPagFilter !== 'all', empresaFilter !== 'all',
     idMakeSearch, protocoloSearch,
     dataVendaInicio !== null || dataVendaFim !== null,
     dataInstalacaoInicio !== null || dataInstalacaoFim !== null,
@@ -463,6 +514,8 @@ export default function VendasInternas() {
     setStatusMakeFilter('all');
     setConfirmadaFilter('all');
     setLinhaALinhaFilter('all');
+    setStatusPagFilter('all');
+    setEmpresaFilter('all');
     setIdMakeSearch('');
     setProtocoloSearch('');
     setDataVendaInicio(null);
@@ -474,7 +527,7 @@ export default function VendasInternas() {
 
   useEffect(() => {
     setVisibleCount(50);
-  }, [searchTerm, statusFilter, operadoraFilter, vendedorFilter, statusMakeFilter, confirmadaFilter, linhaALinhaFilter, idMakeSearch, protocoloSearch]);
+  }, [searchTerm, statusFilter, operadoraFilter, vendedorFilter, statusMakeFilter, confirmadaFilter, linhaALinhaFilter, statusPagFilter, empresaFilter, idMakeSearch, protocoloSearch]);
 
   const filteredVendas = (() => {
     const filtered = vendas.filter(venda => {
@@ -502,10 +555,15 @@ export default function VendasInternas() {
 
       const matchesLinhaALinha = linhaALinhaFilter === 'all' ||
         (linhaALinhaFilter === '_sem_' ? !venda._linha_a_linha_apelido : venda._linha_a_linha_apelido === linhaALinhaFilter);
+
+      const matchesStatusPag = statusPagFilter === 'all' ||
+        (statusPagFilter === '_sem_' ? !venda._status_pag : venda._status_pag === statusPagFilter);
+
+      const matchesEmpresa = empresaFilter === 'all' || venda.empresa_id === empresaFilter;
       
       return matchesSearch && matchesStatus && matchesOperadora && matchesVendedor &&
         matchesStatusMake && matchesConfirmada &&
-        matchesIdMake && matchesProtocolo && matchesLinhaALinha;
+        matchesIdMake && matchesProtocolo && matchesLinhaALinha && matchesStatusPag && matchesEmpresa;
     });
 
     if (!sortKey) return filtered;
@@ -537,6 +595,14 @@ export default function VendasInternas() {
           valA = a._linha_a_linha_apelido || '';
           valB = b._linha_a_linha_apelido || '';
           break;
+        case 'empresa':
+          valA = a.empresa?.nome || '';
+          valB = b.empresa?.nome || '';
+          break;
+        case 'receita_descontada':
+          valA = a._receita_descontada ?? 0;
+          valB = b._receita_descontada ?? 0;
+          return sortDir === 'asc' ? valA - valB : valB - valA;
         default:
           valA = (a as any)[sortKey] || '';
           valB = (b as any)[sortKey] || '';
@@ -699,6 +765,34 @@ export default function VendasInternas() {
                       </Select>
                     </div>
                     <div>
+                      <Label className="text-xs mb-1.5 block">Empresa</Label>
+                      <Select value={empresaFilter} onValueChange={setEmpresaFilter}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todas</SelectItem>
+                          {empresaOptions.map(({ id, nome }) => (
+                            <SelectItem key={id} value={id}>{nome}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs mb-1.5 block">Status Pag</Label>
+                      <Select value={statusPagFilter} onValueChange={setStatusPagFilter}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todos</SelectItem>
+                          <SelectItem value="_sem_">Sem Status</SelectItem>
+                          <SelectItem value="OK">OK</SelectItem>
+                          <SelectItem value="DESCONTADA">DESCONTADA</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
                       <Label className="text-xs mb-1.5 block">ID Make</Label>
                       <Input
                         placeholder="Buscar ID Make..."
@@ -812,6 +906,15 @@ export default function VendasInternas() {
                     <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('operadora')}>
                       <span className="flex items-center">Operadora<SortIcon col="operadora" /></span>
                     </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('empresa')}>
+                      <span className="flex items-center">Empresa<SortIcon col="empresa" /></span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('telefone')}>
+                      <span className="flex items-center">Telefone<SortIcon col="telefone" /></span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('plano')}>
+                      <span className="flex items-center">Plano<SortIcon col="plano" /></span>
+                    </TableHead>
                     <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('valor')}>
                       <span className="flex items-center">Valor<SortIcon col="valor" /></span>
                     </TableHead>
@@ -830,13 +933,22 @@ export default function VendasInternas() {
                     <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('data_instalacao')}>
                       <span className="flex items-center">Data Instalação<SortIcon col="data_instalacao" /></span>
                     </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('status_pag')}>
+                      <span className="flex items-center">Status Pag<SortIcon col="status_pag" /></span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('comissionamento_desconto')}>
+                      <span className="flex items-center">Desconto<SortIcon col="comissionamento_desconto" /></span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('receita_descontada')}>
+                      <span className="flex items-center">Receita Desc.<SortIcon col="receita_descontada" /></span>
+                    </TableHead>
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {!hasFetched ? (
                     <TableRow>
-                      <TableCell colSpan={14} className="text-center py-12 text-muted-foreground">
+                      <TableCell colSpan={20} className="text-center py-12 text-muted-foreground">
                         <div className="flex flex-col items-center gap-2">
                           <Filter className="h-8 w-8 opacity-40" />
                           <p>Utilize os filtros acima e clique em <strong>Buscar</strong> para carregar as vendas</p>
@@ -845,13 +957,13 @@ export default function VendasInternas() {
                     </TableRow>
                   ) : isLoading ? (
                     <TableRow>
-                      <TableCell colSpan={14} className="text-center py-12">
+                      <TableCell colSpan={20} className="text-center py-12">
                         <Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" />
                       </TableCell>
                     </TableRow>
                   ) : filteredVendas.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={14} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={20} className="text-center py-8 text-muted-foreground">
                         Nenhuma venda encontrada
                       </TableCell>
                     </TableRow>
@@ -872,6 +984,9 @@ export default function VendasInternas() {
                         <TableCell className="font-medium">{venda.cliente_nome}</TableCell>
                         <TableCell className="font-mono text-sm">{venda.cpf_cnpj || '-'}</TableCell>
                         <TableCell>{getOperadoraNome(venda.operadora_id)}</TableCell>
+                        <TableCell className="text-sm">{venda.empresa?.nome || '-'}</TableCell>
+                        <TableCell className="text-sm">{venda.telefone || '-'}</TableCell>
+                        <TableCell className="text-sm">{venda.plano || '-'}</TableCell>
                         <TableCell>
                           {venda.valor 
                             ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(venda.valor)
@@ -893,6 +1008,20 @@ export default function VendasInternas() {
                         <TableCell>
                           {venda.data_instalacao 
                             ? format(new Date(venda.data_instalacao), 'dd/MM/yyyy', { locale: ptBR })
+                            : '-'
+                          }
+                        </TableCell>
+                        <TableCell>
+                          {venda._status_pag ? (
+                            <Badge variant={venda._status_pag === 'OK' ? 'default' : 'destructive'}>
+                              {venda._status_pag}
+                            </Badge>
+                          ) : '-'}
+                        </TableCell>
+                        <TableCell className="text-sm">{venda._comissionamento_desconto || '-'}</TableCell>
+                        <TableCell>
+                          {venda._receita_descontada != null
+                            ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(venda._receita_descontada)
                             : '-'
                           }
                         </TableCell>
