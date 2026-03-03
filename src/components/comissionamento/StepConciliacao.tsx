@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -12,13 +12,11 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { Progress } from '@/components/ui/progress';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
-  Loader2, GitCompare, CheckCircle2, Search, Download, AlertCircle,
+  Loader2, GitCompare, CheckCircle2, Search, XCircle, RefreshCw,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
 
 interface Props {
   comissionamentoId: string;
@@ -38,6 +36,10 @@ interface ComVenda {
   status_make?: string;
   valor_venda?: number;
   vendedor_nome?: string;
+  // Pre-match fields (computed client-side)
+  matched_linha_id?: string | null;
+  matched_valor_lq?: number | null;
+  matched_apelido?: string | null;
 }
 
 export function StepConciliacao({ comissionamentoId }: Props) {
@@ -47,18 +49,29 @@ export function StepConciliacao({ comissionamentoId }: Props) {
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
+  const [matchRan, setMatchRan] = useState(false);
 
   const [statusPagFilter, setStatusPagFilter] = useState<string>('all');
   const [statusMakeFilter, setStatusMakeFilter] = useState<string>('all');
+  const [matchFilter, setMatchFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectAll, setSelectAll] = useState(false);
 
+  // Collect unique status_make values for dynamic filter
+  const uniqueStatusMake = useMemo(() => {
+    const set = new Set<string>();
+    vendas.forEach(v => {
+      if (v.status_make) set.add(v.status_make.trim());
+    });
+    return Array.from(set).sort();
+  }, [vendas]);
+
   const loadData = useCallback(async () => {
     setIsLoading(true);
+    setMatchRan(false);
     try {
-      // Fetch ALL comissionamento_vendas using recursive batching
       const allVendas: any[] = [];
       let offset = 0;
       const batchSize = 1000;
@@ -75,7 +88,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           .eq('comissionamento_id', comissionamentoId)
           .order('created_at', { ascending: false })
           .range(offset, offset + batchSize - 1);
-        
+
         if (error) throw error;
         if (!data || data.length === 0) break;
         allVendas.push(...data);
@@ -90,7 +103,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           .eq('comissionamento_id', comissionamentoId),
       ]);
 
-      const mapped = allVendas.map((row: any) => {
+      const mapped: ComVenda[] = allVendas.map((row: any) => {
         const vi = row.vendas_internas;
         return {
           id: row.id,
@@ -106,11 +119,20 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           status_make: vi?.status_make,
           valor_venda: vi?.valor,
           vendedor_nome: vi?.usuarios?.nome,
+          matched_linha_id: row.linha_operadora_id || null,
+          matched_valor_lq: row.receita_lal || null,
+          matched_apelido: row.lal_apelido || null,
         };
       });
 
+      const lalData = lalRes.data || [];
       setVendas(mapped);
-      if (lalRes.data) setLals(lalRes.data);
+      setLals(lalData);
+
+      // Auto-run pre-match if there are LALs and unprocessed vendas
+      if (lalData.length > 0) {
+        await runPreMatch(mapped, lalData);
+      }
     } catch (err: any) {
       toast.error('Erro ao carregar dados: ' + err.message);
     } finally {
@@ -118,67 +140,13 @@ export function StepConciliacao({ comissionamentoId }: Props) {
     }
   }, [comissionamentoId]);
 
-  useEffect(() => { loadData(); }, [loadData]);
-
-  const filteredVendas = useMemo(() => {
-    let result = vendas;
-    if (statusPagFilter !== 'all') {
-      if (statusPagFilter === 'vazio') {
-        result = result.filter(v => !v.status_pag);
-      } else {
-        result = result.filter(v => v.status_pag === statusPagFilter);
-      }
-    }
-    if (statusMakeFilter !== 'all') {
-      result = result.filter(v => (v.status_make || '').toLowerCase().startsWith(statusMakeFilter));
-    }
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      result = result.filter(v =>
-        (v.cliente_nome || '').toLowerCase().includes(term) ||
-        (v.cpf_cnpj || '').includes(term) ||
-        (v.protocolo_interno || '').toLowerCase().includes(term) ||
-        (v.vendedor_nome || '').toLowerCase().includes(term)
-      );
-    }
-    return result;
-  }, [vendas, statusPagFilter, statusMakeFilter, searchTerm]);
-
-  const displayedVendas = filteredVendas.slice(0, 200);
-
-  const handleSelectAll = (checked: boolean) => {
-    setSelectAll(checked);
-    if (checked) {
-      setSelectedIds(new Set(filteredVendas.map(v => v.id)));
-    } else {
-      setSelectedIds(new Set());
-    }
-  };
-
-  const toggleSelect = (id: string) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const runConciliacao = async () => {
-    if (lals.length === 0) {
-      toast.error('Nenhum LAL importado neste comissionamento');
-      return;
-    }
-
-    setIsProcessing(true);
-    const vendasToProcess = vendas.filter(v => !v.status_pag && !v.linha_operadora_id);
-    setProgress({ current: 0, total: vendasToProcess.length });
-
+  const runPreMatch = async (vendasData: ComVenda[], lalData: any[]) => {
     try {
-      const lalApelidos = lals.map((l: any) => l.apelido);
+      const lalApelidos = lalData.map((l: any) => l.apelido);
       const lalMatchMap = new Map<string, string>();
-      lals.forEach((l: any) => lalMatchMap.set(l.apelido, l.tipo_match));
+      lalData.forEach((l: any) => lalMatchMap.set(l.apelido, l.tipo_match));
 
+      // Fetch all linhas for all LALs
       const allLinhas: any[] = [];
       for (const apelido of lalApelidos) {
         let offset = 0;
@@ -209,18 +177,17 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         }
       }
 
-      const existingConcIds = vendas.filter(v => v.linha_operadora_id).map(v => v.linha_operadora_id!);
-      existingConcIds.forEach(id => usedLinhaIds.add(id));
+      // Mark already-linked as used
+      vendasData.filter(v => v.linha_operadora_id).forEach(v => usedLinhaIds.add(v.linha_operadora_id!));
 
-      let matchCount = 0;
-      const updates: { id: string; data: any }[] = [];
+      const updated = vendasData.map(venda => {
+        // Already has a link saved in DB
+        if (venda.linha_operadora_id) return venda;
 
-      for (let i = 0; i < vendasToProcess.length; i++) {
-        const venda = vendasToProcess[i];
         let matchedLinha: any = null;
         let matchedApelido: string | null = null;
 
-        for (const lal of lals) {
+        for (const lal of lalData) {
           const tipoMatch = lal.tipo_match;
 
           if (tipoMatch === 'protocolo' && venda.protocolo_interno) {
@@ -244,53 +211,102 @@ export function StepConciliacao({ comissionamentoId }: Props) {
 
         if (matchedLinha) {
           usedLinhaIds.add(matchedLinha.id);
-          updates.push({
-            id: venda.id,
-            data: {
-              linha_operadora_id: matchedLinha.id,
-              receita_lal: matchedLinha.valor_lq,
-              lal_apelido: matchedApelido,
-              status_pag: 'OK',
-            },
-          });
-          matchCount++;
+          return {
+            ...venda,
+            matched_linha_id: matchedLinha.id,
+            matched_valor_lq: matchedLinha.valor_lq,
+            matched_apelido: matchedApelido,
+          };
         }
 
-        if (i % 100 === 0) {
-          setProgress({ current: i, total: vendasToProcess.length });
-          await new Promise(r => setTimeout(r, 5));
-        }
-      }
+        return { ...venda, matched_linha_id: null, matched_valor_lq: null, matched_apelido: null };
+      });
 
-      for (let i = 0; i < updates.length; i += 50) {
-        const batch = updates.slice(i, i + 50);
-        await Promise.all(
-          batch.map(u => supabase.from('comissionamento_vendas').update(u.data).eq('id', u.id))
-        );
-      }
-
-      toast.success(`Conciliação concluída: ${matchCount} de ${vendasToProcess.length} vendas conciliadas`);
-      loadData();
+      setVendas(updated);
+      setMatchRan(true);
     } catch (err: any) {
-      toast.error('Erro: ' + err.message);
-    } finally {
-      setIsProcessing(false);
-      setProgress(null);
+      console.error('Pre-match error:', err);
     }
   };
 
-  const bulkUpdateStatusPag = async (newStatus: 'OK' | 'DESCONTADA') => {
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const filteredVendas = useMemo(() => {
+    let result = vendas;
+    if (statusPagFilter !== 'all') {
+      if (statusPagFilter === 'vazio') {
+        result = result.filter(v => !v.status_pag);
+      } else {
+        result = result.filter(v => v.status_pag === statusPagFilter);
+      }
+    }
+    if (statusMakeFilter !== 'all') {
+      result = result.filter(v => (v.status_make || '').toLowerCase() === statusMakeFilter.toLowerCase());
+    }
+    if (matchFilter !== 'all') {
+      if (matchFilter === 'encontrada') {
+        result = result.filter(v => v.matched_linha_id || v.linha_operadora_id);
+      } else {
+        result = result.filter(v => !v.matched_linha_id && !v.linha_operadora_id);
+      }
+    }
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      result = result.filter(v =>
+        (v.cliente_nome || '').toLowerCase().includes(term) ||
+        (v.cpf_cnpj || '').includes(term) ||
+        (v.protocolo_interno || '').toLowerCase().includes(term) ||
+        (v.vendedor_nome || '').toLowerCase().includes(term)
+      );
+    }
+    return result;
+  }, [vendas, statusPagFilter, statusMakeFilter, matchFilter, searchTerm]);
+
+  const displayedVendas = filteredVendas.slice(0, 200);
+
+  const handleSelectAll = (checked: boolean) => {
+    setSelectAll(checked);
+    if (checked) {
+      setSelectedIds(new Set(filteredVendas.map(v => v.id)));
+    } else {
+      setSelectedIds(new Set());
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const bulkSaveAndMark = async (newStatus: 'OK' | 'DESCONTADA') => {
     if (selectedIds.size === 0) { toast.error('Selecione vendas primeiro'); return; }
     setIsProcessing(true);
     try {
       const ids = Array.from(selectedIds);
-      for (let i = 0; i < ids.length; i += 50) {
-        const batch = ids.slice(i, i + 50);
+      const vendasToUpdate = vendas.filter(v => ids.includes(v.id));
+
+      for (let i = 0; i < vendasToUpdate.length; i += 50) {
+        const batch = vendasToUpdate.slice(i, i + 50);
         await Promise.all(
-          batch.map(id => supabase.from('comissionamento_vendas').update({ status_pag: newStatus as any }).eq('id', id))
+          batch.map(v => {
+            const updateData: any = { status_pag: newStatus };
+            // If pre-matched but not yet saved to DB, save the link too
+            if (!v.linha_operadora_id && v.matched_linha_id) {
+              updateData.linha_operadora_id = v.matched_linha_id;
+              updateData.receita_lal = v.matched_valor_lq;
+              updateData.lal_apelido = v.matched_apelido;
+            }
+            return supabase.from('comissionamento_vendas').update(updateData).eq('id', v.id);
+          })
         );
+        setProgress({ current: Math.min(i + 50, vendasToUpdate.length), total: vendasToUpdate.length });
       }
-      toast.success(`${ids.length} vendas atualizadas para ${newStatus}`);
+
+      toast.success(`${vendasToUpdate.length} vendas marcadas como ${newStatus}`);
       setSelectedIds(new Set());
       setSelectAll(false);
       loadData();
@@ -298,6 +314,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       toast.error('Erro: ' + err.message);
     } finally {
       setIsProcessing(false);
+      setProgress(null);
     }
   };
 
@@ -310,17 +327,27 @@ export function StepConciliacao({ comissionamentoId }: Props) {
     return <Badge className="bg-destructive/20 text-destructive text-xs">DESCONTADA</Badge>;
   };
 
-  // Match indicators (P5) - moved before early return
+  const matchBadge = (v: ComVenda) => {
+    if (v.linha_operadora_id) return <Badge className="bg-success/20 text-success text-xs">Vinculada</Badge>;
+    if (v.matched_linha_id) return <Badge className="bg-blue-500/20 text-blue-600 text-xs">Encontrada</Badge>;
+    return <Badge variant="outline" className="text-xs text-muted-foreground">Não encontrada</Badge>;
+  };
+
   const matchStats = useMemo(() => {
     const total = vendas.length;
-    const found = vendas.filter(v => v.linha_operadora_id).length;
+    const found = vendas.filter(v => v.matched_linha_id || v.linha_operadora_id).length;
     const notFound = total - found;
     const percentage = total > 0 ? ((found / total) * 100).toFixed(1) : '0';
     return { total, found, notFound, percentage };
   }, [vendas]);
 
   if (isLoading) {
-    return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
+    return (
+      <div className="flex flex-col items-center justify-center py-12 gap-2">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        <p className="text-sm text-muted-foreground">Carregando e analisando matches...</p>
+      </div>
+    );
   }
 
   const stats = {
@@ -332,7 +359,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* Match Indicators - P5 */}
+      {/* Match Indicators */}
       <Card className="border-primary/20 bg-primary/5">
         <CardContent className="pt-4 pb-4">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -357,42 +384,92 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         </CardContent>
       </Card>
 
-      {/* Summary */}
+      {/* Status Pag Summary */}
       <div className="grid grid-cols-4 gap-3">
         <Card className="p-3 text-center">
           <p className="text-xs text-muted-foreground">Total</p>
           <p className="text-lg font-bold">{stats.total}</p>
         </Card>
-        <Card className="p-3 text-center">
+        <Card className="p-3 text-center cursor-pointer hover:bg-accent/50" onClick={() => setStatusPagFilter(statusPagFilter === 'OK' ? 'all' : 'OK')}>
           <p className="text-xs text-muted-foreground">OK</p>
           <p className="text-lg font-bold text-success">{stats.ok}</p>
         </Card>
-        <Card className="p-3 text-center">
+        <Card className="p-3 text-center cursor-pointer hover:bg-accent/50" onClick={() => setStatusPagFilter(statusPagFilter === 'DESCONTADA' ? 'all' : 'DESCONTADA')}>
           <p className="text-xs text-muted-foreground">Descontada</p>
           <p className="text-lg font-bold text-destructive">{stats.descontada}</p>
         </Card>
-        <Card className="p-3 text-center">
+        <Card className="p-3 text-center cursor-pointer hover:bg-accent/50" onClick={() => setStatusPagFilter(statusPagFilter === 'vazio' ? 'all' : 'vazio')}>
           <p className="text-xs text-muted-foreground">Pendente</p>
           <p className="text-lg font-bold text-warning">{stats.pendente}</p>
         </Card>
       </div>
 
-      {/* Actions */}
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" onClick={runConciliacao} disabled={isProcessing} className="gap-1.5">
-          {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <GitCompare className="h-4 w-4" />}
-          Conciliar Automaticamente
+      {/* Filters */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <div className="relative">
+          <Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            className="h-8 pl-8 w-48 text-sm"
+          />
+        </div>
+        <Select value={matchFilter} onValueChange={setMatchFilter}>
+          <SelectTrigger className="h-8 w-40 text-xs"><SelectValue placeholder="Match LAL" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos</SelectItem>
+            <SelectItem value="encontrada">Encontrada no LAL</SelectItem>
+            <SelectItem value="nao_encontrada">Não Encontrada</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={statusMakeFilter} onValueChange={setStatusMakeFilter}>
+          <SelectTrigger className="h-8 w-40 text-xs"><SelectValue placeholder="Status Pedido" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos os Status</SelectItem>
+            {uniqueStatusMake.map(s => (
+              <SelectItem key={s} value={s}>{s}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={statusPagFilter} onValueChange={setStatusPagFilter}>
+          <SelectTrigger className="h-8 w-36 text-xs"><SelectValue placeholder="Status Pag" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos</SelectItem>
+            <SelectItem value="OK">OK</SelectItem>
+            <SelectItem value="DESCONTADA">Descontada</SelectItem>
+            <SelectItem value="vazio">Pendente</SelectItem>
+          </SelectContent>
+        </Select>
+        <Button variant="ghost" size="sm" onClick={loadData} className="h-8 gap-1">
+          <RefreshCw className="h-3.5 w-3.5" /> Recarregar
         </Button>
-        {selectedIds.size > 0 && (
+        <span className="text-xs text-muted-foreground ml-auto">
+          {filteredVendas.length} resultados
+        </span>
+      </div>
+
+      {/* Bulk Actions */}
+      <div className="flex flex-wrap gap-2 items-center">
+        {selectedIds.size > 0 ? (
           <>
-            <Button size="sm" variant="outline" onClick={() => bulkUpdateStatusPag('OK')} disabled={isProcessing} className="gap-1.5">
-              <CheckCircle2 className="h-4 w-4" />
-              Marcar {selectedIds.size} como OK
+            <span className="text-sm font-medium">{selectedIds.size} selecionadas</span>
+            <Button size="sm" onClick={() => bulkSaveAndMark('OK')} disabled={isProcessing} className="gap-1.5">
+              {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              Marcar como OK
             </Button>
-            <Button size="sm" variant="outline" onClick={() => bulkUpdateStatusPag('DESCONTADA')} disabled={isProcessing} className="gap-1.5 text-destructive">
-              Marcar {selectedIds.size} como DESCONTADA
+            <Button size="sm" variant="destructive" onClick={() => bulkSaveAndMark('DESCONTADA')} disabled={isProcessing} className="gap-1.5">
+              {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+              Marcar como DESCONTADA
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => { setSelectedIds(new Set()); setSelectAll(false); }}>
+              Limpar seleção
             </Button>
           </>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Use os filtros para encontrar as vendas desejadas, selecione e marque como OK ou DESCONTADA.
+          </p>
         )}
       </div>
 
@@ -403,40 +480,6 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         </div>
       )}
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-2">
-        <div className="relative">
-          <Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Buscar..."
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            className="h-8 pl-8 w-48 text-sm"
-          />
-        </div>
-        <Select value={statusPagFilter} onValueChange={setStatusPagFilter}>
-          <SelectTrigger className="h-8 w-36 text-xs"><SelectValue placeholder="status_pag" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos</SelectItem>
-            <SelectItem value="OK">OK</SelectItem>
-            <SelectItem value="DESCONTADA">Descontada</SelectItem>
-            <SelectItem value="vazio">Pendente</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={statusMakeFilter} onValueChange={setStatusMakeFilter}>
-          <SelectTrigger className="h-8 w-36 text-xs"><SelectValue placeholder="status_pedido" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos</SelectItem>
-            <SelectItem value="instalad">Instalada</SelectItem>
-            <SelectItem value="churn">Churn</SelectItem>
-            <SelectItem value="cancelad">Cancelada</SelectItem>
-          </SelectContent>
-        </Select>
-        <span className="text-xs text-muted-foreground self-center">
-          {filteredVendas.length} resultados
-        </span>
-      </div>
-
       {/* Table */}
       <div className="overflow-x-auto border rounded-lg max-h-[400px]">
         <Table>
@@ -445,6 +488,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
               <TableHead className="w-8">
                 <Checkbox checked={selectAll} onCheckedChange={handleSelectAll} />
               </TableHead>
+              <TableHead className="text-xs">Match</TableHead>
               <TableHead className="text-xs">Cliente</TableHead>
               <TableHead className="text-xs">CPF</TableHead>
               <TableHead className="text-xs">Protocolo</TableHead>
@@ -462,6 +506,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
                 <TableCell>
                   <Checkbox checked={selectedIds.has(v.id)} onCheckedChange={() => toggleSelect(v.id)} />
                 </TableCell>
+                <TableCell>{matchBadge(v)}</TableCell>
                 <TableCell className="text-xs max-w-[120px] truncate">{v.cliente_nome || '-'}</TableCell>
                 <TableCell className="text-xs font-mono">{v.cpf_cnpj || '-'}</TableCell>
                 <TableCell className="text-xs font-mono">{v.protocolo_interno || '-'}</TableCell>
@@ -469,8 +514,8 @@ export function StepConciliacao({ comissionamentoId }: Props) {
                 <TableCell className="text-xs">{v.status_make || '-'}</TableCell>
                 <TableCell>{statusPagBadge(v.status_pag)}</TableCell>
                 <TableCell className="text-xs">{formatBRL(v.receita_interna)}</TableCell>
-                <TableCell className="text-xs">{formatBRL(v.receita_lal)}</TableCell>
-                <TableCell className="text-xs max-w-[80px] truncate">{v.lal_apelido || '-'}</TableCell>
+                <TableCell className="text-xs">{formatBRL(v.matched_valor_lq ?? v.receita_lal)}</TableCell>
+                <TableCell className="text-xs max-w-[80px] truncate">{v.matched_apelido ?? v.lal_apelido ?? '-'}</TableCell>
               </TableRow>
             ))}
           </TableBody>
