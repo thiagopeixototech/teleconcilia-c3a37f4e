@@ -1295,7 +1295,7 @@ export default function ImportacaoVendas() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {result.errors.map((err, i) => {
+                        {result.errors.slice(0, 200).map((err, i) => {
                           const correction = errorCorrections[i];
                           const correctedVendedor = correction?.vendedor_id
                             ? usuarios.find(u => u.id === correction.vendedor_id)?.nome
@@ -1375,6 +1375,11 @@ export default function ImportacaoVendas() {
                       </TableBody>
                     </Table>
                   </div>
+                  {result.errors.length > 200 && (
+                    <p className="text-xs text-muted-foreground text-center mt-2">
+                      Mostrando 200 de {result.errors.length} erros. Exporte o CSV para ver todos.
+                    </p>
+                  )}
                 </>
               )}
 
