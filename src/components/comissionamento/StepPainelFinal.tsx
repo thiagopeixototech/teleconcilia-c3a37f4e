@@ -225,38 +225,35 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
         }
       }
 
-      // 3. Fetch all conciliacoes for vendas in this comissionamento
-      const vendaIds = vendas.map(v => v.venda_interna_id);
-      let conciliacoes: any[] = [];
-      if (vendaIds.length > 0) {
-        const batchSize = 50;
-        for (let i = 0; i < vendaIds.length; i += batchSize) {
-          const batch = vendaIds.slice(i, i + batchSize);
-          const { data, error } = await supabase
-            .from('conciliacoes')
-            .select('*')
-            .in('venda_interna_id', batch);
-          if (error) throw error;
-          conciliacoes = conciliacoes.concat(data || []);
+      // 3. Fetch comissionamento_vendas with linha_operadora_id to know which lines matched
+      let allComVendas: any[] = [];
+      let offset = 0;
+      while (true) {
+        const { data, error } = await supabase
+          .from('comissionamento_vendas')
+          .select('venda_interna_id, linha_operadora_id, status_pag')
+          .eq('comissionamento_id', comissionamentoId)
+          .range(offset, offset + 999);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        allComVendas = allComVendas.concat(data);
+        if (data.length < 1000) break;
+        offset += 1000;
+      }
+
+      // Build indexes using comissionamento_vendas (the actual match source)
+      const cvByLinhaId = new Map<string, any>();
+      for (const cv of allComVendas) {
+        if (cv.linha_operadora_id) {
+          cvByLinhaId.set(cv.linha_operadora_id, cv);
         }
       }
 
-      // Build indexes
-      // conciliacao by linha_operadora_id
-      const concByLinhaId = new Map<string, any>();
-      const concByVendaId = new Map<string, any>();
-      for (const c of conciliacoes) {
-        concByLinhaId.set(c.linha_operadora_id, c);
-        concByVendaId.set(c.venda_interna_id, c);
-      }
-
-      // Venda info by venda_interna_id
       const vendaById = new Map<string, VendaRow>();
       for (const v of vendas) {
         vendaById.set(v.venda_interna_id, v);
       }
 
-      // Linha operadora by id
       const linhaById = new Map<string, any>();
       for (const l of linhasOperadora) {
         linhaById.set(l.id, l);
@@ -267,23 +264,22 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
         'Operadora', 'Protocolo Operadora', 'CPF/CNPJ', 'Cliente', 'Telefone',
         'Plano', 'Tipo Plano', 'Valor', 'Valor Make', 'Valor LQ',
         'Data Status', 'Status Operadora', 'Quinzena Ref', 'Apelido Lote', 'Arquivo Origem',
-        // Colunas de conciliação
-        'Status Conciliação', 'Tipo Match', 'Score Match',
-        // Colunas da venda interna
+        'Status Conciliação', 'Status Pag',
         'Venda ID', 'Vendedor', 'Protocolo Interno', 'Data Venda', 'Data Instalação',
         'Status Make', 'Empresa/Operadora', 'Valor Venda Interna',
       ];
       const rows1 = linhasOperadora.map(l => {
-        const conc = concByLinhaId.get(l.id);
-        const venda = conc ? vendaById.get(conc.venda_interna_id) : null;
+        const cv = cvByLinhaId.get(l.id);
+        const venda = cv ? vendaById.get(cv.venda_interna_id) : null;
+        const encontrado = !!cv;
         return [
           l.operadora || '', l.protocolo_operadora || '', l.cpf_cnpj || '',
           l.cliente_nome || '', l.telefone || '', l.plano || '', l.tipo_plano || '',
           l.valor?.toString() || '', l.valor_make?.toString() || '', l.valor_lq?.toString() || '',
           l.data_status || '', l.status_operadora || '', l.quinzena_ref || '',
           l.apelido || '', l.arquivo_origem || '',
-          conc ? (conc.status_final === 'conciliado' ? 'Encontrado' : 'Divergente') : 'Não encontrado',
-          conc?.tipo_match || '', conc?.score_match?.toString() || '',
+          encontrado ? 'Encontrado' : 'Não encontrado',
+          cv?.status_pag || '',
           venda?.venda_interna_id || '', venda?.vendedor_nome || '',
           venda?.protocolo_interno || '', '', venda?.data_instalacao || '',
           venda?.status_make || '', venda?.operadora_nome || '',
@@ -296,15 +292,15 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
         'Vendedor', 'Protocolo Interno', 'CPF/CNPJ', 'Cliente', 'Operadora',
         'Data Instalação', 'Status Make', 'Valor', 'Status Pag', 'Receita Interna',
         'Receita LAL', 'LAL Apelido', 'Estorno', 'Comiss. Desconto',
-        // Colunas de conciliação
-        'Status Conciliação', 'Tipo Match', 'Score Match',
-        // Colunas do LAL
+        'Status Conciliação',
         'LAL Protocolo Operadora', 'LAL CPF/CNPJ', 'LAL Cliente', 'LAL Plano',
         'LAL Valor', 'LAL Data Status', 'LAL Status Operadora', 'LAL Quinzena',
       ];
       const rows2 = vendas.map(v => {
-        const conc = concByVendaId.get(v.venda_interna_id);
-        const linha = conc ? linhaById.get(conc.linha_operadora_id) : null;
+        // Find the comissionamento_vendas row for this venda
+        const cv = allComVendas.find((c: any) => c.venda_interna_id === v.venda_interna_id);
+        const linha = cv?.linha_operadora_id ? linhaById.get(cv.linha_operadora_id) : null;
+        const encontrado = !!linha;
         return [
           v.vendedor_nome || '', v.protocolo_interno || '', v.cpf_cnpj || '',
           v.cliente_nome || '', v.operadora_nome || '', v.data_instalacao || '',
@@ -312,8 +308,7 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
           v.status_pag || '', v.receita_interna?.toString() || '',
           v.receita_lal?.toString() || '', v.lal_apelido || '',
           v.receita_descontada?.toString() || '', v.comissionamento_desconto || '',
-          conc ? (conc.status_final === 'conciliado' ? 'Encontrado' : 'Divergente') : 'Não encontrado no Linha a Linha',
-          conc?.tipo_match || '', conc?.score_match?.toString() || '',
+          encontrado ? 'Encontrado' : 'Não encontrado no Linha a Linha',
           linha?.protocolo_operadora || '', linha?.cpf_cnpj || '',
           linha?.cliente_nome || '', linha?.plano || '',
           linha?.valor?.toString() || '', linha?.data_status || '',
