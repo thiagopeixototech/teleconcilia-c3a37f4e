@@ -47,18 +47,12 @@ const statusLabels: Record<StatusOperadora, string> = {
   pendente: 'Pendente',
 };
 
-interface LinhaAgrupada {
-  key: string;
+interface PreviewRow {
   cliente_nome: string | null;
   cpf_cnpj: string | null;
   protocolo_operadora: string | null;
-  telefone: string | null;
-  planos: string[];
-  valor_total: number;
-  data_status: string | null;
-  status_operadora: StatusOperadora;
-  quinzena_ref: string | null;
-  linhas_originais: Record<string, string>[];
+  plano: string | null;
+  valor: number;
 }
 
 interface ImportacaoInfo {
@@ -90,7 +84,7 @@ export default function LinhaOperadoraPage() {
   const [selectedOperadoraUpload, setSelectedOperadoraUpload] = useState<string>('');
   const [selectedMapeamentoId, setSelectedMapeamentoId] = useState<string>('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewData, setPreviewData] = useState<LinhaAgrupada[]>([]);
+  const [previewData, setPreviewData] = useState<PreviewRow[]>([]);
   const [showPreview, setShowPreview] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [apelidoLote, setApelidoLote] = useState('');
@@ -279,46 +273,12 @@ export default function LinhaOperadoraPage() {
 
   // normalizeCpfCnpj imported from lib
 
-  const agruparLinhas = (
+  // Each CSV row becomes one individual record (no grouping)
+  const buildLinhas = (
     rows: Record<string, string>[], 
     mapeamento: Record<CampoSistema, string>
-  ): LinhaAgrupada[] => {
-    const grupos: Map<string, LinhaAgrupada> = new Map();
-
-    for (const row of rows) {
-      const cpf_cnpj = row[mapeamento.cpf_cnpj] || null;
-      const protocolo = row[mapeamento.protocolo_operadora] || null;
-      const key = normalizeCpfCnpj(cpf_cnpj) || protocolo || `row-${Math.random()}`;
-      const valor = row[mapeamento.valor] 
-        ? parseFloat(row[mapeamento.valor].replace(',', '.').replace(/[^\d.-]/g, '')) 
-        : 0;
-      const plano = row[mapeamento.plano] || null;
-
-      if (grupos.has(key)) {
-        const grupo = grupos.get(key)!;
-        grupo.valor_total += valor;
-        if (plano && !grupo.planos.includes(plano)) {
-          grupo.planos.push(plano);
-        }
-        grupo.linhas_originais.push(row);
-      } else {
-        grupos.set(key, {
-          key,
-          cliente_nome: row[mapeamento.cliente_nome] || null,
-          cpf_cnpj,
-          protocolo_operadora: protocolo,
-          telefone: row[mapeamento.telefone] || null,
-          planos: plano ? [plano] : [],
-          valor_total: valor,
-          data_status: row[mapeamento.data_status] || null,
-          status_operadora: (row[mapeamento.status_operadora] as StatusOperadora) || 'pendente',
-          quinzena_ref: row[mapeamento.quinzena_ref] || null,
-          linhas_originais: [row],
-        });
-      }
-    }
-
-    return Array.from(grupos.values());
+  ): Record<string, string>[] => {
+    return rows;
   };
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -343,8 +303,15 @@ export default function LinhaOperadoraPage() {
         setUploadError('Arquivo vazio ou formato inválido');
         return;
       }
-      const agrupadas = agruparLinhas(rows, mapeamento.mapeamento as Record<CampoSistema, string>);
-      setPreviewData(agrupadas.slice(0, 10));
+      const map = mapeamento.mapeamento as Record<CampoSistema, string>;
+      const preview: PreviewRow[] = rows.slice(0, 10).map(row => ({
+        cliente_nome: row[map.cliente_nome] || null,
+        cpf_cnpj: row[map.cpf_cnpj] || null,
+        protocolo_operadora: row[map.protocolo_operadora] || null,
+        plano: row[map.plano] || null,
+        valor: row[map.valor] ? parseFloat(row[map.valor].replace(',', '.').replace(/[^\d.-]/g, '')) : 0,
+      }));
+      setPreviewData(preview);
       setShowPreview(true);
     } catch (error) {
       console.error('Error generating preview:', error);
@@ -377,44 +344,37 @@ export default function LinhaOperadoraPage() {
       if (rows.length === 0) throw new Error('Arquivo vazio ou formato inválido');
 
       const map = mapeamento.mapeamento as Record<CampoSistema, string>;
-      const agrupadas = agruparLinhas(rows, map);
 
-      const linhasToInsert = agrupadas.map(grupo => {
-        const isCombo = grupo.planos.length > 1;
+      const linhasToInsert = rows.map(row => {
+        const valorStr = row[map.valor];
+        const valor = valorStr ? parseFloat(valorStr.replace(',', '.').replace(/[^\d.-]/g, '')) : null;
         return {
           operadora: operadora.nome,
-          protocolo_operadora: grupo.protocolo_operadora,
-          cpf_cnpj: grupo.cpf_cnpj,
-          cliente_nome: grupo.cliente_nome,
-          telefone: grupo.telefone,
-          plano: isCombo ? grupo.planos.join(' + ') : grupo.planos[0] || null,
-          valor: grupo.linhas_originais.length === 1 
-            ? (grupo.linhas_originais[0][map.valor] 
-              ? parseFloat(grupo.linhas_originais[0][map.valor].replace(',', '.').replace(/[^\d.-]/g, '')) 
-              : null)
-            : null,
-          valor_lq: grupo.valor_total,
+          protocolo_operadora: row[map.protocolo_operadora] || null,
+          cpf_cnpj: row[map.cpf_cnpj] || null,
+          cliente_nome: row[map.cliente_nome] || null,
+          telefone: row[map.telefone] || null,
+          plano: row[map.plano] || null,
+          valor: valor,
+          valor_lq: valor,
           valor_make: null,
-          tipo_plano: isCombo ? 'COMBO' : (grupo.planos[0] || null),
-          data_status: grupo.data_status,
-          status_operadora: grupo.status_operadora,
-          quinzena_ref: grupo.quinzena_ref,
+          tipo_plano: row[map.plano] || null,
+          data_status: row[map.data_status] || null,
+          status_operadora: (row[map.status_operadora] as StatusOperadora) || 'pendente',
+          quinzena_ref: row[map.quinzena_ref] || null,
           arquivo_origem: selectedFile.name,
           apelido: apelidoLote.trim(),
         };
       });
 
-      const { error } = await supabase
-        .from('linha_operadora')
-        .insert(linhasToInsert);
-      if (error) throw error;
+      // Insert in batches of 500
+      for (let i = 0; i < linhasToInsert.length; i += 500) {
+        const batch = linhasToInsert.slice(i, i + 500);
+        const { error } = await supabase.from('linha_operadora').insert(batch);
+        if (error) throw error;
+      }
 
-      const linhasOriginais = agrupadas.reduce((acc, g) => acc + g.linhas_originais.length, 0);
-      const combos = agrupadas.filter(g => g.planos.length > 1).length;
-      
-      toast.success(
-        `Importação concluída! ${linhasOriginais} linhas → ${agrupadas.length} registros (${combos} COMBOs)`
-      );
+      toast.success(`Importação concluída! ${linhasToInsert.length} registros importados`);
       
       setIsUploadOpen(false);
       setSelectedFile(null);
@@ -941,33 +901,27 @@ export default function LinhaOperadoraPage() {
 
               {showPreview && previewData.length > 0 && (
                 <div className="space-y-2">
-                  <Label>Prévia da Importação (primeiros 10 registros)</Label>
+                  <Label>Prévia da Importação (primeiras 10 linhas)</Label>
                   <div className="rounded-md border overflow-x-auto max-h-64">
                     <Table>
                       <TableHeader>
                         <TableRow>
                           <TableHead>Cliente</TableHead>
                           <TableHead>CPF/CNPJ</TableHead>
-                          <TableHead>Tipo</TableHead>
-                          <TableHead>Planos</TableHead>
-                          <TableHead>Valor Total</TableHead>
+                          <TableHead>Protocolo</TableHead>
+                          <TableHead>Plano</TableHead>
+                          <TableHead>Valor</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {previewData.map((grupo, i) => (
+                        {previewData.map((row, i) => (
                           <TableRow key={i}>
-                            <TableCell>{grupo.cliente_nome || '-'}</TableCell>
-                            <TableCell className="font-mono text-xs">{grupo.cpf_cnpj || '-'}</TableCell>
-                            <TableCell>
-                              {grupo.planos.length > 1 ? (
-                                <Badge variant="secondary">COMBO</Badge>
-                              ) : (
-                                <Badge variant="outline">Único</Badge>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-xs max-w-32 truncate">{grupo.planos.join(', ') || '-'}</TableCell>
+                            <TableCell>{row.cliente_nome || '-'}</TableCell>
+                            <TableCell className="font-mono text-xs">{row.cpf_cnpj || '-'}</TableCell>
+                            <TableCell className="font-mono text-xs">{row.protocolo_operadora || '-'}</TableCell>
+                            <TableCell className="text-xs max-w-32 truncate">{row.plano || '-'}</TableCell>
                             <TableCell className="font-medium">
-                              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(grupo.valor_total)}
+                              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(row.valor)}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -975,7 +929,7 @@ export default function LinhaOperadoraPage() {
                     </Table>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    {previewData.filter(g => g.planos.length > 1).length} registros serão importados como COMBO
+                    Cada linha do CSV será importada como um registro individual
                   </p>
                 </div>
               )}
