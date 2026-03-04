@@ -10,14 +10,14 @@ import {
   LogOut,
   ChevronDown,
   ClipboardList,
-
   Radio,
   Columns,
   BarChart3,
   Upload,
   PackageOpen,
   RotateCcw,
-  Receipt } from
+  Receipt,
+  Trash2 } from
 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/contexts/AuthContext';
@@ -52,7 +52,8 @@ const cadastrosItems = [
 { title: 'Operadoras', url: '/operadoras', icon: Radio },
 { title: 'Usuários', url: '/usuarios', icon: Users },
 { title: 'Cadastro em Massa', url: '/cadastro-massa', icon: Upload },
-{ title: 'Permissões', url: '/permissoes', icon: Shield }];
+{ title: 'Permissões', url: '/permissoes', icon: Shield },
+{ title: 'Limpar Dados', url: '/limpar-dados', icon: Trash2 }];
 
 
 // Submenu Gestão - visível para admin e supervisor

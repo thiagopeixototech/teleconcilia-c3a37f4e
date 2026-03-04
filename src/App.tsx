@@ -25,6 +25,7 @@ import ImportacaoVendas from "./pages/ImportacaoVendas";
 import ImportacaoEstornos from "./pages/ImportacaoEstornos";
 import CadastroMassa from "./pages/CadastroMassa";
 import Comissionamento from "./pages/Comissionamento";
+import LimparDados from "./pages/LimparDados";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -181,6 +182,15 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={['admin']}>
                   <Comissionamento />
+                </ProtectedRoute>
+              }
+            />
+            
+            <Route
+              path="/limpar-dados"
+              element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <LimparDados />
                 </ProtectedRoute>
               }
             />
