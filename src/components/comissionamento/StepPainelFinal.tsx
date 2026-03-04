@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import {
-  Loader2, Download, DollarSign, Users, RotateCcw, TrendingDown, Receipt,
+  Loader2, Download, DollarSign, Users, RotateCcw, TrendingDown, Receipt, FileDown,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -157,6 +157,23 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
     );
   }, [resumoPorVendedor]);
 
+  const [isExportingReport, setIsExportingReport] = useState(false);
+
+  const buildCsvBlob = (headers: string[], rows: string[][]) => {
+    const bom = '\uFEFF';
+    const csv = [headers, ...rows].map(r => r.map(c => `"${(c ?? '').replace(/"/g, '""')}"`).join(';')).join('\n');
+    return new Blob([bom + csv], { type: 'text/csv;charset=utf-8;' });
+  };
+
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const exportCSV = () => {
     const headers = [
       'Vendedor', 'dt_atv', 'Protocolo', 'CPF', 'Cliente', 'Operadora',
@@ -178,15 +195,146 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
       v.receita_descontada?.toString() || '',
       v.comissionamento_desconto || '',
     ]);
-    const csv = [headers, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `comissionamento_${format(new Date(), 'yyyy-MM-dd')}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(buildCsvBlob(headers, rows), `comissionamento_${format(new Date(), 'yyyy-MM-dd')}.csv`);
   };
+
+
+  const exportRelatorioComissionamento = useCallback(async () => {
+    setIsExportingReport(true);
+    try {
+      // 1. Get LAL apelidos for this comissionamento
+      const { data: lalRows, error: lalErr } = await supabase
+        .from('comissionamento_lal')
+        .select('apelido')
+        .eq('comissionamento_id', comissionamentoId);
+      if (lalErr) throw lalErr;
+      const apelidos = lalRows?.map(r => r.apelido) || [];
+
+      // 2. Fetch all linha_operadora with these apelidos
+      let linhasOperadora: any[] = [];
+      if (apelidos.length > 0) {
+        const batchSize = 30;
+        for (let i = 0; i < apelidos.length; i += batchSize) {
+          const batch = apelidos.slice(i, i + batchSize);
+          const { data, error } = await supabase
+            .from('linha_operadora')
+            .select('*')
+            .in('apelido', batch);
+          if (error) throw error;
+          linhasOperadora = linhasOperadora.concat(data || []);
+        }
+      }
+
+      // 3. Fetch all conciliacoes for vendas in this comissionamento
+      const vendaIds = vendas.map(v => v.venda_interna_id);
+      let conciliacoes: any[] = [];
+      if (vendaIds.length > 0) {
+        const batchSize = 50;
+        for (let i = 0; i < vendaIds.length; i += batchSize) {
+          const batch = vendaIds.slice(i, i + batchSize);
+          const { data, error } = await supabase
+            .from('conciliacoes')
+            .select('*')
+            .in('venda_interna_id', batch);
+          if (error) throw error;
+          conciliacoes = conciliacoes.concat(data || []);
+        }
+      }
+
+      // Build indexes
+      // conciliacao by linha_operadora_id
+      const concByLinhaId = new Map<string, any>();
+      const concByVendaId = new Map<string, any>();
+      for (const c of conciliacoes) {
+        concByLinhaId.set(c.linha_operadora_id, c);
+        concByVendaId.set(c.venda_interna_id, c);
+      }
+
+      // Venda info by venda_interna_id
+      const vendaById = new Map<string, VendaRow>();
+      for (const v of vendas) {
+        vendaById.set(v.venda_interna_id, v);
+      }
+
+      // Linha operadora by id
+      const linhaById = new Map<string, any>();
+      for (const l of linhasOperadora) {
+        linhaById.set(l.id, l);
+      }
+
+      // ===== FILE 1: Linha a Linha + Conciliação =====
+      const h1 = [
+        'Operadora', 'Protocolo Operadora', 'CPF/CNPJ', 'Cliente', 'Telefone',
+        'Plano', 'Tipo Plano', 'Valor', 'Valor Make', 'Valor LQ',
+        'Data Status', 'Status Operadora', 'Quinzena Ref', 'Apelido Lote', 'Arquivo Origem',
+        // Colunas de conciliação
+        'Status Conciliação', 'Tipo Match', 'Score Match',
+        // Colunas da venda interna
+        'Venda ID', 'Vendedor', 'Protocolo Interno', 'Data Venda', 'Data Instalação',
+        'Status Make', 'Empresa/Operadora', 'Valor Venda Interna',
+      ];
+      const rows1 = linhasOperadora.map(l => {
+        const conc = concByLinhaId.get(l.id);
+        const venda = conc ? vendaById.get(conc.venda_interna_id) : null;
+        return [
+          l.operadora || '', l.protocolo_operadora || '', l.cpf_cnpj || '',
+          l.cliente_nome || '', l.telefone || '', l.plano || '', l.tipo_plano || '',
+          l.valor?.toString() || '', l.valor_make?.toString() || '', l.valor_lq?.toString() || '',
+          l.data_status || '', l.status_operadora || '', l.quinzena_ref || '',
+          l.apelido || '', l.arquivo_origem || '',
+          conc ? (conc.status_final === 'conciliado' ? 'Encontrado' : 'Divergente') : 'Não encontrado',
+          conc?.tipo_match || '', conc?.score_match?.toString() || '',
+          venda?.venda_interna_id || '', venda?.vendedor_nome || '',
+          venda?.protocolo_interno || '', '', venda?.data_instalacao || '',
+          venda?.status_make || '', venda?.operadora_nome || '',
+          venda?.receita_interna?.toString() || '',
+        ];
+      });
+
+      // ===== FILE 2: Vendas Internas + Conciliação =====
+      const h2 = [
+        'Vendedor', 'Protocolo Interno', 'CPF/CNPJ', 'Cliente', 'Operadora',
+        'Data Instalação', 'Status Make', 'Valor', 'Status Pag', 'Receita Interna',
+        'Receita LAL', 'LAL Apelido', 'Estorno', 'Comiss. Desconto',
+        // Colunas de conciliação
+        'Status Conciliação', 'Tipo Match', 'Score Match',
+        // Colunas do LAL
+        'LAL Protocolo Operadora', 'LAL CPF/CNPJ', 'LAL Cliente', 'LAL Plano',
+        'LAL Valor', 'LAL Data Status', 'LAL Status Operadora', 'LAL Quinzena',
+      ];
+      const rows2 = vendas.map(v => {
+        const conc = concByVendaId.get(v.venda_interna_id);
+        const linha = conc ? linhaById.get(conc.linha_operadora_id) : null;
+        return [
+          v.vendedor_nome || '', v.protocolo_interno || '', v.cpf_cnpj || '',
+          v.cliente_nome || '', v.operadora_nome || '', v.data_instalacao || '',
+          v.status_make || '', v.receita_interna?.toString() || '',
+          v.status_pag || '', v.receita_interna?.toString() || '',
+          v.receita_lal?.toString() || '', v.lal_apelido || '',
+          v.receita_descontada?.toString() || '', v.comissionamento_desconto || '',
+          conc ? (conc.status_final === 'conciliado' ? 'Encontrado' : 'Divergente') : 'Não encontrado no Linha a Linha',
+          conc?.tipo_match || '', conc?.score_match?.toString() || '',
+          linha?.protocolo_operadora || '', linha?.cpf_cnpj || '',
+          linha?.cliente_nome || '', linha?.plano || '',
+          linha?.valor?.toString() || '', linha?.data_status || '',
+          linha?.status_operadora || '', linha?.quinzena_ref || '',
+        ];
+      });
+
+      const dateStr = format(new Date(), 'yyyy-MM-dd');
+      downloadBlob(buildCsvBlob(h1, rows1), `relatorio_LAL_conciliacao_${dateStr}.csv`);
+      // Small delay so browser doesn't merge downloads
+      await new Promise(r => setTimeout(r, 500));
+      downloadBlob(buildCsvBlob(h2, rows2), `relatorio_vendas_internas_conciliacao_${dateStr}.csv`);
+
+      toast.success(`Relatório gerado: ${rows1.length} linhas LAL + ${rows2.length} vendas internas`);
+    } catch (err: any) {
+      console.error(err);
+      toast.error('Erro ao gerar relatório: ' + err.message);
+    } finally {
+      setIsExportingReport(false);
+    }
+  }, [comissionamentoId, vendas]);
 
   if (isLoading) {
     return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
@@ -225,7 +373,7 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
       </div>
 
       {/* Tab buttons */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap">
         <Button
           size="sm"
           variant={activeView === 'resumo' ? 'default' : 'outline'}
@@ -244,10 +392,22 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
           <Receipt className="h-4 w-4" />
           Detalhes
         </Button>
-        <Button size="sm" variant="outline" onClick={exportCSV} className="gap-1.5 ml-auto">
-          <Download className="h-4 w-4" />
-          Exportar CSV
-        </Button>
+        <div className="ml-auto flex gap-2">
+          <Button size="sm" variant="outline" onClick={exportCSV} className="gap-1.5">
+            <Download className="h-4 w-4" />
+            Exportar CSV
+          </Button>
+          <Button
+            size="sm"
+            variant="default"
+            onClick={exportRelatorioComissionamento}
+            disabled={isExportingReport}
+            className="gap-1.5"
+          >
+            {isExportingReport ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+            Baixar Relatório
+          </Button>
+        </div>
       </div>
 
       {/* Resumo por vendedor */}
@@ -279,7 +439,6 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
                   </TableCell>
                 </TableRow>
               ))}
-              {/* Totals row */}
               <TableRow className="bg-muted font-bold">
                 <TableCell className="text-xs">TOTAL</TableCell>
                 <TableCell className="text-xs text-right">{totals.totalVendas}</TableCell>
