@@ -17,7 +17,7 @@ import {
 import {
   ShoppingCart, CheckCircle, TrendingDown, DollarSign,
   Plus, RefreshCw, Loader2, GitCompare, RotateCcw,
-  FileSpreadsheet, Receipt, Trash2, FileDown,
+  FileSpreadsheet, Receipt, Trash2, FileDown, Users,
 } from 'lucide-react';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -428,6 +428,33 @@ export default function ComissionamentoPage() {
     }
   }, [selectedId, selectedCom]);
 
+  const handleExportResumoVendedor = useCallback(() => {
+    if (!vendedorRows.length) return;
+    const headers = ['Vendedor', 'Receita Interna', 'Receita LAL', 'Estorno', 'Churn', 'Receita Líquida'];
+    const rows = vendedorRows.map(v => [
+      v.vendedor_nome,
+      v.receita_interna.toFixed(2),
+      v.receita_lal.toFixed(2),
+      v.estorno.toFixed(2),
+      v.churn.toFixed(2),
+      v.receita_liquida.toFixed(2),
+    ]);
+    // Add totals row
+    const totals = vendedorRows.reduce((acc, v) => ({
+      ri: acc.ri + v.receita_interna,
+      rl: acc.rl + v.receita_lal,
+      est: acc.est + v.estorno,
+      ch: acc.ch + v.churn,
+      liq: acc.liq + v.receita_liquida,
+    }), { ri: 0, rl: 0, est: 0, ch: 0, liq: 0 });
+    rows.push(['TOTAL', totals.ri.toFixed(2), totals.rl.toFixed(2), totals.est.toFixed(2), totals.ch.toFixed(2), totals.liq.toFixed(2)]);
+
+    const comNome = selectedCom?.nome?.replace(/\s+/g, '_') || 'comissionamento';
+    const dateStr = format(new Date(), 'yyyy-MM-dd');
+    downloadBlob(buildCsvBlob(headers, rows), `${comNome}_resumo_vendedor_${dateStr}.csv`);
+    toast.success('Resumo por vendedor exportado');
+  }, [vendedorRows, selectedCom]);
+
   return (
     <AppLayout title="Comissionamento">
       <div className="space-y-6">
@@ -485,6 +512,16 @@ export default function ComissionamentoPage() {
                     >
                       {isExportingReport ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
                       Baixar Relatório
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={handleExportResumoVendedor}
+                      disabled={vendedorRows.length === 0}
+                    >
+                      <Users className="h-4 w-4" />
+                      Resumo Vendedor
                     </Button>
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
