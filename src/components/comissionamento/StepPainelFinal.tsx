@@ -198,6 +198,25 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
     downloadBlob(buildCsvBlob(headers, rows), `comissionamento_${format(new Date(), 'yyyy-MM-dd')}.csv`);
   };
 
+  const exportResumoVendedor = () => {
+    const headers = ['Vendedor', 'Vendas', 'Receita Interna', 'Receita LAL', 'Estorno', 'Churn', 'Receita Líquida'];
+    const rows = resumoPorVendedor.map(r => [
+      r.vendedor_nome,
+      r.totalVendas.toString(),
+      r.receitaInterna.toFixed(2),
+      r.receitaLal.toFixed(2),
+      r.estorno.toFixed(2),
+      r.churn.toFixed(2),
+      r.liquido.toFixed(2),
+    ]);
+    rows.push([
+      'TOTAL', totals.totalVendas.toString(), totals.receitaInterna.toFixed(2),
+      totals.receitaLal.toFixed(2), totals.estorno.toFixed(2), totals.churn.toFixed(2), totals.liquido.toFixed(2),
+    ]);
+    downloadBlob(buildCsvBlob(headers, rows), `resumo_vendedor_${format(new Date(), 'yyyy-MM-dd')}.csv`);
+    toast.success('Resumo por vendedor exportado');
+  };
+
 
   const exportRelatorioComissionamento = useCallback(async () => {
     setIsExportingReport(true);
@@ -391,6 +410,16 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
           <Button size="sm" variant="outline" onClick={exportCSV} className="gap-1.5">
             <Download className="h-4 w-4" />
             Exportar CSV
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={exportResumoVendedor}
+            disabled={resumoPorVendedor.length === 0}
+            className="gap-1.5"
+          >
+            <Users className="h-4 w-4" />
+            Resumo Vendedor
           </Button>
           <Button
             size="sm"
