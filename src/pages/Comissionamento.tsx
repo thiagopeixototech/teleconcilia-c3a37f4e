@@ -455,6 +455,68 @@ export default function ComissionamentoPage() {
     toast.success('Resumo por vendedor exportado');
   }, [vendedorRows, selectedCom]);
 
+  const handleExportVendedorDetalhado = useCallback(async (vendedorNome: string) => {
+    if (!selectedId) return;
+    try {
+      // Fetch all comissionamento_vendas for this comissionamento, filtered by vendedor
+      let allRows: any[] = [];
+      let offset = 0;
+      while (true) {
+        const { data, error } = await supabase
+          .from('comissionamento_vendas')
+          .select(`
+            status_pag, receita_interna, receita_lal, receita_descontada,
+            lal_apelido, comissionamento_desconto,
+            vendas_internas!comissionamento_vendas_venda_interna_id_fkey(
+              cliente_nome, cpf_cnpj, protocolo_interno, status_make, data_instalacao, plano, valor,
+              identificador_make, telefone,
+              usuarios!vendas_internas_usuario_id_fkey(nome),
+              operadoras!vendas_internas_operadora_id_fkey(nome)
+            )
+          `)
+          .eq('comissionamento_id', selectedId)
+          .range(offset, offset + 999);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        allRows = allRows.concat(data);
+        if (data.length < 1000) break;
+        offset += 1000;
+      }
+
+      // Filter by vendedor name
+      const vendorRows = allRows.filter((r: any) => {
+        const nome = r.vendas_internas?.usuarios?.nome || 'Não identificado';
+        return nome === vendedorNome;
+      });
+
+      const headers = [
+        'Vendedor', 'dt_atv', 'Protocolo', 'ID Make', 'CPF', 'Cliente', 'Telefone',
+        'Operadora', 'Plano', 'Status Make', 'Status Pag',
+        'Receita Interna', 'Receita LAL', 'LAL', 'Estorno', 'Comiss. Desconto',
+      ];
+      const rows = vendorRows.map((cv: any) => {
+        const vi = cv.vendas_internas;
+        return [
+          vi?.usuarios?.nome || '', vi?.data_instalacao || '',
+          vi?.protocolo_interno || '', vi?.identificador_make || '',
+          vi?.cpf_cnpj || '', vi?.cliente_nome || '', vi?.telefone || '',
+          vi?.operadoras?.nome || '', vi?.plano || '',
+          vi?.status_make || '', cv.status_pag || '',
+          cv.receita_interna?.toString() || '', cv.receita_lal?.toString() || '',
+          cv.lal_apelido || '', cv.receita_descontada?.toString() || '',
+          cv.comissionamento_desconto || '',
+        ];
+      });
+
+      const nomeArquivo = vendedorNome.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 30);
+      const dateStr = format(new Date(), 'yyyy-MM-dd');
+      downloadBlob(buildCsvBlob(headers, rows), `detalhado_${nomeArquivo}_${dateStr}.csv`);
+      toast.success(`Detalhado de ${vendedorNome} exportado (${vendorRows.length} vendas)`);
+    } catch (err: any) {
+      toast.error('Erro ao exportar: ' + err.message);
+    }
+  }, [selectedId]);
+
   return (
     <AppLayout title="Comissionamento">
       <div className="space-y-6">
@@ -624,7 +686,20 @@ export default function ComissionamentoPage() {
                         <TableBody>
                           {vendedorRows.map((vr, i) => (
                             <TableRow key={i}>
-                              <TableCell className="text-sm font-medium">{vr.vendedor_nome}</TableCell>
+                              <TableCell className="text-sm font-medium">
+                                <div className="flex items-center gap-1.5">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 shrink-0"
+                                    onClick={() => handleExportVendedorDetalhado(vr.vendedor_nome)}
+                                    title={`Baixar detalhado de ${vr.vendedor_nome}`}
+                                  >
+                                    <FileDown className="h-3.5 w-3.5" />
+                                  </Button>
+                                  {vr.vendedor_nome}
+                                </div>
+                              </TableCell>
                               <TableCell className="text-sm text-right">{formatBRL(vr.receita_interna)}</TableCell>
                               <TableCell className="text-sm text-right">{formatBRL(vr.receita_lal)}</TableCell>
                               <TableCell className="text-sm text-right text-destructive">{formatBRL(vr.estorno)}</TableCell>
