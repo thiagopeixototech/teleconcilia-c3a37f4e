@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { normalizeCpfCnpj } from '@/lib/normalizeCpfCnpj';
+import { parseCSV as parseCSVLib } from '@/lib/parseCSV';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -159,19 +160,7 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
     setFontes(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
   };
 
-  const parseCSV = (content: string) => {
-    const lines = content.split('\n').filter(l => l.trim());
-    if (lines.length < 2) return { headers: [] as string[], rows: [] as Record<string, string>[] };
-    const sep = lines[0].includes(';') ? ';' : ',';
-    const headers = lines[0].split(sep).map(h => h.trim().replace(/^\"|\"$/g, ''));
-    const rows = lines.slice(1).map(line => {
-      const vals = line.split(sep).map(v => v.trim().replace(/^\"|\"$/g, ''));
-      const row: Record<string, string> = {};
-      headers.forEach((h, i) => { row[h] = vals[i] || ''; });
-      return row;
-    });
-    return { headers, rows };
-  };
+  const parseCSV = parseCSVLib;
 
   const handleFileSelect = async (fonteId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];

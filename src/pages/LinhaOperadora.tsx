@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { normalizeCpfCnpj } from '@/lib/normalizeCpfCnpj';
+import { parseCSV as parseCSVLib } from '@/lib/parseCSV';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { LinhaOperadora, StatusOperadora, Operadora, MapeamentoColunas, CampoSistema } from '@/types/database';
@@ -272,18 +273,8 @@ export default function LinhaOperadoraPage() {
 
   // CSV parsing & grouping
   const parseCSV = (content: string): Record<string, string>[] => {
-    const lines = content.split('\n').filter(line => line.trim());
-    if (lines.length < 2) return [];
-    const separator = lines[0].includes(';') ? ';' : ',';
-    const headers = lines[0].split(separator).map(h => h.trim().replace(/"/g, ''));
-    return lines.slice(1).map(line => {
-      const values = line.split(separator).map(v => v.trim().replace(/"/g, ''));
-      const row: Record<string, string> = {};
-      headers.forEach((header, index) => {
-        row[header] = values[index] || '';
-      });
-      return row;
-    });
+    const { rows } = parseCSVLib(content);
+    return rows;
   };
 
   // normalizeCpfCnpj imported from lib

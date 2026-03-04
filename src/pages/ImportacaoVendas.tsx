@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { normalizeProtocolo } from '@/lib/normalizeProtocolo';
 import { normalizeCpfCnpj } from '@/lib/normalizeCpfCnpj';
+import { parseCSV as parseCSVLib } from '@/lib/parseCSV';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -151,20 +152,8 @@ export default function ImportacaoVendas() {
     load();
   }, []);
 
-  // CSV parser
-  const parseCSV = (content: string): { headers: string[]; rows: Record<string, string>[] } => {
-    const lines = content.split('\n').filter(l => l.trim());
-    if (lines.length < 2) return { headers: [], rows: [] };
-    const sep = lines[0].includes(';') ? ';' : ',';
-    const headers = lines[0].split(sep).map(h => h.trim().replace(/^"|"$/g, ''));
-    const rows = lines.slice(1).map(line => {
-      const vals = line.split(sep).map(v => v.trim().replace(/^"|"$/g, ''));
-      const row: Record<string, string> = {};
-      headers.forEach((h, i) => { row[h] = vals[i] || ''; });
-      return row;
-    });
-    return { headers, rows };
-  };
+  // CSV parser (RFC 4180-compliant)
+  const parseCSV = parseCSVLib;
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
