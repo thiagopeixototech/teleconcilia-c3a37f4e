@@ -97,8 +97,9 @@ export default function VendasInternas() {
   const [selectedVenda, setSelectedVenda] = useState<VendaComExtras | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
-  const [editStatus, setEditStatus] = useState<StatusInterno>('nova');
-  const [editObservacoes, setEditObservacoes] = useState('');
+  const [editStep, setEditStep] = useState<'select' | 'edit'>('select');
+  const [editField, setEditField] = useState<string>('');
+  const [editValue, setEditValue] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
 
   // Independent date filters
@@ -391,52 +392,92 @@ export default function VendasInternas() {
     setIsDetailOpen(true);
   };
 
+  const editableFields = [
+    { key: 'usuario_id', label: 'Vendedor' },
+    { key: 'status_interno', label: 'Status Interno' },
+    { key: 'status_make', label: 'Status Make' },
+    { key: 'operadora_id', label: 'Operadora' },
+    { key: 'cliente_nome', label: 'Cliente' },
+    { key: 'cpf_cnpj', label: 'CPF/CNPJ' },
+    { key: 'telefone', label: 'Telefone' },
+    { key: 'plano', label: 'Plano' },
+    { key: 'valor', label: 'Valor' },
+    { key: 'protocolo_interno', label: 'Protocolo' },
+    { key: 'identificador_make', label: 'Identificador Make' },
+    { key: 'data_venda', label: 'Data Venda' },
+    { key: 'data_instalacao', label: 'Data Instalação' },
+    { key: 'observacoes', label: 'Observações' },
+  ];
+
   const handleEditStatus = (venda: VendaComExtras) => {
     setSelectedVenda(venda);
-    setEditStatus(venda.status_interno);
-    setEditObservacoes(venda.observacoes || '');
+    setEditStep('select');
+    setEditField('');
+    setEditValue('');
     setIsEditOpen(true);
   };
 
-  const handleSaveStatus = async () => {
+  const handleSelectField = (fieldKey: string) => {
     if (!selectedVenda) return;
+    setEditField(fieldKey);
+    const currentVal = (selectedVenda as any)[fieldKey];
+    setEditValue(currentVal != null ? String(currentVal) : '');
+    setEditStep('edit');
+  };
+
+  const handleSaveField = async () => {
+    if (!selectedVenda || !editField) return;
     setIsSaving(true);
     try {
+      let updateValue: any = editValue;
+      if (editField === 'valor') {
+        updateValue = editValue ? parseFloat(editValue.replace(',', '.')) : null;
+      } else if (editField === 'data_venda' || editField === 'data_instalacao') {
+        updateValue = editValue || null;
+      } else if (editValue === '') {
+        updateValue = null;
+      }
+
       const { error } = await supabase
         .from('vendas_internas')
-        .update({ status_interno: editStatus, observacoes: editObservacoes })
+        .update({ [editField]: updateValue })
         .eq('id', selectedVenda.id);
       if (error) throw error;
 
-      if (editStatus !== selectedVenda.status_interno) {
-        await registrarAuditoria({
-          venda_id: selectedVenda.id,
-          user_id: user?.id,
-          user_nome: vendedor?.nome,
-          acao: 'MUDAR_STATUS_INTERNO',
-          campo: 'status_interno',
-          valor_anterior: selectedVenda.status_interno,
-          valor_novo: editStatus,
-        });
-      }
-      if (editObservacoes !== (selectedVenda.observacoes || '')) {
-        await registrarAuditoria({
-          venda_id: selectedVenda.id,
-          user_id: user?.id,
-          user_nome: vendedor?.nome,
-          acao: 'EDITAR_CAMPO',
-          campo: 'observacoes',
-          valor_anterior: selectedVenda.observacoes,
-          valor_novo: editObservacoes,
-        });
+      const fieldLabel = editableFields.find(f => f.key === editField)?.label || editField;
+      const oldVal = (selectedVenda as any)[editField];
+      
+      let acaoAudit = 'EDITAR_CAMPO';
+      if (editField === 'status_interno') acaoAudit = 'MUDAR_STATUS_INTERNO';
+      if (editField === 'status_make') acaoAudit = 'MUDAR_STATUS_MAKE';
+      if (editField === 'valor') acaoAudit = 'ALTERAR_VALOR';
+
+      // For usuario_id, resolve names for audit
+      let valorAnteriorAudit: any = oldVal;
+      let valorNovoAudit: any = updateValue;
+      if (editField === 'usuario_id') {
+        const oldVendedor = vendedorOptions.find(v => v.id === oldVal);
+        const newVendedor = vendedorOptions.find(v => v.id === updateValue);
+        valorAnteriorAudit = oldVendedor ? `${oldVendedor.nome} (${oldVal})` : oldVal;
+        valorNovoAudit = newVendedor ? `${newVendedor.nome} (${updateValue})` : updateValue;
       }
 
-      toast.success('Status atualizado com sucesso');
+      await registrarAuditoria({
+        venda_id: selectedVenda.id,
+        user_id: user?.id,
+        user_nome: vendedor?.nome,
+        acao: acaoAudit,
+        campo: editField,
+        valor_anterior: valorAnteriorAudit,
+        valor_novo: valorNovoAudit,
+      });
+
+      toast.success(`${fieldLabel} atualizado com sucesso`);
       setIsEditOpen(false);
       fetchVendas();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating venda:', error);
-      toast.error('Erro ao atualizar status');
+      toast.error('Erro ao atualizar: ' + error.message);
     } finally {
       setIsSaving(false);
     }
@@ -1159,49 +1200,116 @@ export default function VendasInternas() {
           </DialogContent>
         </Dialog>
 
-        {/* Edit Status Dialog */}
+        {/* Edit Field Wizard Dialog */}
         <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-          <DialogContent>
+          <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>Editar Status</DialogTitle>
+              <DialogTitle>
+                {editStep === 'select' ? 'Editar Venda' : `Editar ${editableFields.find(f => f.key === editField)?.label}`}
+              </DialogTitle>
               <DialogDescription>
-                Atualize o status da venda de {selectedVenda?.cliente_nome}
+                {editStep === 'select'
+                  ? `Selecione o campo que deseja editar — ${selectedVenda?.cliente_nome}`
+                  : `Atualize o valor do campo para a venda de ${selectedVenda?.cliente_nome}`}
               </DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="status">Status</Label>
-                <Select value={editStatus} onValueChange={(v) => setEditStatus(v as StatusInterno)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(statusLabels).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>{label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+
+            {editStep === 'select' && (
+              <div className="grid grid-cols-2 gap-2 py-4">
+                {editableFields.map(f => (
+                  <Button
+                    key={f.key}
+                    variant="outline"
+                    className="justify-start text-sm h-10"
+                    onClick={() => handleSelectField(f.key)}
+                  >
+                    {f.label}
+                  </Button>
+                ))}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="observacoes">Observações</Label>
-                <Textarea
-                  id="observacoes"
-                  value={editObservacoes}
-                  onChange={(e) => setEditObservacoes(e.target.value)}
-                  placeholder="Adicione observações sobre esta venda..."
-                  rows={3}
-                />
+            )}
+
+            {editStep === 'edit' && (
+              <div className="space-y-4 py-4">
+                {editField === 'status_interno' && (
+                  <Select value={editValue} onValueChange={setEditValue}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(statusLabels).map(([value, label]) => (
+                        <SelectItem key={value} value={value}>{label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+
+                {editField === 'operadora_id' && (
+                  <Select value={editValue} onValueChange={setEditValue}>
+                    <SelectTrigger><SelectValue placeholder="Selecione a operadora" /></SelectTrigger>
+                    <SelectContent>
+                      {operadoras.map(op => (
+                        <SelectItem key={op.id} value={op.id}>{op.nome}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+
+                {editField === 'usuario_id' && (
+                  <Select value={editValue} onValueChange={setEditValue}>
+                    <SelectTrigger><SelectValue placeholder="Selecione o vendedor" /></SelectTrigger>
+                    <SelectContent>
+                      {vendedorOptions.map(v => (
+                        <SelectItem key={v.id} value={v.id}>{v.nome}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+
+                {editField === 'observacoes' && (
+                  <Textarea
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    placeholder="Observações..."
+                    rows={3}
+                  />
+                )}
+
+                {editField === 'valor' && (
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    placeholder="0.00"
+                  />
+                )}
+
+                {(editField === 'data_venda' || editField === 'data_instalacao') && (
+                  <Input
+                    type="date"
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                  />
+                )}
+
+                {!['status_interno', 'operadora_id', 'usuario_id', 'observacoes', 'valor', 'data_venda', 'data_instalacao'].includes(editField) && (
+                  <Input
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    placeholder={editableFields.find(f => f.key === editField)?.label}
+                  />
+                )}
+
+                <DialogFooter className="gap-2">
+                  <Button variant="outline" onClick={() => setEditStep('select')}>
+                    Voltar
+                  </Button>
+                  <Button onClick={handleSaveField} disabled={isSaving}>
+                    {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Salvar
+                  </Button>
+                </DialogFooter>
               </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsEditOpen(false)}>
-                Cancelar
-              </Button>
-              <Button onClick={handleSaveStatus} disabled={isSaving}>
-                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Salvar
-              </Button>
-            </DialogFooter>
+            )}
           </DialogContent>
         </Dialog>
       </div>
