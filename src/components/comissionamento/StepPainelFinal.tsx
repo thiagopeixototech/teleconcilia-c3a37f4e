@@ -217,6 +217,33 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
     toast.success('Resumo por vendedor exportado');
   };
 
+  const exportVendedorDetalhado = (vendedorId: string, vendedorNome: string) => {
+    const vendasVendedor = vendas.filter(v => (v.vendedor_id || 'desconhecido') === vendedorId);
+    const headers = [
+      'Vendedor', 'dt_atv', 'Protocolo', 'CPF', 'Cliente', 'Operadora',
+      'Status Pedido', 'Status Pag', 'Receita Interna', 'Receita LAL',
+      'LAL', 'Estorno', 'Comiss. Desconto',
+    ];
+    const rows = vendasVendedor.map(v => [
+      v.vendedor_nome || '',
+      v.data_instalacao || '',
+      v.protocolo_interno || '',
+      v.cpf_cnpj || '',
+      v.cliente_nome || '',
+      v.operadora_nome || '',
+      v.status_make || '',
+      v.status_pag || '',
+      v.receita_interna?.toString() || '',
+      v.receita_lal?.toString() || '',
+      v.lal_apelido || '',
+      v.receita_descontada?.toString() || '',
+      v.comissionamento_desconto || '',
+    ]);
+    const nomeArquivo = vendedorNome.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 30);
+    downloadBlob(buildCsvBlob(headers, rows), `detalhado_${nomeArquivo}_${format(new Date(), 'yyyy-MM-dd')}.csv`);
+    toast.success(`Detalhado de ${vendedorNome} exportado (${vendasVendedor.length} vendas)`);
+  };
+
 
   const exportRelatorioComissionamento = useCallback(async () => {
     setIsExportingReport(true);
@@ -452,7 +479,20 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
             <TableBody>
               {resumoPorVendedor.map(r => (
                 <TableRow key={r.vendedor_id}>
-                  <TableCell className="text-xs font-medium">{r.vendedor_nome}</TableCell>
+                  <TableCell className="text-xs font-medium">
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 shrink-0"
+                        onClick={() => exportVendedorDetalhado(r.vendedor_id, r.vendedor_nome)}
+                        title={`Baixar detalhado de ${r.vendedor_nome}`}
+                      >
+                        <FileDown className="h-3.5 w-3.5" />
+                      </Button>
+                      {r.vendedor_nome}
+                    </div>
+                  </TableCell>
                   <TableCell className="text-xs text-right">{r.totalVendas}</TableCell>
                   <TableCell className="text-xs text-right">{formatBRL(r.receitaInterna)}</TableCell>
                   <TableCell className="text-xs text-right">{formatBRL(r.receitaLal)}</TableCell>
