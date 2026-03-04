@@ -4,6 +4,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -14,7 +19,7 @@ import {
 } from '@/components/ui/table';
 import { Progress } from '@/components/ui/progress';
 import {
-  Loader2, GitCompare, CheckCircle2, Search, XCircle, RefreshCw,
+  Loader2, GitCompare, CheckCircle2, Search, XCircle, RefreshCw, Trash2,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
@@ -319,6 +324,32 @@ export function StepConciliacao({ comissionamentoId }: Props) {
     }
   };
 
+  const bulkRemoveFromCommission = async () => {
+    if (selectedIds.size === 0) { toast.error('Selecione vendas primeiro'); return; }
+    setIsProcessing(true);
+    try {
+      const ids = Array.from(selectedIds);
+      for (let i = 0; i < ids.length; i += 50) {
+        const batch = ids.slice(i, i + 50);
+        const { error } = await supabase
+          .from('comissionamento_vendas')
+          .delete()
+          .in('id', batch);
+        if (error) throw error;
+        setProgress({ current: Math.min(i + 50, ids.length), total: ids.length });
+      }
+      toast.success(`${ids.length} vendas removidas da competência`);
+      setSelectedIds(new Set());
+      setSelectAll(false);
+      loadData();
+    } catch (err: any) {
+      toast.error('Erro: ' + err.message);
+    } finally {
+      setIsProcessing(false);
+      setProgress(null);
+    }
+  };
+
   const formatBRL = (v: number | null) =>
     v != null ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v) : '-';
 
@@ -463,6 +494,28 @@ export function StepConciliacao({ comissionamentoId }: Props) {
               {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
               Marcar como DESCONTADA
             </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button size="sm" variant="outline" disabled={isProcessing} className="gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10">
+                  <Trash2 className="h-4 w-4" />
+                  Remover da Competência
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Remover {selectedIds.size} vendas da competência?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    As vendas serão removidas deste comissionamento. Elas continuarão existindo no sistema, apenas não farão parte desta competência. Esta ação não pode ser desfeita.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction onClick={bulkRemoveFromCommission} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                    Confirmar Remoção
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
             <Button size="sm" variant="ghost" onClick={() => { setSelectedIds(new Set()); setSelectAll(false); }}>
               Limpar seleção
             </Button>
