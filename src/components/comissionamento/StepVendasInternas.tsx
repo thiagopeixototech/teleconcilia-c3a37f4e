@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { normalizeCpfCnpj } from '@/lib/normalizeCpfCnpj';
+import { normalizeCpfCnpj, normalizeCpfCnpjForMatch } from '@/lib/normalizeCpfCnpj';
 import { parseCSV as parseCSVLib } from '@/lib/parseCSV';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -103,6 +103,8 @@ const CAMPOS_VENDAS = [
 interface Props {
   comissionamentoId: string;
 }
+
+const ERROR_ROWS_PREVIEW_LIMIT = 200;
 
 export function StepVendasInternas({ comissionamentoId }: Props) {
   const { user } = useAuth();
@@ -344,7 +346,7 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
     const usuariosByEmail = new Map<string, string>();
     for (const u of usuarios) {
       if (u.cpf) {
-        const normalizedCpf = normalizeCpfCnpj(u.cpf);
+        const normalizedCpf = normalizeCpfCnpjForMatch(u.cpf);
         if (normalizedCpf) usuariosByCpf.set(normalizedCpf, u.id);
       }
       if (u.email) usuariosByEmail.set(u.email.trim().toLowerCase(), u.id);
@@ -378,15 +380,21 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
 
     const deduped = new Map<string, Record<string, string>>();
     let rowIdx = 0;
+    let withIdCount = 0;
+    let missingIdCount = 0;
     const rowIndexMap = new Map<string, number>();
     for (const row of fonte.csvRows!) {
       const idMake = row[map.identificador_make]?.trim();
       if (idMake) {
+        withIdCount++;
         deduped.set(idMake, row);
         rowIndexMap.set(idMake, rowIdx);
+      } else {
+        missingIdCount++;
       }
       rowIdx++;
     }
+    const duplicateIdCount = Math.max(0, withIdCount - deduped.size);
 
     setProcessingProgress({ phase: 'Validando arquivo...', current: 0, total: deduped.size });
     let validatedCount = 0;
@@ -404,7 +412,7 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
           const val = row[vCol]?.trim();
           if (val) {
             vendedorId = vMode === 'column_cpf'
-              ? usuariosByCpf.get(normalizeCpfCnpj(val)) || null
+              ? usuariosByCpf.get(normalizeCpfCnpjForMatch(val)) || null
               : usuariosByEmail.get(val.toLowerCase()) || null;
           }
         }
@@ -522,10 +530,13 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
         receita_interna: valorMap.get(idm) || null,
       }));
 
-    for (let i = 0; i < comRows.length; i += 500) {
-      const batch = comRows.slice(i, i + 500);
-      await supabase.from('comissionamento_vendas').insert(batch);
-      await new Promise(r => setTimeout(r, 30));
+    setProcessingProgress({ phase: 'Inserindo vínculos no comissionamento...', current: 0, total: comRows.length });
+    for (let i = 0; i < comRows.length; i += 200) {
+      const batch = comRows.slice(i, i + 200);
+      const { error: linkErr } = await supabase.from('comissionamento_vendas').insert(batch);
+      if (linkErr) throw linkErr;
+      setProcessingProgress({ phase: 'Inserindo vínculos no comissionamento...', current: Math.min(i + 200, comRows.length), total: comRows.length });
+      await new Promise(r => setTimeout(r, 20));
     }
 
     // Register in audit_log so it appears in import history
@@ -542,6 +553,8 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
           novos: newVendas.length,
           atualizados: existingVendas.length,
           erros: errorCount,
+          duplicados_id_make: duplicateIdCount,
+          sem_identificador_make: missingIdCount,
           origem: 'comissionamento',
           comissionamento_id: comissionamentoId,
           venda_ids: insertedVendaIds,
@@ -554,9 +567,9 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
       imported: true,
       importResult: { total: deduped.size, success: successCount, errors: errorCount },
       errorRows: errorRows.length > 0 ? errorRows : undefined,
-      showErrors: errorRows.length > 0,
+      showErrors: false,
     });
-    toast.success(`${successCount} vendas processadas (${newVendas.length} novas, ${existingVendas.length} existentes), ${errorCount} erros`);
+    toast.success(`${successCount} vendas válidas processadas (${newVendas.length} novas, ${existingVendas.length} existentes), ${errorCount} erros de validação, ${duplicateIdCount} IDs duplicados e ${missingIdCount} linhas sem identificador.`);
   };
 
   // Check if fonte is valid for processing (P1 fix)
@@ -643,9 +656,9 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
         } else {
           const val = row[vCol]?.trim();
           if (val) {
-            const normalized = normalizeCpfCnpj(val);
+            const normalized = normalizeCpfCnpjForMatch(val);
             const found = vMode === 'column_cpf'
-              ? usuarios.find(u => u.cpf && normalizeCpfCnpj(u.cpf) === normalized)
+              ? usuarios.find(u => u.cpf && normalizeCpfCnpjForMatch(u.cpf) === normalized)
               : usuarios.find(u => u.email.toLowerCase() === val.toLowerCase());
             vendedorId = found?.id || null;
           }
@@ -844,7 +857,7 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {fonte.errorRows.map((er) => (
+                          {fonte.errorRows.slice(0, ERROR_ROWS_PREVIEW_LIMIT).map((er) => (
                             <TableRow key={er.rowIndex}>
                               <TableCell className="text-xs">{er.rowIndex + 2}</TableCell>
                               <TableCell className="text-xs font-mono">{er.idMake}</TableCell>
@@ -898,6 +911,11 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
                         </TableBody>
                       </Table>
                     </div>
+                    {fonte.errorRows.length > ERROR_ROWS_PREVIEW_LIMIT && (
+                      <p className="text-xs text-muted-foreground">
+                        Mostrando {ERROR_ROWS_PREVIEW_LIMIT} de {fonte.errorRows.length} erros para manter a tela responsiva.
+                      </p>
+                    )}
 
                     {/* Bulk correction for vendedor/operadora */}
                     {fonte.errorRows.filter(er => er.reason === 'vendedor').length > 1 && (
