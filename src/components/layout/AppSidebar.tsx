@@ -9,6 +9,7 @@ import {
   Shield,
   LogOut,
   ChevronDown,
+  Download,
   ClipboardList,
   Radio,
   Columns,
@@ -248,12 +249,24 @@ export function AppSidebar() {
         <Button
           variant="ghost"
           size={collapsed ? "icon" : "default"}
+          asChild
+          className={cn(
+            "w-full text-sidebar-foreground hover:bg-sidebar-accent",
+            collapsed ? "justify-center" : "justify-start gap-3"
+          )}>
+          <a href="/DOCUMENTACAO.md" download="DOCUMENTACAO.md">
+            <Download className="h-5 w-5" />
+            {!collapsed && <span>Baixar Documentação</span>}
+          </a>
+        </Button>
+        <Button
+          variant="ghost"
+          size={collapsed ? "icon" : "default"}
           onClick={signOut}
           className={cn(
             "w-full text-sidebar-foreground hover:bg-sidebar-accent hover:text-destructive",
             collapsed ? "justify-center" : "justify-start gap-3"
           )}>
-
           <LogOut className="h-5 w-5" />
           {!collapsed && <span>Sair</span>}
         </Button>
