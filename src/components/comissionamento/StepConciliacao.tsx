@@ -170,57 +170,93 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       }
 
       const normDoc = normalizeCpfCnpjForMatch;
-      const linhasByProtocolo = new Map<string, any>();
-      const linhasByCpf = new Map<string, any>();
-      const usedLinhaIds = new Set<string>();
+      // Aggregate linhas by protocol and CPF (multiple records may exist for combos)
+      const linhasByProtocolo = new Map<string, any[]>();
+      const linhasByCpf = new Map<string, any[]>();
+      const usedProtocolKeys = new Set<string>();
+      const usedCpfKeys = new Set<string>();
 
       for (const linha of allLinhas) {
         if (linha.protocolo_operadora) {
-          linhasByProtocolo.set(linha.protocolo_operadora.trim(), linha);
+          const key = linha.protocolo_operadora.trim();
+          if (!linhasByProtocolo.has(key)) linhasByProtocolo.set(key, []);
+          linhasByProtocolo.get(key)!.push(linha);
         }
         if (linha.cpf_cnpj) {
-          linhasByCpf.set(normDoc(linha.cpf_cnpj), linha);
+          const key = normDoc(linha.cpf_cnpj);
+          if (!linhasByCpf.has(key)) linhasByCpf.set(key, []);
+          linhasByCpf.get(key)!.push(linha);
         }
       }
 
-      // Mark already-linked as used
-      vendasData.filter(v => v.linha_operadora_id).forEach(v => usedLinhaIds.add(v.linha_operadora_id!));
+      // Mark already-linked protocols/CPFs as used
+      for (const v of vendasData) {
+        if (v.linha_operadora_id) {
+          // Find which protocol/cpf group this linha belongs to
+          for (const [key, linhas] of linhasByProtocolo) {
+            if (linhas.some(l => l.id === v.linha_operadora_id)) {
+              usedProtocolKeys.add(key);
+              break;
+            }
+          }
+          for (const [key, linhas] of linhasByCpf) {
+            if (linhas.some(l => l.id === v.linha_operadora_id)) {
+              usedCpfKeys.add(key);
+              break;
+            }
+          }
+        }
+      }
 
       const updated = vendasData.map(venda => {
         // Already has a link saved in DB
         if (venda.linha_operadora_id) return venda;
 
-        let matchedLinha: any = null;
+        let matchedLinhas: any[] | null = null;
         let matchedApelido: string | null = null;
+        let matchKey: string | null = null;
+        let matchType: 'protocolo' | 'cpf' | null = null;
 
         for (const lal of lalData) {
           const tipoMatch = lal.tipo_match;
 
           if (tipoMatch === 'protocolo' && venda.protocolo_interno) {
-            const linha = linhasByProtocolo.get(venda.protocolo_interno.trim());
-            if (linha && !usedLinhaIds.has(linha.id)) {
-              matchedLinha = linha;
+            const key = venda.protocolo_interno.trim();
+            const linhas = linhasByProtocolo.get(key);
+            if (linhas && linhas.length > 0 && !usedProtocolKeys.has(key)) {
+              matchedLinhas = linhas;
               matchedApelido = lal.apelido;
+              matchKey = key;
+              matchType = 'protocolo';
               break;
             }
           }
 
           if (tipoMatch === 'cpf' && venda.cpf_cnpj) {
-            const linha = linhasByCpf.get(normDoc(venda.cpf_cnpj));
-            if (linha && !usedLinhaIds.has(linha.id)) {
-              matchedLinha = linha;
+            const key = normDoc(venda.cpf_cnpj);
+            const linhas = linhasByCpf.get(key);
+            if (linhas && linhas.length > 0 && !usedCpfKeys.has(key)) {
+              matchedLinhas = linhas;
               matchedApelido = lal.apelido;
+              matchKey = key;
+              matchType = 'cpf';
               break;
             }
           }
         }
 
-        if (matchedLinha) {
-          usedLinhaIds.add(matchedLinha.id);
+        if (matchedLinhas && matchedLinhas.length > 0) {
+          // Sum valor_lq across all linhas with same protocol/CPF
+          const totalValorLq = matchedLinhas.reduce((sum, l) => sum + Number(l.valor_lq || 0), 0);
+          // Link to the first linha as primary reference
+          const primaryLinha = matchedLinhas[0];
+          // Mark group as used
+          if (matchType === 'protocolo' && matchKey) usedProtocolKeys.add(matchKey);
+          if (matchType === 'cpf' && matchKey) usedCpfKeys.add(matchKey);
           return {
             ...venda,
-            matched_linha_id: matchedLinha.id,
-            matched_valor_lq: matchedLinha.valor_lq,
+            matched_linha_id: primaryLinha.id,
+            matched_valor_lq: totalValorLq,
             matched_apelido: matchedApelido,
           };
         }
