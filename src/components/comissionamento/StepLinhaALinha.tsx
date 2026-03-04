@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { normalizeCpfCnpj } from '@/lib/normalizeCpfCnpj';
+import { parseCSV } from '@/lib/parseCSV';
 import { supabase } from '@/integrations/supabase/client';
 import { MapeamentoColunas, CampoSistema } from '@/types/database';
 import { Button } from '@/components/ui/button';
@@ -79,19 +80,7 @@ export function StepLinhaALinha({ comissionamentoId }: Props) {
     setLals(prev => prev.filter(l => l.id !== id));
   };
 
-  const parseCSV = (content: string) => {
-    const lines = content.split('\n').filter(l => l.trim());
-    if (lines.length < 2) return { headers: [] as string[], rows: [] as Record<string, string>[] };
-    const sep = lines[0].includes(';') ? ';' : ',';
-    const headers = lines[0].split(sep).map(h => h.trim().replace(/^"|"$/g, ''));
-    const rows = lines.slice(1).map(line => {
-      const vals = line.split(sep).map(v => v.trim().replace(/^"|"$/g, ''));
-      const row: Record<string, string> = {};
-      headers.forEach((h, i) => { row[h] = vals[i] || ''; });
-      return row;
-    });
-    return { headers, rows };
-  };
+  // Uses robust RFC 4180 parseCSV from lib
 
   const handleFile = async (lalId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -123,52 +112,27 @@ export function StepLinhaALinha({ comissionamentoId }: Props) {
     try {
       const map = mapeamento.mapeamento as unknown as Record<CampoSistema, string>;
 
-      // Group lines (same logic as LinhaOperadora page)
-      const grupos = new Map<string, any>();
-      for (const row of lal.csvRows!) {
+      // Import each row individually (no grouping)
+      const linhas = lal.csvRows!.map(row => {
         const cpf = row[map.cpf_cnpj] || null;
         const protocolo = row[map.protocolo_operadora] || null;
-        const key = normalizeCpfCnpj(cpf || '') || protocolo || `row-${Math.random()}`;
-        const valor = map.valor && row[map.valor] ? parseFloat(row[map.valor].replace(',', '.').replace(/[^\d.-]/g, '')) : 0;
+        const valorStr = map.valor && row[map.valor] ? row[map.valor].replace(',', '.').replace(/[^\d.-]/g, '') : '';
+        const valor = valorStr ? parseFloat(valorStr) : null;
         const plano = map.plano ? row[map.plano] : null;
 
-        if (grupos.has(key)) {
-          const g = grupos.get(key);
-          g.valor_total += valor;
-          if (plano && !g.planos.includes(plano)) g.planos.push(plano);
-          g.count++;
-        } else {
-          grupos.set(key, {
-            cliente_nome: map.cliente_nome ? row[map.cliente_nome] : null,
-            cpf_cnpj: cpf,
-            protocolo_operadora: protocolo,
-            telefone: map.telefone ? row[map.telefone] : null,
-            planos: plano ? [plano] : [],
-            valor_total: valor,
-            valor_individual: valor,
-            data_status: map.data_status ? row[map.data_status] : null,
-            status_operadora: map.status_operadora ? row[map.status_operadora] : 'pendente',
-            quinzena_ref: map.quinzena_ref ? row[map.quinzena_ref] : null,
-            count: 1,
-          });
-        }
-      }
-
-      const linhas = Array.from(grupos.values()).map(g => {
-        const isCombo = g.planos.length > 1;
         return {
           operadora: operadora.nome,
-          protocolo_operadora: g.protocolo_operadora,
-          cpf_cnpj: g.cpf_cnpj,
-          cliente_nome: g.cliente_nome,
-          telefone: g.telefone,
-          plano: isCombo ? g.planos.join(' + ') : g.planos[0] || null,
-          valor: g.count === 1 ? g.valor_individual : null,
-          valor_lq: g.valor_total,
-          tipo_plano: isCombo ? 'COMBO' : (g.planos[0] || null),
-          data_status: g.data_status,
-          status_operadora: g.status_operadora || 'pendente',
-          quinzena_ref: g.quinzena_ref,
+          protocolo_operadora: protocolo,
+          cpf_cnpj: cpf,
+          cliente_nome: map.cliente_nome ? row[map.cliente_nome] : null,
+          telefone: map.telefone ? row[map.telefone] : null,
+          plano: plano || null,
+          valor: valor,
+          valor_lq: valor,
+          tipo_plano: plano || null,
+          data_status: map.data_status ? row[map.data_status] : null,
+          status_operadora: ((map.status_operadora ? row[map.status_operadora] : 'pendente') || 'pendente') as 'aprovado' | 'instalado' | 'cancelado' | 'pendente',
+          quinzena_ref: map.quinzena_ref ? row[map.quinzena_ref] : null,
           arquivo_origem: lal.arquivo?.name || null,
           apelido: lal.apelido.trim(),
         };
@@ -192,12 +156,11 @@ export function StepLinhaALinha({ comissionamentoId }: Props) {
         qtd_registros: linhas.length,
       });
 
-      const combos = linhas.filter(l => l.tipo_plano === 'COMBO').length;
       updateLal(lal.id, {
         imported: true,
-        importResult: { total: lal.csvRows!.length, agrupados: linhas.length, combos },
+        importResult: { total: lal.csvRows!.length, agrupados: linhas.length, combos: 0 },
       });
-      toast.success(`${lal.csvRows!.length} linhas → ${linhas.length} registros (${combos} COMBOs)`);
+      toast.success(`${linhas.length} registros importados`);
     } catch (err: any) {
       toast.error('Erro: ' + err.message);
     } finally {
