@@ -336,30 +336,15 @@ export default function ComissionamentoPage() {
         offset += 1000;
       }
 
-      // 4. Fetch conciliacoes
-      const vendaIds = allComVendas.map((r: any) => r.venda_interna_id);
-      let conciliacoes: any[] = [];
-      for (let i = 0; i < vendaIds.length; i += 50) {
-        const batch = vendaIds.slice(i, i + 50);
-        const { data, error } = await supabase
-          .from('conciliacoes')
-          .select('*')
-          .in('venda_interna_id', batch);
-        if (error) throw error;
-        conciliacoes = conciliacoes.concat(data || []);
-      }
-
-      // Build indexes
-      const concByLinhaId = new Map<string, any>();
-      const concByVendaId = new Map<string, any>();
-      for (const c of conciliacoes) {
-        concByLinhaId.set(c.linha_operadora_id, c);
-        concByVendaId.set(c.venda_interna_id, c);
-      }
-
-      const vendaByVendaId = new Map<string, any>();
+      // Build indexes using comissionamento_vendas (which stores the actual match via linha_operadora_id)
+      // Map: linha_operadora_id -> comissionamento_venda row
+      const cvByLinhaId = new Map<string, any>();
+      const cvByVendaId = new Map<string, any>();
       for (const cv of allComVendas) {
-        vendaByVendaId.set(cv.venda_interna_id, cv);
+        cvByVendaId.set(cv.venda_interna_id, cv);
+        if (cv.linha_operadora_id) {
+          cvByLinhaId.set(cv.linha_operadora_id, cv);
+        }
       }
 
       const linhaById = new Map<string, any>();
@@ -372,22 +357,22 @@ export default function ComissionamentoPage() {
         'Operadora', 'Protocolo Operadora', 'CPF/CNPJ', 'Cliente', 'Telefone',
         'Plano', 'Tipo Plano', 'Valor', 'Valor Make', 'Valor LQ',
         'Data Status', 'Status Operadora', 'Quinzena Ref', 'Apelido Lote', 'Arquivo Origem',
-        'Status Conciliação', 'Tipo Match', 'Score Match',
+        'Status Conciliação', 'Status Pag',
         'Venda ID', 'Vendedor', 'Protocolo Interno', 'Data Venda', 'Data Instalação',
         'Status Make', 'Operadora Interna', 'Empresa', 'Valor Venda Interna',
       ];
       const rows1 = linhasOperadora.map((l: any) => {
-        const conc = concByLinhaId.get(l.id);
-        const cv = conc ? vendaByVendaId.get(conc.venda_interna_id) : null;
+        const cv = cvByLinhaId.get(l.id);
         const vi = cv?.vendas_internas;
+        const encontrado = !!cv;
         return [
           l.operadora || '', l.protocolo_operadora || '', l.cpf_cnpj || '',
           l.cliente_nome || '', l.telefone || '', l.plano || '', l.tipo_plano || '',
           l.valor?.toString() || '', l.valor_make?.toString() || '', l.valor_lq?.toString() || '',
           l.data_status || '', l.status_operadora || '', l.quinzena_ref || '',
           l.apelido || '', l.arquivo_origem || '',
-          conc ? (conc.status_final === 'conciliado' ? 'Encontrado' : 'Divergente') : 'Não encontrado',
-          conc?.tipo_match || '', conc?.score_match?.toString() || '',
+          encontrado ? 'Encontrado' : 'Não encontrado',
+          cv?.status_pag || '',
           cv?.venda_interna_id || '', vi?.usuarios?.nome || '',
           vi?.protocolo_interno || '', vi?.data_venda || '', vi?.data_instalacao || '',
           vi?.status_make || '', vi?.operadoras?.nome || '', vi?.empresas?.nome || '',
@@ -401,14 +386,14 @@ export default function ComissionamentoPage() {
         'Telefone', 'Operadora', 'Plano', 'Data Venda', 'Data Instalação',
         'Status Interno', 'Status Make', 'Valor', 'Observações',
         'Status Pag', 'Receita Interna', 'Receita LAL', 'LAL Apelido', 'Estorno', 'Comiss. Desconto',
-        'Status Conciliação', 'Tipo Match', 'Score Match',
+        'Status Conciliação',
         'LAL Protocolo Operadora', 'LAL CPF/CNPJ', 'LAL Cliente', 'LAL Plano',
         'LAL Valor', 'LAL Data Status', 'LAL Status Operadora', 'LAL Quinzena',
       ];
       const rows2 = allComVendas.map((cv: any) => {
         const vi = cv.vendas_internas;
-        const conc = concByVendaId.get(cv.venda_interna_id);
-        const linha = conc ? linhaById.get(conc.linha_operadora_id) : null;
+        const linha = cv.linha_operadora_id ? linhaById.get(cv.linha_operadora_id) : null;
+        const encontrado = !!linha;
         return [
           vi?.usuarios?.nome || '', vi?.empresas?.nome || '',
           vi?.protocolo_interno || '', vi?.identificador_make || '',
@@ -420,8 +405,7 @@ export default function ComissionamentoPage() {
           cv.status_pag || '', cv.receita_interna?.toString() || '',
           cv.receita_lal?.toString() || '', cv.lal_apelido || '',
           cv.receita_descontada?.toString() || '', cv.comissionamento_desconto || '',
-          conc ? (conc.status_final === 'conciliado' ? 'Encontrado' : 'Divergente') : 'Não encontrado no Linha a Linha',
-          conc?.tipo_match || '', conc?.score_match?.toString() || '',
+          encontrado ? 'Encontrado' : 'Não encontrado no Linha a Linha',
           linha?.protocolo_operadora || '', linha?.cpf_cnpj || '',
           linha?.cliente_nome || '', linha?.plano || '',
           linha?.valor?.toString() || '', linha?.data_status || '',
