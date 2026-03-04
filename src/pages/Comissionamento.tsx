@@ -316,7 +316,7 @@ export default function ComissionamentoPage() {
         const { data, error } = await supabase
           .from('comissionamento_vendas')
           .select(`
-            id, venda_interna_id, status_pag, receita_interna, receita_lal, receita_descontada,
+            id, venda_interna_id, linha_operadora_id, status_pag, receita_interna, receita_lal, receita_descontada,
             lal_apelido, comissionamento_desconto,
             vendas_internas!comissionamento_vendas_venda_interna_id_fkey(
               cliente_nome, cpf_cnpj, protocolo_interno, status_make, data_venda, data_instalacao,
