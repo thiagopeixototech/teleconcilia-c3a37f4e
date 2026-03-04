@@ -351,6 +351,21 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
     const fixedOId = fonte.operadoraId || mapeamento.config?.operadora_id || '';
     const oCol = fonte.operadoraColumn || mapeamento.config?.operadora_column || '';
 
+    const usuariosByCpf = new Map<string, string>();
+    const usuariosByEmail = new Map<string, string>();
+    for (const u of usuarios) {
+      if (u.cpf) {
+        const normalizedCpf = normalizeCpfCnpj(u.cpf);
+        if (normalizedCpf) usuariosByCpf.set(normalizedCpf, u.id);
+      }
+      if (u.email) usuariosByEmail.set(u.email.trim().toLowerCase(), u.id);
+    }
+
+    const operadorasByNome = new Map<string, string>();
+    for (const o of operadoras) {
+      operadorasByNome.set(o.nome.trim().toLowerCase(), o.id);
+    }
+
     const { data: fonteData, error: fonteErr } = await supabase
       .from('comissionamento_fontes')
       .insert({
@@ -384,69 +399,74 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
       rowIdx++;
     }
 
+    setProcessingProgress({ phase: 'Validando arquivo...', current: 0, total: deduped.size });
+    let validatedCount = 0;
+
     for (const [idMake, row] of deduped) {
       const dataVenda = parseDate(row[map.data_venda]?.trim() || '');
       if (!dataVenda) {
         errorCount++;
         errorRows.push({ rowIndex: rowIndexMap.get(idMake) || 0, row, reason: 'data', idMake });
-        continue;
-      }
-
-      let vendedorId: string | null = null;
-      if (vMode === 'fixed') {
-        vendedorId = fixedVId;
       } else {
-        const val = row[vCol]?.trim();
-        if (val) {
-          const normalized = normalizeCpfCnpj(val);
-          const found = vMode === 'column_cpf'
-            ? usuarios.find(u => u.cpf && normalizeCpfCnpj(u.cpf) === normalized)
-            : usuarios.find(u => u.email.toLowerCase() === val.toLowerCase());
-          vendedorId = found?.id || null;
+        let vendedorId: string | null = null;
+        if (vMode === 'fixed') {
+          vendedorId = fixedVId;
+        } else {
+          const val = row[vCol]?.trim();
+          if (val) {
+            vendedorId = vMode === 'column_cpf'
+              ? usuariosByCpf.get(normalizeCpfCnpj(val)) || null
+              : usuariosByEmail.get(val.toLowerCase()) || null;
+          }
+        }
+
+        if (!vendedorId) {
+          errorCount++;
+          errorRows.push({ rowIndex: rowIndexMap.get(idMake) || 0, row, reason: 'vendedor', idMake });
+        } else {
+          let operadoraId: string | null = null;
+          if (oMode === 'fixed') {
+            operadoraId = fixedOId;
+          } else {
+            const val = row[oCol]?.trim()?.toLowerCase();
+            operadoraId = val ? operadorasByNome.get(val) || null : null;
+          }
+
+          if (!operadoraId) {
+            errorCount++;
+            errorRows.push({ rowIndex: rowIndexMap.get(idMake) || 0, row, reason: 'operadora', idMake });
+          } else {
+            const cpf = map.cpf_cnpj ? normalizeCpfCnpj(row[map.cpf_cnpj] || '') : null;
+            const valorStr = map.valor ? row[map.valor]?.replace(',', '.').replace(/[^\d.-]/g, '') : null;
+            const valor = valorStr ? parseFloat(valorStr) : null;
+            const dataInstalacao = map.data_instalacao ? parseDate(row[map.data_instalacao]?.trim() || '') : null;
+
+            vendaRows.push({
+              identificador_make: idMake,
+              status_make: row[map.status_make]?.trim() || null,
+              data_venda: dataVenda,
+              data_instalacao: dataInstalacao,
+              cliente_nome: row[map.cliente_nome]?.trim() || 'N/A',
+              cpf_cnpj: cpf || null,
+              telefone: map.telefone ? row[map.telefone]?.trim() : null,
+              protocolo_interno: map.protocolo_interno ? row[map.protocolo_interno]?.trim() : null,
+              valor,
+              plano: map.plano ? row[map.plano]?.trim() : null,
+              observacoes: map.observacoes ? row[map.observacoes]?.trim() : null,
+              usuario_id: vendedorId,
+              operadora_id: operadoraId,
+              empresa_id: fonte.empresaId || null,
+            });
+            successCount++;
+          }
         }
       }
-      if (!vendedorId) {
-        errorCount++;
-        errorRows.push({ rowIndex: rowIndexMap.get(idMake) || 0, row, reason: 'vendedor', idMake });
-        continue;
-      }
 
-      let operadoraId: string | null = null;
-      if (oMode === 'fixed') {
-        operadoraId = fixedOId;
-      } else {
-        const val = row[oCol]?.trim()?.toLowerCase();
-        const found = operadoras.find(o => o.nome.toLowerCase() === val);
-        operadoraId = found?.id || null;
+      validatedCount++;
+      if (validatedCount % 200 === 0 || validatedCount === deduped.size) {
+        setProcessingProgress({ phase: 'Validando arquivo...', current: validatedCount, total: deduped.size });
+        await new Promise(r => setTimeout(r, 0));
       }
-      if (!operadoraId) {
-        errorCount++;
-        errorRows.push({ rowIndex: rowIndexMap.get(idMake) || 0, row, reason: 'operadora', idMake });
-        continue;
-      }
-
-      const cpf = map.cpf_cnpj ? normalizeCpfCnpj(row[map.cpf_cnpj] || '') : null;
-      const valorStr = map.valor ? row[map.valor]?.replace(',', '.').replace(/[^\d.-]/g, '') : null;
-      const valor = valorStr ? parseFloat(valorStr) : null;
-      const dataInstalacao = map.data_instalacao ? parseDate(row[map.data_instalacao]?.trim() || '') : null;
-
-      vendaRows.push({
-        identificador_make: idMake,
-        status_make: row[map.status_make]?.trim() || null,
-        data_venda: dataVenda,
-        data_instalacao: dataInstalacao,
-        cliente_nome: row[map.cliente_nome]?.trim() || 'N/A',
-        cpf_cnpj: cpf || null,
-        telefone: map.telefone ? row[map.telefone]?.trim() : null,
-        protocolo_interno: map.protocolo_interno ? row[map.protocolo_interno]?.trim() : null,
-        valor,
-        plano: map.plano ? row[map.plano]?.trim() : null,
-        observacoes: map.observacoes ? row[map.observacoes]?.trim() : null,
-        usuario_id: vendedorId,
-        operadora_id: operadoraId,
-        empresa_id: fonte.empresaId || null,
-      });
-      successCount++;
     }
 
     // Check existing vendas
