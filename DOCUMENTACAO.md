@@ -20,6 +20,7 @@
 10. [Fluxos de Negócio](#10-fluxos-de-negócio)
 11. [Serviços e Utilitários](#11-serviços-e-utilitários)
 12. [Estrutura de Arquivos](#12-estrutura-de-arquivos)
+13. [Lógica de Processamento e Cálculos Detalhados](#13-lógica-de-processamento-e-cálculos-detalhados)
 
 ---
 
@@ -732,6 +733,359 @@ supabase/
     ├── atualizar-venda/             # API: atualizar venda
     ├── criar-usuarios-massa/        # API: cadastro em massa
     └── reset-user-password/         # API: reset de senha
+```
+
+---
+
+## 13. Lógica de Processamento e Cálculos Detalhados
+
+### 13.1 Importação de Vendas Internas (`/importacao-vendas`)
+
+**Processamento em 4 fases:**
+
+#### Fase 1 — Verificação de Duplicatas (0-10% progresso)
+```
+Para cada identificador_make do CSV:
+  → Busca no banco se já existe via SELECT ... IN (lotes de 200)
+  → Monta Map<identificador_make, id_existente>
+```
+
+#### Fase 2a — Deduplicação Interna do Arquivo
+```
+Para cada linha do CSV:
+  SE identificador_make vazio → erro "identificador_make vazio"
+  SE identificador_make já visto no arquivo → substitui pela última ocorrência
+  (mantém sempre a ÚLTIMA linha com o mesmo identificador)
+```
+
+#### Fase 2b — Validação e Construção dos Registros
+```
+Para cada linha deduplicada:
+  1. Parsing de data_venda (flexível: DD/MM/YY, MM/DD/YY, YYYY-MM-DD, com/sem hora)
+     → Se ambíguo (ambos ≤ 12), assume formato US (MM/DD)
+     → Ano de 2 dígitos: 0-49 → 20XX, 50-99 → 19XX
+  2. Busca vendedor:
+     - Modo "column_cpf": normaliza CPF (só dígitos), busca match exato em usuarios.cpf
+     - Modo "column_email": match case-insensitive em usuarios.email
+     - Modo "fixed": usa o vendedor fixo selecionado
+  3. Busca operadora:
+     - Modo "fixed": usa a operadora selecionada
+     - Modo "column": match case-insensitive pelo nome
+  4. Normalização de dados:
+     - CPF/CNPJ: remove tudo exceto dígitos
+     - Telefone: remove tudo exceto dígitos
+     - Protocolo: se 7 dígitos, adiciona zero à esquerda (→ 8 dígitos)
+     - Valor: substitui vírgula por ponto, remove caracteres não numéricos
+  5. Decisão insert vs update:
+     - SE identificador_make existe no banco → UPDATE (sem alterar status_interno)
+     - SE não existe → INSERT com status_interno = 'aguardando'
+```
+
+#### Fase 3 — Inserção (10-80% progresso)
+```
+Lotes de 500 registros:
+  → INSERT em batch
+  → Se batch falhar: fallback para insert um a um (com yield a cada 10)
+  → Yield de 30ms entre batches
+```
+
+#### Fase 4 — Atualização (80-100% progresso)
+```
+Lotes de 50 registros:
+  → UPDATE via Promise.all (paralelo dentro do lote)
+  → Yield de 30ms entre lotes
+```
+
+#### Pós-processamento
+```
+→ Busca IDs das vendas recém-inseridas (lotes de 200)
+→ Registra audit_log com acao='IMPORTACAO_MASSA' (arquivo, totais, venda_ids)
+```
+
+---
+
+### 13.2 Importação Linha a Linha (`/linha-operadora`)
+
+**Processamento direto sem agrupamento:**
+
+```
+Para cada linha do CSV:
+  1. Aplica mapeamento (modelo de colunas selecionado):
+     coluna_csv → campo_sistema (ex: "DOCUMENTO" → "cpf_cnpj")
+  2. Normalização de valor:
+     valor_str.replace(',', '.').replace(não-numéricos)
+  3. Cada linha vira 1 registro individual:
+     {
+       operadora: nome_selecionada,
+       protocolo_operadora: mapeado ou null,
+       cpf_cnpj: mapeado ou null,
+       cliente_nome: mapeado ou null,
+       valor: parseFloat(valor_str),
+       valor_lq: parseFloat(valor_str),   ← CÓPIA do valor (valor líquido)
+       apelido: apelido_do_lote,
+       arquivo_origem: nome_do_arquivo,
+       status_operadora: mapeado ou 'pendente'
+     }
+  4. Inserção em lotes de 500
+```
+
+**Importante:** `valor_lq` é inicializado com o mesmo valor de `valor`. Este campo é usado no comissionamento como "receita da operadora".
+
+**Exclusão de importação:**
+```
+1. Busca todos os IDs de linha_operadora do lote (por apelido ou arquivo_origem)
+2. Deleta conciliacoes vinculadas (em lotes de 500)
+3. Deleta as linhas do lote
+```
+
+---
+
+### 13.3 Conciliação Avulsa (`/conciliacao`)
+
+**Processamento de match (por arquivo selecionado):**
+
+#### Etapa 1 — Carregamento
+```
+1. Busca todas linhas do arquivo (fetchAllRows, sem limite de 1000)
+2. Busca conciliações existentes para essas linhas (em lotes de 200)
+3. Busca vendas com status_make LIKE 'instalad%' ou 'churn%' (fetchAllRows)
+```
+
+#### Etapa 2 — Indexação O(1)
+```
+Constrói 3 Maps a partir das vendas:
+  vendaByProtocolo: Map<protocolo_interno, VendaInterna[]>
+  vendaByCpf:       Map<cpf_normalizado, VendaInterna[]>
+  vendaByTelefone:  Map<telefone_9dig, VendaInterna[]>
+
+Normalização:
+  CPF: remove tudo exceto dígitos
+  Telefone: remove tudo exceto dígitos, pega últimos 9
+```
+
+#### Etapa 3 — Matching (em lotes de 500 com yield)
+```
+Para cada linha do arquivo da operadora:
+  SE já conciliada → categoria "Já Conciliados"
+  SE sem protocolo, CPF e telefone → categoria "Problemas" (sem chave de match)
+  
+  Busca candidatos na ordem de prioridade:
+    1º Protocolo (score 100) → match exato protocolo_operadora == protocolo_interno
+    2º CPF (score 90)        → match por CPF normalizado (somente se protocolo não encontrou)
+    3º Telefone (score 70)   → match por últimos 9 dígitos (somente se nenhum anterior encontrou)
+  
+  Resultado:
+    0 candidatos → "Não Encontrados"
+    1 candidato  → "Encontrados" (com score)
+    2+ candidatos → "Ambíguos"
+  
+  Detecção de duplicatas no arquivo:
+    Se a mesma chave (protocolo/cpf/tel) aparece 2x no arquivo → "Duplicados"
+```
+
+#### Etapa 4 — Persistência (ação "Conciliar Todos")
+```
+Em lotes de 50:
+  1. INSERT em conciliacoes:
+     { venda_interna_id, linha_operadora_id, tipo_match, status_final, score_match, validado_por }
+  
+  2. UPDATE em vendas_internas:
+     - status_interno → 'confirmada' (se conciliado) ou 'aguardando' (se divergente)
+     - valor → valor_lq da linha operadora (sincroniza receita)
+       ⚠️ SÓ atualiza valor se status_final != 'divergente' E valor_lq não é null
+  
+  3. Auditoria:
+     - Registro CONCILIAR_LOTE (tipo_match, linha_id, arquivo)
+     - Se valor mudou: registro ALTERAR_VALOR (valor anterior → valor_lq)
+```
+
+#### Match Manual (para "Não Encontrados")
+```
+1. Usuário busca e seleciona uma venda manualmente
+2. INSERT em conciliacoes com tipo_match = 'manual'
+3. UPDATE venda status_interno → 'confirmada'
+4. Registro de auditoria CONCILIAR
+```
+
+---
+
+### 13.4 Conciliação no Comissionamento (`StepConciliacao`)
+
+**Pré-conciliação automática (em memória):**
+
+```
+1. Carrega todos os comissionamento_vendas do período
+2. Carrega todos os comissionamento_lal (lotes LAL) do período
+3. Para cada LAL, busca as linhas_operadora pelo apelido
+
+Indexação:
+  linhasByProtocolo: Map<protocolo, linha_operadora[]>  ← ARRAY (combos!)
+  linhasByCpf:       Map<cpf_normalizado, linha_operadora[]>
+
+Para cada venda no comissionamento (que ainda não tem vínculo):
+  Testa cada LAL na ordem de prioridade:
+    SE tipo_match do LAL = 'protocolo':
+      Busca linhas com mesmo protocolo_interno
+    SE tipo_match do LAL = 'cpf':
+      Busca linhas com mesmo CPF normalizado (sem zeros à esquerda)
+  
+  SE encontrou match:
+    ★ SOMA o valor_lq de TODAS as linhas com mesma chave ★
+    (ex: combo com 3 produtos → soma dos 3 valor_lq)
+    Marca a chave como "usada" (evita duplicar)
+    Atribui matched_linha_id = primeiro registro do grupo
+    Atribui matched_valor_lq = SOMA total
+```
+
+**Persistência (ação "Marcar como OK" ou "Marcar como DESCONTADA"):**
+
+```
+Em lotes de 50 (Promise.all):
+  UPDATE comissionamento_vendas:
+    - status_pag: 'OK' ou 'DESCONTADA'
+    - SE pré-matched mas não salvo:
+      - linha_operadora_id: matched_linha_id
+      - receita_lal: matched_valor_lq (soma dos valor_lq)
+      - lal_apelido: apelido do lote
+```
+
+---
+
+### 13.5 Importação de Estornos (`/importacao-estornos`)
+
+```
+1. Carrega TODAS as vendas (fetchAll, sem limite 1000):
+   { id, identificador_make, protocolo_interno, cpf_cnpj, telefone }
+
+2. Constrói Maps de lookup:
+   byMake:      Map<identificador_make, venda_id>
+   byProtocolo: Map<protocolo_interno, venda_id>
+   byCpfTel:    Map<"cpf_telefone", venda_id>
+
+3. Para cada linha do CSV:
+   Validação:
+     - valor_estornado > 0 e numérico
+     - referencia_desconto não vazio
+   
+   Match (prioridade):
+     1º identificador_make (match exato)
+     2º protocolo (match exato)
+     3º cpf + telefone combinados (match exato da concatenação)
+   
+   Resultado:
+     vendaId encontrado → match_status = 'MATCHED'
+     não encontrado     → match_status = 'NO_MATCH'
+
+4. Inserção em lotes de 200
+   Se batch falhar → fallback um a um
+
+5. Auditoria: audit_log com acao='IMPORTACAO_ESTORNOS'
+```
+
+---
+
+### 13.6 Dashboard — Cálculos (`get_dashboard_stats`)
+
+**Executado via RPC no servidor (PostgreSQL):**
+
+```
+Filtros aplicados:
+  - data_venda BETWEEN _data_inicio AND _data_fim
+  - data_instalacao BETWEEN _data_instalacao_inicio E _data_instalacao_fim (opcional)
+  - usuario_id = _usuario_id (opcional)
+  - supervisor subordinados (opcional)
+  - RLS: admin vê tudo, supervisor vê time, vendedor vê próprio
+
+Métricas calculadas:
+  total_vendas        = COUNT(*)
+  vendas_instaladas   = COUNT WHERE status_make ILIKE 'instalad%'
+  vendas_confirmadas  = COUNT WHERE status_interno = 'confirmada'
+  vendas_canceladas   = COUNT WHERE status_interno = 'cancelada'
+  vendas_aguardando   = COUNT WHERE status_interno = 'aguardando'
+  valor_total         = SUM(valor) WHERE status_make ILIKE 'instalad%'
+  vendas_conciliadas  = COUNT WHERE instalada + EXISTS conciliação conciliada
+  valor_conciliado    = SUM(valor) WHERE instalada + EXISTS conciliação conciliada
+```
+
+**IRL (calculado no frontend):**
+```
+IRL = (valor_conciliado / valor_total) × 100
+
+Semáforo:
+  Verde:   IRL ≥ 90%
+  Amarelo: 75% ≤ IRL < 90%
+  Vermelho: IRL < 75%
+```
+
+---
+
+### 13.7 Performance de Consultores (`get_performance_consultores`)
+
+```
+Por vendedor (GROUP BY usuario_id):
+  total_vendas       = COUNT(*)
+  vendas_instaladas  = COUNT WHERE status_make ILIKE 'instalad%'
+  vendas_conciliadas = COUNT WHERE instalada + conciliação 'conciliado'
+  receita_conciliada = SUM(valor) das conciliadas
+  taxa_conciliacao   = (vendas_conciliadas / vendas_instaladas) × 100
+  ticket_medio       = receita_conciliada / vendas_conciliadas
+```
+
+---
+
+### 13.8 Painel Final do Comissionamento (`StepPainelFinal`)
+
+**Agregação por vendedor:**
+```
+Para cada vendedor que possui vendas no comissionamento:
+  Receita Bruta    = SUM(receita_interna) WHERE status_pag = 'OK'
+  Receita LAL      = SUM(receita_lal) WHERE status_pag = 'OK'
+  Descontos        = SUM(receita_descontada) WHERE status_pag = 'DESCONTADA'
+  Receita Líquida  = Receita LAL - Descontos
+  
+  Total vendas         = COUNT de comissionamento_vendas
+  Vendas OK            = COUNT WHERE status_pag = 'OK'
+  Vendas Descontadas   = COUNT WHERE status_pag = 'DESCONTADA'
+```
+
+---
+
+### 13.9 Normalização de Dados
+
+| Função | Input | Output | Regra |
+|--------|-------|--------|-------|
+| `normalizeCpfCnpj()` | "093.408.090/0001-37" | "09340809000137" | Remove tudo exceto dígitos |
+| `normalizeCpfCnpjForMatch()` | "09340809000137" | "9340809000137" | Remove dígitos + zeros à esquerda |
+| `normalizeProtocolo()` | "1234567" | "01234567" | Se 7 dígitos, pad com zero |
+| `normalizeTelefone()` | "(11) 98765-4321" | "987654321" | Remove não-dígitos, últimos 9 |
+| `parseDate()` | "10/28/25 13:07" | "2025-10-28" | Strip hora, expande ano, detecta formato |
+
+---
+
+### 13.10 Scores de Match na Conciliação
+
+| Tipo | Score | Prioridade | Critério |
+|------|-------|-----------|----------|
+| Protocolo | 100 | 1ª | Match exato: protocolo_operadora == protocolo_interno |
+| CPF | 90 | 2ª | Match por CPF normalizado (somente se protocolo não encontrou) |
+| Telefone | 70 | 3ª | Match pelos últimos 9 dígitos |
+| Manual | N/A | Manual | Seleção explícita pelo usuário |
+
+**Regra de fallback:** Só tenta o critério seguinte se o anterior não encontrou match.
+
+---
+
+### 13.11 Lógica de Valor na Conciliação
+
+```
+Conciliação Avulsa (/conciliacao):
+  → Atualiza vendas_internas.valor COM o valor_lq da linha operadora
+  → Sincroniza receita da venda com o efetivamente faturado pela operadora
+
+Conciliação no Comissionamento:
+  → NÃO altera vendas_internas.valor
+  → Armazena receita_lal em comissionamento_vendas (valor_lq somado)
+  → Para combos/multi-produto: SOMA todos os valor_lq do mesmo CPF/protocolo
 ```
 
 ---
