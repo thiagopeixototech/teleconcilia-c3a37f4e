@@ -241,10 +241,29 @@ export default function VendasInternas() {
           .order('created_at', { ascending: false })
           .range(from, from + batchSize - 1);
 
+        // Apply ALL filters at database level
         if (dataVendaInicio) query = query.gte('data_venda', format(dataVendaInicio, 'yyyy-MM-dd'));
         if (dataVendaFim) query = query.lte('data_venda', format(dataVendaFim, 'yyyy-MM-dd'));
         if (dataInstalacaoInicio) query = query.gte('data_instalacao', format(dataInstalacaoInicio, 'yyyy-MM-dd'));
         if (dataInstalacaoFim) query = query.lte('data_instalacao', format(dataInstalacaoFim, 'yyyy-MM-dd'));
+        if (statusFilter !== 'all') query = query.eq('status_interno', statusFilter as any);
+        if (operadoraFilter !== 'all') query = query.eq('operadora_id', operadoraFilter);
+        if (vendedorFilter !== 'all') query = query.eq('usuario_id', vendedorFilter);
+        if (empresaFilter !== 'all') query = query.eq('empresa_id', empresaFilter);
+        if (statusMakeFilter !== 'all') {
+          if (statusMakeFilter === '_empty_') {
+            query = query.or('status_make.is.null,status_make.eq.');
+          } else {
+            query = query.eq('status_make', statusMakeFilter);
+          }
+        }
+        if (confirmadaFilter === 'confirmada') query = query.eq('status_interno', 'confirmada');
+        else if (confirmadaFilter === 'nao_confirmada') query = query.neq('status_interno', 'confirmada');
+        if (idMakeSearch) query = query.ilike('identificador_make', `%${idMakeSearch}%`);
+        if (protocoloSearch) query = query.ilike('protocolo_interno', `%${protocoloSearch}%`);
+        if (searchTerm) {
+          query = query.or(`cliente_nome.ilike.%${searchTerm}%,cpf_cnpj.ilike.%${searchTerm}%,protocolo_interno.ilike.%${searchTerm}%,identificador_make.ilike.%${searchTerm}%`);
+        }
 
         const { data, error } = await query;
 
@@ -270,7 +289,6 @@ export default function VendasInternas() {
       const conciliacaoMap: Record<string, { apelido: string; valor_lal: number | null }> = {};
 
       if (vendaIds.length > 0) {
-        // Fetch conciliacoes in batches
         for (let i = 0; i < vendaIds.length; i += 500) {
           const batch = vendaIds.slice(i, i + 500);
           const { data: concData } = await supabase
