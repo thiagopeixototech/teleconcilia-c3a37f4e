@@ -9,15 +9,16 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
   ShoppingCart, CheckCircle, TrendingDown, DollarSign,
   Plus, RefreshCw, Loader2, GitCompare, RotateCcw,
-  FileSpreadsheet, Receipt, Trash2, FileDown, Users,
+  FileSpreadsheet, Receipt, Trash2, FileDown, Users, Eye, Search,
 } from 'lucide-react';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -81,6 +82,13 @@ export default function ComissionamentoPage() {
   const [statsLoading, setStatsLoading] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardMode, setWizardMode] = useState<'criar' | 'atualizar'>('criar');
+
+  // Vendor detail dialog
+  const [vendorDetailOpen, setVendorDetailOpen] = useState(false);
+  const [vendorDetailName, setVendorDetailName] = useState('');
+  const [vendorDetailRows, setVendorDetailRows] = useState<any[]>([]);
+  const [vendorDetailLoading, setVendorDetailLoading] = useState(false);
+  const [vendorDetailSearch, setVendorDetailSearch] = useState('');
 
   const loadComissionamentos = useCallback(async () => {
     try {
@@ -517,6 +525,63 @@ export default function ComissionamentoPage() {
     }
   }, [selectedId]);
 
+  const handleViewVendedorDetail = useCallback(async (vendedorNome: string) => {
+    if (!selectedId) return;
+    setVendorDetailName(vendedorNome);
+    setVendorDetailOpen(true);
+    setVendorDetailLoading(true);
+    setVendorDetailSearch('');
+    try {
+      let allRows: any[] = [];
+      let offset = 0;
+      while (true) {
+        const { data, error } = await supabase
+          .from('comissionamento_vendas')
+          .select(`
+            status_pag, receita_interna, receita_lal, receita_descontada,
+            lal_apelido, comissionamento_desconto,
+            vendas_internas!comissionamento_vendas_venda_interna_id_fkey(
+              cliente_nome, cpf_cnpj, protocolo_interno, status_make, data_instalacao, plano, valor,
+              identificador_make, telefone, data_venda,
+              usuarios!vendas_internas_usuario_id_fkey(nome),
+              operadoras!vendas_internas_operadora_id_fkey(nome)
+            )
+          `)
+          .eq('comissionamento_id', selectedId)
+          .range(offset, offset + 999);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        allRows = allRows.concat(data);
+        if (data.length < 1000) break;
+        offset += 1000;
+      }
+      const filtered = allRows.filter((r: any) => {
+        const nome = r.vendas_internas?.usuarios?.nome || 'Não identificado';
+        return nome === vendedorNome;
+      });
+      setVendorDetailRows(filtered);
+    } catch (err: any) {
+      toast.error('Erro ao carregar vendas: ' + err.message);
+    } finally {
+      setVendorDetailLoading(false);
+    }
+  }, [selectedId]);
+
+  const filteredVendorDetailRows = useMemo(() => {
+    if (!vendorDetailSearch.trim()) return vendorDetailRows;
+    const term = vendorDetailSearch.toLowerCase();
+    return vendorDetailRows.filter((r: any) => {
+      const vi = r.vendas_internas;
+      return (
+        (vi?.cliente_nome || '').toLowerCase().includes(term) ||
+        (vi?.cpf_cnpj || '').includes(term) ||
+        (vi?.protocolo_interno || '').toLowerCase().includes(term) ||
+        (vi?.identificador_make || '').toLowerCase().includes(term) ||
+        (vi?.telefone || '').includes(term)
+      );
+    });
+  }, [vendorDetailRows, vendorDetailSearch]);
+
   return (
     <AppLayout title="Comissionamento">
       <div className="space-y-6">
@@ -697,6 +762,15 @@ export default function ComissionamentoPage() {
                                   >
                                     <FileDown className="h-3.5 w-3.5" />
                                   </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 shrink-0"
+                                    onClick={() => handleViewVendedorDetail(vr.vendedor_nome)}
+                                    title={`Ver vendas de ${vr.vendedor_nome}`}
+                                  >
+                                    <Eye className="h-3.5 w-3.5" />
+                                  </Button>
                                   {vr.vendedor_nome}
                                 </div>
                               </TableCell>
@@ -752,6 +826,88 @@ export default function ComissionamentoPage() {
             comissionamentoId={wizardMode === 'atualizar' ? selectedId : undefined}
             onClose={handleWizardClose}
           />
+        </DialogContent>
+      </Dialog>
+
+      {/* Vendor Detail Dialog */}
+      <Dialog open={vendorDetailOpen} onOpenChange={setVendorDetailOpen}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Vendas de {vendorDetailName}</DialogTitle>
+            <DialogDescription>
+              {vendorDetailRows.length} vendas encontradas
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex items-center gap-2 mb-4">
+            <Search className="h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por cliente, CPF, protocolo, ID Make..."
+              value={vendorDetailSearch}
+              onChange={(e) => setVendorDetailSearch(e.target.value)}
+              className="flex-1"
+            />
+          </div>
+
+          {vendorDetailLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin" />
+            </div>
+          ) : (
+            <div className="overflow-auto max-h-[60vh]">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-xs">Protocolo</TableHead>
+                    <TableHead className="text-xs">ID Make</TableHead>
+                    <TableHead className="text-xs">CPF</TableHead>
+                    <TableHead className="text-xs">Cliente</TableHead>
+                    <TableHead className="text-xs">Operadora</TableHead>
+                    <TableHead className="text-xs">Plano</TableHead>
+                    <TableHead className="text-xs">Status Make</TableHead>
+                    <TableHead className="text-xs">Status Pag</TableHead>
+                    <TableHead className="text-xs text-right">Receita LAL</TableHead>
+                    <TableHead className="text-xs">LAL</TableHead>
+                    <TableHead className="text-xs text-right">Estorno</TableHead>
+                    <TableHead className="text-xs">Desconto</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredVendorDetailRows.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={12} className="text-center text-muted-foreground py-4">
+                        Nenhuma venda encontrada
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredVendorDetailRows.map((cv: any, idx: number) => {
+                      const vi = cv.vendas_internas;
+                      return (
+                        <TableRow key={idx}>
+                          <TableCell className="text-xs font-mono">{vi?.protocolo_interno || '-'}</TableCell>
+                          <TableCell className="text-xs font-mono">{vi?.identificador_make || '-'}</TableCell>
+                          <TableCell className="text-xs font-mono">{vi?.cpf_cnpj || '-'}</TableCell>
+                          <TableCell className="text-xs">{vi?.cliente_nome || '-'}</TableCell>
+                          <TableCell className="text-xs">{vi?.operadoras?.nome || '-'}</TableCell>
+                          <TableCell className="text-xs">{vi?.plano || '-'}</TableCell>
+                          <TableCell className="text-xs">{vi?.status_make || '-'}</TableCell>
+                          <TableCell className="text-xs">
+                            <Badge variant={cv.status_pag === 'OK' ? 'default' : cv.status_pag === 'DESCONTADA' ? 'destructive' : 'secondary'} className="text-[10px]">
+                              {cv.status_pag || 'Pendente'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-xs text-right">{cv.receita_lal ? formatBRL(cv.receita_lal) : '-'}</TableCell>
+                          <TableCell className="text-xs">{cv.lal_apelido || '-'}</TableCell>
+                          <TableCell className="text-xs text-right text-destructive">{cv.receita_descontada ? formatBRL(cv.receita_descontada) : '-'}</TableCell>
+                          <TableCell className="text-xs">{cv.comissionamento_desconto || '-'}</TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </AppLayout>
