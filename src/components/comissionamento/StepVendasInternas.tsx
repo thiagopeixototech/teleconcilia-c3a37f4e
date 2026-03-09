@@ -167,12 +167,49 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
   const handleFileSelect = async (fonteId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
+
     try {
       const content = await f.text();
       const { headers, rows } = parseCSV(content);
-      if (headers.length === 0) { toast.error('Arquivo vazio ou formato inválido'); return; }
-      updateFonte(fonteId, { arquivo: f, csvHeaders: headers, csvRows: rows, nome: f.name });
-      toast.success(`${rows.length} linhas encontradas`);
+
+      if (headers.length === 0) {
+        toast.error('Arquivo vazio ou formato inválido');
+        return;
+      }
+
+      // Sanitiza cabeçalhos para evitar crash no Select (valor vazio/duplicado/BOM)
+      const normalizedHeaders = headers.map((h) => h.replace(/^\uFEFF/, '').trim());
+      const selectedColumns: Array<{ original: string; normalized: string }> = [];
+      const seen = new Set<string>();
+
+      normalizedHeaders.forEach((normalized, index) => {
+        if (!normalized || seen.has(normalized)) return;
+        seen.add(normalized);
+        selectedColumns.push({ original: headers[index], normalized });
+      });
+
+      if (selectedColumns.length === 0) {
+        toast.error('O CSV não possui colunas válidas no cabeçalho.');
+        return;
+      }
+
+      const sanitizedHeaders = selectedColumns.map((c) => c.normalized);
+      const sanitizedRows = rows.map((row) => {
+        const next: Record<string, string> = {};
+        selectedColumns.forEach(({ original, normalized }) => {
+          next[normalized] = row[original] ?? '';
+        });
+        return next;
+      });
+
+      updateFonte(fonteId, {
+        arquivo: f,
+        csvHeaders: sanitizedHeaders,
+        csvRows: sanitizedRows,
+        nome: f.name,
+      });
+
+      toast.success(`${sanitizedRows.length} linhas encontradas`);
     } catch (err: any) {
       console.error('Erro ao ler CSV:', err);
       toast.error('Erro ao processar o arquivo CSV: ' + (err.message || 'formato inválido'));
