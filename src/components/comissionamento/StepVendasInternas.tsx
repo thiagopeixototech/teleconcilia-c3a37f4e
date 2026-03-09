@@ -167,11 +167,16 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
   const handleFileSelect = async (fonteId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
-    const content = await f.text();
-    const { headers, rows } = parseCSV(content);
-    if (headers.length === 0) { toast.error('Arquivo vazio'); return; }
-    updateFonte(fonteId, { arquivo: f, csvHeaders: headers, csvRows: rows, nome: f.name });
-    toast.success(`${rows.length} linhas encontradas`);
+    try {
+      const content = await f.text();
+      const { headers, rows } = parseCSV(content);
+      if (headers.length === 0) { toast.error('Arquivo vazio ou formato inválido'); return; }
+      updateFonte(fonteId, { arquivo: f, csvHeaders: headers, csvRows: rows, nome: f.name });
+      toast.success(`${rows.length} linhas encontradas`);
+    } catch (err: any) {
+      console.error('Erro ao ler CSV:', err);
+      toast.error('Erro ao processar o arquivo CSV: ' + (err.message || 'formato inválido'));
+    }
   };
 
   const loadMapeamento = (fonteId: string, mapId: string) => {
