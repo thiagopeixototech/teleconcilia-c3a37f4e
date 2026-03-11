@@ -325,11 +325,11 @@ export function StepConciliacao({ comissionamentoId }: Props) {
     return groups;
   }, [filteredVendas, matchFilter]);
 
-  const handleConfirmDuplicate = async (groupKey: string) => {
+  const handleConfirmAtencao = async (groupKey: string) => {
     const selectedId = duplicateSelections[groupKey];
     if (!selectedId) { toast.error('Selecione o registro válido antes de confirmar'); return; }
 
-    const group = duplicateGroups.get(groupKey);
+    const group = atencaoGroups.get(groupKey);
     if (!group) return;
 
     setIsProcessing(true);
