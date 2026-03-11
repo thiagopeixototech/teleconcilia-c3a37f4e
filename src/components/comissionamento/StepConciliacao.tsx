@@ -451,7 +451,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       {/* Match Indicators */}
       <Card className="border-primary/20 bg-primary/5">
         <CardContent className="pt-4 pb-4">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
             <div className="text-center">
               <p className="text-xs text-muted-foreground">Total no Comissionamento</p>
               <p className="text-xl font-bold">{matchStats.total}</p>
@@ -459,6 +459,10 @@ export function StepConciliacao({ comissionamentoId }: Props) {
             <div className="text-center">
               <p className="text-xs text-muted-foreground">Encontradas no LAL</p>
               <p className="text-xl font-bold text-success">{matchStats.found}</p>
+            </div>
+            <div className="text-center cursor-pointer" onClick={() => setMatchFilter(matchFilter === 'duplicada' ? 'all' : 'duplicada')}>
+              <p className="text-xs text-muted-foreground">Duplicadas</p>
+              <p className="text-xl font-bold text-warning">{matchStats.duplicadas}</p>
             </div>
             <div className="text-center">
               <p className="text-xs text-muted-foreground">Não Encontradas</p>
