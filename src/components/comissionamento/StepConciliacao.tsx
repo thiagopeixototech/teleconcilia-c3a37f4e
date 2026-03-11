@@ -50,8 +50,8 @@ interface ComVenda {
   matched_linha_id?: string | null;
   matched_valor_lq?: number | null;
   matched_apelido?: string | null;
-  is_duplicada?: boolean;
-  duplicata_key?: string;
+  is_atencao?: boolean;
+  atencao_key?: string;
 }
 
 export function StepConciliacao({ comissionamentoId }: Props) {
@@ -136,8 +136,8 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           matched_linha_id: row.linha_operadora_id || null,
           matched_valor_lq: row.receita_lal || null,
           matched_apelido: row.lal_apelido || null,
-          is_duplicada: false,
-          duplicata_key: undefined,
+          is_atencao: false,
+          atencao_key: undefined,
         };
       });
 
@@ -233,44 +233,27 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         }
       });
 
-      // Phase 2: Group candidates by matchKey to find duplicates
+      // Phase 2: Group candidates by matchKey to find cross-vendor attention cases
       const groupedByKey = new Map<string, MatchCandidate[]>();
       for (const c of candidates) {
         if (!groupedByKey.has(c.matchKey)) groupedByKey.set(c.matchKey, []);
         groupedByKey.get(c.matchKey)!.push(c);
       }
 
-      // Also check already-linked vendas for duplicate detection
-      const linkedKeys = new Set<string>();
-      for (const v of vendasData) {
-        if (v.linha_operadora_id) {
-          for (const [key, linhas] of linhasByProtocolo) {
-            if (linhas.some(l => l.id === v.linha_operadora_id)) {
-              linkedKeys.add(`proto:${key}`);
-              break;
-            }
-          }
-          for (const [key, linhas] of linhasByCpf) {
-            if (linhas.some(l => l.id === v.linha_operadora_id)) {
-              linkedKeys.add(`cpf:${key}`);
-              break;
-            }
-          }
-        }
-      }
-
-      // Phase 3: Apply matches and flag duplicates
+      // Phase 3: Apply matches and flag "atenção" (same CPF, different vendors)
       const updated = vendasData.map((venda, index) => {
         if (venda.linha_operadora_id) return venda;
 
         const candidate = candidates.find(c => c.vendaIndex === index);
         if (!candidate) {
-          return { ...venda, matched_linha_id: null, matched_valor_lq: null, matched_apelido: null, is_duplicada: false, duplicata_key: undefined };
+          return { ...venda, matched_linha_id: null, matched_valor_lq: null, matched_apelido: null, is_atencao: false, atencao_key: undefined };
         }
 
         const group = groupedByKey.get(candidate.matchKey)!;
-        const isAlreadyLinked = linkedKeys.has(candidate.matchKey);
-        const isDuplicate = group.length > 1 || isAlreadyLinked;
+        
+        // Check if the group has DIFFERENT vendors (that's what makes it "atenção")
+        const vendorNames = new Set(group.map(c => vendasData[c.vendaIndex].vendedor_nome).filter(Boolean));
+        const isAtencao = vendorNames.size > 1;
 
         const totalValorLq = candidate.linhas.reduce((sum: number, l: any) => sum + Number(l.valor_lq || 0), 0);
         const primaryLinha = candidate.linhas[0];
@@ -280,8 +263,8 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           matched_linha_id: primaryLinha.id,
           matched_valor_lq: totalValorLq,
           matched_apelido: candidate.apelido,
-          is_duplicada: isDuplicate,
-          duplicata_key: isDuplicate ? candidate.matchKey : undefined,
+          is_atencao: isAtencao,
+          atencao_key: isAtencao ? candidate.matchKey : undefined,
         };
       });
 
@@ -308,9 +291,9 @@ export function StepConciliacao({ comissionamentoId }: Props) {
     }
     if (matchFilter !== 'all') {
       if (matchFilter === 'encontrada') {
-        result = result.filter(v => (v.matched_linha_id || v.linha_operadora_id) && !v.is_duplicada);
-      } else if (matchFilter === 'duplicada') {
-        result = result.filter(v => v.is_duplicada);
+        result = result.filter(v => (v.matched_linha_id || v.linha_operadora_id) && !v.is_atencao);
+      } else if (matchFilter === 'atencao') {
+        result = result.filter(v => v.is_atencao);
       } else {
         result = result.filter(v => !v.matched_linha_id && !v.linha_operadora_id);
       }
@@ -329,24 +312,24 @@ export function StepConciliacao({ comissionamentoId }: Props) {
 
   const displayedVendas = filteredVendas.slice(0, 200);
 
-  // Group duplicates by duplicata_key for accordion view
-  const duplicateGroups = useMemo(() => {
-    if (matchFilter !== 'duplicada') return new Map<string, ComVenda[]>();
+  // Group attention items by atencao_key for accordion view
+  const atencaoGroups = useMemo(() => {
+    if (matchFilter !== 'atencao') return new Map<string, ComVenda[]>();
     const groups = new Map<string, ComVenda[]>();
     filteredVendas.forEach(v => {
-      if (v.duplicata_key) {
-        if (!groups.has(v.duplicata_key)) groups.set(v.duplicata_key, []);
-        groups.get(v.duplicata_key)!.push(v);
+      if (v.atencao_key) {
+        if (!groups.has(v.atencao_key)) groups.set(v.atencao_key, []);
+        groups.get(v.atencao_key)!.push(v);
       }
     });
     return groups;
   }, [filteredVendas, matchFilter]);
 
-  const handleConfirmDuplicate = async (groupKey: string) => {
+  const handleConfirmAtencao = async (groupKey: string) => {
     const selectedId = duplicateSelections[groupKey];
     if (!selectedId) { toast.error('Selecione o registro válido antes de confirmar'); return; }
 
-    const group = duplicateGroups.get(groupKey);
+    const group = atencaoGroups.get(groupKey);
     if (!group) return;
 
     setIsProcessing(true);
@@ -467,19 +450,19 @@ export function StepConciliacao({ comissionamentoId }: Props) {
   };
 
   const matchBadge = (v: ComVenda) => {
-    if (v.linha_operadora_id && !v.is_duplicada) return <Badge className="bg-success/20 text-success text-xs">Vinculada</Badge>;
-    if (v.is_duplicada) return <Badge className="bg-warning/20 text-warning text-xs">⚠ Duplicada</Badge>;
+    if (v.linha_operadora_id && !v.is_atencao) return <Badge className="bg-success/20 text-success text-xs">Vinculada</Badge>;
+    if (v.is_atencao) return <Badge className="bg-warning/20 text-warning text-xs">⚠ Atenção</Badge>;
     if (v.matched_linha_id) return <Badge className="bg-accent text-accent-foreground text-xs">Encontrada</Badge>;
     return <Badge variant="outline" className="text-xs text-muted-foreground">Não encontrada</Badge>;
   };
 
   const matchStats = useMemo(() => {
     const total = vendas.length;
-    const found = vendas.filter(v => (v.matched_linha_id || v.linha_operadora_id) && !v.is_duplicada).length;
-    const duplicadas = vendas.filter(v => v.is_duplicada).length;
-    const notFound = total - found - duplicadas;
+    const found = vendas.filter(v => (v.matched_linha_id || v.linha_operadora_id) && !v.is_atencao).length;
+    const atencao = vendas.filter(v => v.is_atencao).length;
+    const notFound = total - found - atencao;
     const percentage = total > 0 ? ((found / total) * 100).toFixed(1) : '0';
-    return { total, found, notFound, duplicadas, percentage };
+    return { total, found, notFound, atencao, percentage };
   }, [vendas]);
 
   if (isLoading) {
@@ -512,9 +495,9 @@ export function StepConciliacao({ comissionamentoId }: Props) {
               <p className="text-xs text-muted-foreground">Encontradas no LAL</p>
               <p className="text-xl font-bold text-success">{matchStats.found}</p>
             </div>
-            <div className="text-center cursor-pointer" onClick={() => setMatchFilter(matchFilter === 'duplicada' ? 'all' : 'duplicada')}>
-              <p className="text-xs text-muted-foreground">Duplicadas</p>
-              <p className="text-xl font-bold text-warning">{matchStats.duplicadas}</p>
+            <div className="text-center cursor-pointer" onClick={() => setMatchFilter(matchFilter === 'atencao' ? 'all' : 'atencao')}>
+              <p className="text-xs text-muted-foreground">⚠ Atenção</p>
+              <p className="text-xl font-bold text-warning">{matchStats.atencao}</p>
             </div>
             <div className="text-center">
               <p className="text-xs text-muted-foreground">Não Encontradas</p>
