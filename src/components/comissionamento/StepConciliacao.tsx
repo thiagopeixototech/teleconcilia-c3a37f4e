@@ -415,8 +415,9 @@ export function StepConciliacao({ comissionamentoId }: Props) {
   };
 
   const matchBadge = (v: ComVenda) => {
-    if (v.linha_operadora_id) return <Badge className="bg-success/20 text-success text-xs">Vinculada</Badge>;
-    if (v.matched_linha_id) return <Badge className="bg-blue-500/20 text-blue-600 text-xs">Encontrada</Badge>;
+    if (v.linha_operadora_id && !v.is_duplicada) return <Badge className="bg-success/20 text-success text-xs">Vinculada</Badge>;
+    if (v.is_duplicada) return <Badge className="bg-warning/20 text-warning text-xs">⚠ Duplicada</Badge>;
+    if (v.matched_linha_id) return <Badge className="bg-accent text-accent-foreground text-xs">Encontrada</Badge>;
     return <Badge variant="outline" className="text-xs text-muted-foreground">Não encontrada</Badge>;
   };
 
