@@ -243,20 +243,111 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
 
   // normalizeCpfCnpj imported from lib
 
-  // Recursive fetch to get ALL records beyond 1000 limit
-  const fetchAllRecords = async (query: any): Promise<any[]> => {
-    const allData: any[] = [];
-    let offset = 0;
-    const batchSize = 1000;
-    while (true) {
-      const { data, error } = await query.range(offset, offset + batchSize - 1);
-      if (error) throw error;
-      if (!data || data.length === 0) break;
-      allData.push(...data);
-      if (data.length < batchSize) break;
-      offset += batchSize;
+  const yieldToUi = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+  const chunkArray = <T,>(items: T[], chunkSize: number): T[][] => {
+    if (chunkSize <= 0) return [items];
+    const chunks: T[][] = [];
+    for (let i = 0; i < items.length; i += chunkSize) {
+      chunks.push(items.slice(i, i + chunkSize));
     }
-    return allData;
+    return chunks;
+  };
+
+  const fetchVendaIdsByIdentificador = async (
+    identificadores: string[],
+    phase: string,
+    batchSize = 200,
+    fallbackBatchSize = 50,
+  ): Promise<Map<string, string>> => {
+    const uniqueIds = Array.from(new Set(identificadores.filter(Boolean)));
+    const result = new Map<string, string>();
+    let processed = 0;
+
+    const runFetch = async (batch: string[]) => {
+      const { data, error } = await supabase
+        .from('vendas_internas')
+        .select('id, identificador_make')
+        .in('identificador_make', batch);
+
+      if (error) throw error;
+      data?.forEach((row) => {
+        if (row.identificador_make) result.set(row.identificador_make, row.id);
+      });
+    };
+
+    setProcessingProgress({ phase, current: 0, total: uniqueIds.length });
+
+    for (const batch of chunkArray(uniqueIds, batchSize)) {
+      try {
+        await runFetch(batch);
+        processed += batch.length;
+        setProcessingProgress({ phase, current: processed, total: uniqueIds.length });
+        await yieldToUi();
+      } catch (batchError) {
+        if (batch.length <= fallbackBatchSize) throw batchError;
+
+        for (const subBatch of chunkArray(batch, fallbackBatchSize)) {
+          await runFetch(subBatch);
+          processed += subBatch.length;
+          setProcessingProgress({ phase, current: processed, total: uniqueIds.length });
+          await yieldToUi();
+        }
+      }
+    }
+
+    return result;
+  };
+
+  const insertRowsWithFallback = async (
+    table: 'vendas_internas' | 'comissionamento_vendas',
+    rows: any[],
+    phase: string,
+    batchSize = 200,
+    concurrency = 2,
+    fallbackBatchSize = 50,
+  ) => {
+    if (rows.length === 0) {
+      setProcessingProgress({ phase, current: 0, total: 0 });
+      return;
+    }
+
+    const runInsert = async (batch: any[]) => {
+      const { error } = await (supabase.from(table as any) as any).insert(batch);
+      if (error) throw error;
+    };
+
+    const runInsertWithFallback = async (batch: any[]) => {
+      try {
+        await runInsert(batch);
+      } catch (error) {
+        if (batch.length === 1) throw error;
+
+        for (const subBatch of chunkArray(batch, fallbackBatchSize)) {
+          try {
+            await runInsert(subBatch);
+          } catch (subError) {
+            if (subBatch.length === 1) throw subError;
+
+            for (const row of subBatch) {
+              await runInsert([row]);
+            }
+          }
+        }
+      }
+    };
+
+    const batches = chunkArray(rows, batchSize);
+    let processed = 0;
+    setProcessingProgress({ phase, current: 0, total: rows.length });
+
+    for (let i = 0; i < batches.length; i += concurrency) {
+      const concurrent = batches.slice(i, i + concurrency);
+      await Promise.all(concurrent.map((batch) => runInsertWithFallback(batch)));
+      processed += concurrent.reduce((sum, batch) => sum + batch.length, 0);
+      setProcessingProgress({ phase, current: Math.min(processed, rows.length), total: rows.length });
+      await yieldToUi();
+    }
   };
 
   const processarFonte = async (fonte: FonteConfig) => {
