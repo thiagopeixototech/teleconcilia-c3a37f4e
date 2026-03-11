@@ -609,6 +609,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
               <TableHead className="text-xs">CPF</TableHead>
               <TableHead className="text-xs">Protocolo</TableHead>
               <TableHead className="text-xs">Vendedor</TableHead>
+              <TableHead className="text-xs">Data Venda</TableHead>
               <TableHead className="text-xs">Status Pedido</TableHead>
               <TableHead className="text-xs">Status Pag</TableHead>
               <TableHead className="text-xs">Receita Int.</TableHead>
@@ -618,7 +619,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           </TableHeader>
           <TableBody>
             {displayedVendas.map(v => (
-              <TableRow key={v.id} className={selectedIds.has(v.id) ? 'bg-accent/50' : ''}>
+              <TableRow key={v.id} className={`${selectedIds.has(v.id) ? 'bg-accent/50' : ''} ${v.is_duplicada ? 'bg-warning/5' : ''}`}>
                 <TableCell>
                   <Checkbox checked={selectedIds.has(v.id)} onCheckedChange={() => toggleSelect(v.id)} />
                 </TableCell>
@@ -627,6 +628,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
                 <TableCell className="text-xs font-mono">{v.cpf_cnpj || '-'}</TableCell>
                 <TableCell className="text-xs font-mono">{v.protocolo_interno || '-'}</TableCell>
                 <TableCell className="text-xs max-w-[100px] truncate">{v.vendedor_nome || '-'}</TableCell>
+                <TableCell className="text-xs">{v.data_venda || '-'}</TableCell>
                 <TableCell className="text-xs">{v.status_make || '-'}</TableCell>
                 <TableCell>{statusPagBadge(v.status_pag)}</TableCell>
                 <TableCell className="text-xs">{formatBRL(v.receita_interna)}</TableCell>
