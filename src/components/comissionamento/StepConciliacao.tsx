@@ -42,6 +42,7 @@ interface ComVenda {
   cliente_nome?: string;
   cpf_cnpj?: string;
   protocolo_interno?: string;
+  identificador_make?: string;
   status_make?: string;
   valor_venda?: number;
   vendedor_nome?: string;
@@ -94,7 +95,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           .select(`
             id, venda_interna_id, status_pag, receita_interna, receita_lal, lal_apelido, linha_operadora_id,
             vendas_internas!comissionamento_vendas_venda_interna_id_fkey(
-              cliente_nome, cpf_cnpj, protocolo_interno, status_make, valor, data_venda,
+              cliente_nome, cpf_cnpj, protocolo_interno, identificador_make, status_make, valor, data_venda,
               usuarios!vendas_internas_usuario_id_fkey(nome)
             )
           `)
@@ -129,6 +130,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           cliente_nome: vi?.cliente_nome,
           cpf_cnpj: vi?.cpf_cnpj,
           protocolo_interno: vi?.protocolo_interno,
+          identificador_make: vi?.identificador_make,
           status_make: vi?.status_make,
           valor_venda: vi?.valor,
           vendedor_nome: vi?.usuarios?.nome,
@@ -240,7 +242,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         groupedByKey.get(c.matchKey)!.push(c);
       }
 
-      // Phase 3: Apply matches and flag "atenção" (same CPF, different vendors)
+      // Phase 3: Apply matches and flag "atenção" (same CPF found in LAL, different identificador_make)
       const updated = vendasData.map((venda, index) => {
         if (venda.linha_operadora_id) return venda;
 
@@ -251,9 +253,12 @@ export function StepConciliacao({ comissionamentoId }: Props) {
 
         const group = groupedByKey.get(candidate.matchKey)!;
         
-        // Check if the group has DIFFERENT vendors (that's what makes it "atenção")
-        const vendorNames = new Set(group.map(c => vendasData[c.vendaIndex].vendedor_nome).filter(Boolean));
-        const isAtencao = vendorNames.size > 1;
+        // "Atenção" = same CPF found in LAL but multiple vendas with DIFFERENT identificador_make
+        let isAtencao = false;
+        if (group.length > 1) {
+          const idMakes = new Set(group.map(c => (vendasData[c.vendaIndex].identificador_make || '').trim()).filter(Boolean));
+          isAtencao = idMakes.size > 1;
+        }
 
         const totalValorLq = candidate.linhas.reduce((sum: number, l: any) => sum + Number(l.valor_lq || 0), 0);
         const primaryLinha = candidate.linhas[0];
@@ -351,6 +356,40 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       }
 
       toast.success(`Conciliação confirmada: 1 OK, ${otherIds.length} descartadas`);
+      setDuplicateSelections(prev => { const next = { ...prev }; delete next[groupKey]; return next; });
+      loadData();
+    } catch (err: any) {
+      toast.error('Erro: ' + err.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleConfirmAtencaoWithStatus = async (groupKey: string, status: 'OK' | 'DESCONTADA') => {
+    const selectedId = duplicateSelections[groupKey];
+    if (!selectedId) { toast.error('Selecione o registro primeiro'); return; }
+
+    const group = atencaoGroups.get(groupKey);
+    if (!group) return;
+
+    setIsProcessing(true);
+    try {
+      const selected = group.find(v => v.id === selectedId)!;
+      const updateData: any = { status_pag: status };
+      if (!selected.linha_operadora_id && selected.matched_linha_id) {
+        updateData.linha_operadora_id = selected.matched_linha_id;
+        updateData.receita_lal = selected.matched_valor_lq;
+        updateData.lal_apelido = selected.matched_apelido;
+      }
+      await supabase.from('comissionamento_vendas').update(updateData).eq('id', selectedId);
+
+      // Mark others as DESCONTADA
+      const otherIds = group.filter(v => v.id !== selectedId).map(v => v.id);
+      if (otherIds.length > 0) {
+        await supabase.from('comissionamento_vendas').update({ status_pag: 'DESCONTADA' }).in('id', otherIds);
+      }
+
+      toast.success(`Selecionada marcada como ${status}, ${otherIds.length} descartadas`);
       setDuplicateSelections(prev => { const next = { ...prev }; delete next[groupKey]; return next; });
       loadData();
     } catch (err: any) {
@@ -548,7 +587,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           <SelectContent>
             <SelectItem value="all">Todos</SelectItem>
             <SelectItem value="encontrada">Encontrada no LAL</SelectItem>
-            <SelectItem value="duplicada">⚠ Duplicadas</SelectItem>
+            <SelectItem value="atencao">⚠ Atenção</SelectItem>
             <SelectItem value="nao_encontrada">Não Encontrada</SelectItem>
           </SelectContent>
         </Select>
@@ -631,11 +670,11 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         </div>
       )}
 
-      {/* Duplicate Accordion View */}
-      {matchFilter === 'duplicada' && duplicateGroups.size > 0 ? (
+      {/* Atenção Accordion View */}
+      {matchFilter === 'atencao' && atencaoGroups.size > 0 ? (
         <div className="border rounded-lg">
           <Accordion type="multiple" className="w-full">
-            {Array.from(duplicateGroups.entries()).map(([groupKey, group]) => {
+            {Array.from(atencaoGroups.entries()).map(([groupKey, group]) => {
               const first = group[0];
               const lalValue = first.matched_valor_lq ?? first.receita_lal;
               return (
@@ -643,34 +682,35 @@ export function StepConciliacao({ comissionamentoId }: Props) {
                   <AccordionTrigger className="px-4 py-3 hover:no-underline hover:bg-accent/30">
                     <div className="flex items-center gap-4 text-left w-full mr-4">
                       <Badge className="bg-warning/20 text-warning text-xs shrink-0">
-                        {group.length} registros
+                        {group.length} vendas
                       </Badge>
                       <span className="text-sm font-medium truncate max-w-[200px]">{first.cliente_nome || '-'}</span>
-                      <span className="text-xs font-mono text-muted-foreground">{first.cpf_cnpj || first.protocolo_interno || '-'}</span>
-                      <span className="text-xs text-muted-foreground ml-auto">{formatBRL(lalValue)}</span>
+                      <span className="text-xs font-mono text-muted-foreground">{first.cpf_cnpj || '-'}</span>
+                      <span className="text-xs text-muted-foreground ml-auto">LAL: {formatBRL(lalValue)}</span>
                     </div>
                   </AccordionTrigger>
                   <AccordionContent className="px-4 pb-4">
-                    <RadioGroup
-                      value={duplicateSelections[groupKey] || ''}
-                      onValueChange={(val) => setDuplicateSelections(prev => ({ ...prev, [groupKey]: val }))}
-                      className="space-y-2"
-                    >
-                      {group.map(v => (
-                        <div
-                          key={v.id}
-                          className={`flex items-center gap-3 p-3 rounded-md border transition-colors ${
-                            duplicateSelections[groupKey] === v.id
-                              ? 'border-primary bg-primary/5'
-                              : 'border-border hover:bg-accent/20'
-                          }`}
-                        >
-                          <RadioGroupItem value={v.id} id={`dup-${v.id}`} />
-                          <Label htmlFor={`dup-${v.id}`} className="flex-1 cursor-pointer">
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                    <div className="space-y-2">
+                      {group.map(v => {
+                        const isSelected = duplicateSelections[groupKey] === v.id;
+                        return (
+                          <div
+                            key={v.id}
+                            onClick={() => setDuplicateSelections(prev => ({ ...prev, [groupKey]: v.id }))}
+                            className={`p-3 rounded-md border transition-colors cursor-pointer ${
+                              isSelected
+                                ? 'border-primary bg-primary/5'
+                                : 'border-border hover:bg-accent/20'
+                            }`}
+                          >
+                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
                               <div>
                                 <span className="text-muted-foreground">Vendedor:</span>{' '}
                                 <span className="font-medium">{v.vendedor_nome || '-'}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">ID Make:</span>{' '}
+                                <span className="font-mono font-medium">{v.identificador_make || '-'}</span>
                               </div>
                               <div>
                                 <span className="text-muted-foreground">Data Venda:</span>{' '}
@@ -685,21 +725,34 @@ export function StepConciliacao({ comissionamentoId }: Props) {
                                 {statusPagBadge(v.status_pag)}
                               </div>
                             </div>
-                          </Label>
-                        </div>
-                      ))}
-                    </RadioGroup>
-                    <div className="mt-3 flex justify-end">
-                      <Button
-                        size="sm"
-                        onClick={() => handleConfirmDuplicate(groupKey)}
-                        disabled={!duplicateSelections[groupKey] || isProcessing}
-                        className="gap-1.5"
-                      >
-                        {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                        Confirmar Conciliação
-                      </Button>
+                          </div>
+                        );
+                      })}
                     </div>
+                    {duplicateSelections[groupKey] && (
+                      <div className="mt-3 flex items-center justify-end gap-2">
+                        <span className="text-xs text-muted-foreground mr-2">Selecionada → marcar como:</span>
+                        <Button
+                          size="sm"
+                          onClick={() => handleConfirmAtencao(groupKey)}
+                          disabled={isProcessing}
+                          className="gap-1.5"
+                        >
+                          {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                          OK (Conciliar)
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => handleConfirmAtencaoWithStatus(groupKey, 'DESCONTADA')}
+                          disabled={isProcessing}
+                          className="gap-1.5"
+                        >
+                          {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                          DESCONTADA
+                        </Button>
+                      </div>
+                    )}
                   </AccordionContent>
                 </AccordionItem>
               );
@@ -720,6 +773,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
                   <TableHead className="text-xs">Cliente</TableHead>
                   <TableHead className="text-xs">CPF</TableHead>
                   <TableHead className="text-xs">Protocolo</TableHead>
+                  <TableHead className="text-xs">ID Make</TableHead>
                   <TableHead className="text-xs">Vendedor</TableHead>
                   <TableHead className="text-xs">Data Venda</TableHead>
                   <TableHead className="text-xs">Status Pedido</TableHead>
@@ -731,7 +785,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
               </TableHeader>
               <TableBody>
                 {displayedVendas.map(v => (
-                  <TableRow key={v.id} className={`${selectedIds.has(v.id) ? 'bg-accent/50' : ''} ${v.is_duplicada ? 'bg-warning/5' : ''}`}>
+                  <TableRow key={v.id} className={`${selectedIds.has(v.id) ? 'bg-accent/50' : ''} ${v.is_atencao ? 'bg-warning/5' : ''}`}>
                     <TableCell>
                       <Checkbox checked={selectedIds.has(v.id)} onCheckedChange={() => toggleSelect(v.id)} />
                     </TableCell>
@@ -739,6 +793,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
                     <TableCell className="text-xs max-w-[120px] truncate">{v.cliente_nome || '-'}</TableCell>
                     <TableCell className="text-xs font-mono">{v.cpf_cnpj || '-'}</TableCell>
                     <TableCell className="text-xs font-mono">{v.protocolo_interno || '-'}</TableCell>
+                    <TableCell className="text-xs font-mono max-w-[80px] truncate">{v.identificador_make || '-'}</TableCell>
                     <TableCell className="text-xs max-w-[100px] truncate">{v.vendedor_nome || '-'}</TableCell>
                     <TableCell className="text-xs">{v.data_venda || '-'}</TableCell>
                     <TableCell className="text-xs">{v.status_make || '-'}</TableCell>
