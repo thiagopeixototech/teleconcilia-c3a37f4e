@@ -526,27 +526,33 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
     const newVendas = vendaRows.filter(r => !existingIds.has(r.identificador_make));
     const existingVendas = vendaRows.filter(r => existingIds.has(r.identificador_make));
 
+    // Parallel insert with concurrency limit of 3
     setProcessingProgress({ phase: 'Inserindo vendas...', current: 0, total: newVendas.length });
     const INSERT_BATCH = 500;
+    const CONCURRENCY = 3;
+    const insertBatches: any[][] = [];
     for (let i = 0; i < newVendas.length; i += INSERT_BATCH) {
-      const batch = newVendas.slice(i, i + INSERT_BATCH);
-      const { error: batchErr } = await supabase.from('vendas_internas').insert(batch);
-      if (batchErr) {
-        // Fallback: smaller sub-batches of 50
-        for (let j = 0; j < batch.length; j += 50) {
-          const sub = batch.slice(j, j + 50);
-          const { error: subErr } = await supabase.from('vendas_internas').insert(sub);
-          if (subErr) {
-            for (const row of sub) {
-              await supabase.from('vendas_internas').insert(row);
-            }
+      insertBatches.push(newVendas.slice(i, i + INSERT_BATCH));
+    }
+    let insertedSoFar = 0;
+    for (let i = 0; i < insertBatches.length; i += CONCURRENCY) {
+      const concurrent = insertBatches.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        concurrent.map(batch => supabase.from('vendas_internas').insert(batch))
+      );
+      for (let k = 0; k < results.length; k++) {
+        if (results[k].error) {
+          // Fallback: sub-batches of 100
+          const failedBatch = concurrent[k];
+          for (let j = 0; j < failedBatch.length; j += 100) {
+            const sub = failedBatch.slice(j, j + 100);
+            await supabase.from('vendas_internas').insert(sub);
           }
-          setProcessingProgress({ phase: 'Inserindo vendas (retry)...', current: Math.min(i + j + 50, newVendas.length), total: newVendas.length });
-          await new Promise(r => setTimeout(r, 5));
         }
       }
-      setProcessingProgress({ phase: 'Inserindo vendas...', current: Math.min(i + INSERT_BATCH, newVendas.length), total: newVendas.length });
-      await new Promise(r => setTimeout(r, 10));
+      insertedSoFar += concurrent.reduce((sum, b) => sum + b.length, 0);
+      setProcessingProgress({ phase: 'Inserindo vendas...', current: Math.min(insertedSoFar, newVendas.length), total: newVendas.length });
+      await new Promise(r => setTimeout(r, 5));
     }
 
     // Build valor lookup map (O(n) instead of O(n²))
@@ -559,17 +565,26 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
     const vendaIdMap = new Map<string, string>();
 
     setProcessingProgress({ phase: 'Vinculando ao comissionamento...', current: 0, total: allIdMakes.length });
-    const LINK_BATCH = 500;
-    for (let i = 0; i < allIdMakes.length; i += LINK_BATCH) {
-      const batch = allIdMakes.slice(i, i + LINK_BATCH);
-      const { data } = await supabase
-        .from('vendas_internas')
-        .select('id, identificador_make, valor')
-        .in('identificador_make', batch);
-      data?.forEach(d => {
-        if (d.identificador_make) vendaIdMap.set(d.identificador_make, d.id);
+    const FETCH_BATCH = 500;
+    const fetchBatches: string[][] = [];
+    for (let i = 0; i < allIdMakes.length; i += FETCH_BATCH) {
+      fetchBatches.push(allIdMakes.slice(i, i + FETCH_BATCH));
+    }
+    let fetchedSoFar = 0;
+    for (let i = 0; i < fetchBatches.length; i += CONCURRENCY) {
+      const concurrent = fetchBatches.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        concurrent.map(batch =>
+          supabase.from('vendas_internas').select('id, identificador_make').in('identificador_make', batch)
+        )
+      );
+      results.forEach(r => {
+        r.data?.forEach(d => {
+          if (d.identificador_make) vendaIdMap.set(d.identificador_make, d.id);
+        });
       });
-      setProcessingProgress({ phase: 'Vinculando ao comissionamento...', current: Math.min(i + LINK_BATCH, allIdMakes.length), total: allIdMakes.length });
+      fetchedSoFar += concurrent.reduce((sum, b) => sum + b.length, 0);
+      setProcessingProgress({ phase: 'Vinculando ao comissionamento...', current: Math.min(fetchedSoFar, allIdMakes.length), total: allIdMakes.length });
       await new Promise(r => setTimeout(r, 5));
     }
 
@@ -582,12 +597,22 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
         receita_interna: valorMap.get(idm) || null,
       }));
 
-    setProcessingProgress({ phase: 'Inserindo vínculos no comissionamento...', current: 0, total: comRows.length });
+    setProcessingProgress({ phase: 'Inserindo vínculos...', current: 0, total: comRows.length });
+    const linkBatches: any[][] = [];
     for (let i = 0; i < comRows.length; i += 500) {
-      const batch = comRows.slice(i, i + 500);
-      const { error: linkErr } = await supabase.from('comissionamento_vendas').insert(batch);
-      if (linkErr) throw linkErr;
-      setProcessingProgress({ phase: 'Inserindo vínculos no comissionamento...', current: Math.min(i + 500, comRows.length), total: comRows.length });
+      linkBatches.push(comRows.slice(i, i + 500));
+    }
+    let linkedSoFar = 0;
+    for (let i = 0; i < linkBatches.length; i += CONCURRENCY) {
+      const concurrent = linkBatches.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        concurrent.map(batch => supabase.from('comissionamento_vendas').insert(batch))
+      );
+      for (const r of results) {
+        if (r.error) throw r.error;
+      }
+      linkedSoFar += concurrent.reduce((sum, b) => sum + b.length, 0);
+      setProcessingProgress({ phase: 'Inserindo vínculos...', current: Math.min(linkedSoFar, comRows.length), total: comRows.length });
       await new Promise(r => setTimeout(r, 5));
     }
 
