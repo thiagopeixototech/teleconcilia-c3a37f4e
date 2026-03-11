@@ -365,7 +365,40 @@ export function StepConciliacao({ comissionamentoId }: Props) {
     }
   };
 
-  const handleSelectAll = (checked: boolean) => {
+  const handleConfirmAtencaoWithStatus = async (groupKey: string, status: 'OK' | 'DESCONTADA') => {
+    const selectedId = duplicateSelections[groupKey];
+    if (!selectedId) { toast.error('Selecione o registro primeiro'); return; }
+
+    const group = atencaoGroups.get(groupKey);
+    if (!group) return;
+
+    setIsProcessing(true);
+    try {
+      const selected = group.find(v => v.id === selectedId)!;
+      const updateData: any = { status_pag: status };
+      if (!selected.linha_operadora_id && selected.matched_linha_id) {
+        updateData.linha_operadora_id = selected.matched_linha_id;
+        updateData.receita_lal = selected.matched_valor_lq;
+        updateData.lal_apelido = selected.matched_apelido;
+      }
+      await supabase.from('comissionamento_vendas').update(updateData).eq('id', selectedId);
+
+      // Mark others as DESCONTADA
+      const otherIds = group.filter(v => v.id !== selectedId).map(v => v.id);
+      if (otherIds.length > 0) {
+        await supabase.from('comissionamento_vendas').update({ status_pag: 'DESCONTADA' }).in('id', otherIds);
+      }
+
+      toast.success(`Selecionada marcada como ${status}, ${otherIds.length} descartadas`);
+      setDuplicateSelections(prev => { const next = { ...prev }; delete next[groupKey]; return next; });
+      loadData();
+    } catch (err: any) {
+      toast.error('Erro: ' + err.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
     setSelectAll(checked);
     if (checked) {
       setSelectedIds(new Set(filteredVendas.map(v => v.id)));
