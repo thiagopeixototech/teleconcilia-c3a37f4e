@@ -526,27 +526,33 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
     const newVendas = vendaRows.filter(r => !existingIds.has(r.identificador_make));
     const existingVendas = vendaRows.filter(r => existingIds.has(r.identificador_make));
 
+    // Parallel insert with concurrency limit of 3
     setProcessingProgress({ phase: 'Inserindo vendas...', current: 0, total: newVendas.length });
     const INSERT_BATCH = 500;
+    const CONCURRENCY = 3;
+    const insertBatches: any[][] = [];
     for (let i = 0; i < newVendas.length; i += INSERT_BATCH) {
-      const batch = newVendas.slice(i, i + INSERT_BATCH);
-      const { error: batchErr } = await supabase.from('vendas_internas').insert(batch);
-      if (batchErr) {
-        // Fallback: smaller sub-batches of 50
-        for (let j = 0; j < batch.length; j += 50) {
-          const sub = batch.slice(j, j + 50);
-          const { error: subErr } = await supabase.from('vendas_internas').insert(sub);
-          if (subErr) {
-            for (const row of sub) {
-              await supabase.from('vendas_internas').insert(row);
-            }
+      insertBatches.push(newVendas.slice(i, i + INSERT_BATCH));
+    }
+    let insertedSoFar = 0;
+    for (let i = 0; i < insertBatches.length; i += CONCURRENCY) {
+      const concurrent = insertBatches.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        concurrent.map(batch => supabase.from('vendas_internas').insert(batch))
+      );
+      for (let k = 0; k < results.length; k++) {
+        if (results[k].error) {
+          // Fallback: sub-batches of 100
+          const failedBatch = concurrent[k];
+          for (let j = 0; j < failedBatch.length; j += 100) {
+            const sub = failedBatch.slice(j, j + 100);
+            await supabase.from('vendas_internas').insert(sub);
           }
-          setProcessingProgress({ phase: 'Inserindo vendas (retry)...', current: Math.min(i + j + 50, newVendas.length), total: newVendas.length });
-          await new Promise(r => setTimeout(r, 5));
         }
       }
-      setProcessingProgress({ phase: 'Inserindo vendas...', current: Math.min(i + INSERT_BATCH, newVendas.length), total: newVendas.length });
-      await new Promise(r => setTimeout(r, 10));
+      insertedSoFar += concurrent.reduce((sum, b) => sum + b.length, 0);
+      setProcessingProgress({ phase: 'Inserindo vendas...', current: Math.min(insertedSoFar, newVendas.length), total: newVendas.length });
+      await new Promise(r => setTimeout(r, 5));
     }
 
     // Build valor lookup map (O(n) instead of O(n²))
