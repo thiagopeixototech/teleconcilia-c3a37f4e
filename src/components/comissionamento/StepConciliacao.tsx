@@ -450,19 +450,19 @@ export function StepConciliacao({ comissionamentoId }: Props) {
   };
 
   const matchBadge = (v: ComVenda) => {
-    if (v.linha_operadora_id && !v.is_duplicada) return <Badge className="bg-success/20 text-success text-xs">Vinculada</Badge>;
-    if (v.is_duplicada) return <Badge className="bg-warning/20 text-warning text-xs">⚠ Duplicada</Badge>;
+    if (v.linha_operadora_id && !v.is_atencao) return <Badge className="bg-success/20 text-success text-xs">Vinculada</Badge>;
+    if (v.is_atencao) return <Badge className="bg-warning/20 text-warning text-xs">⚠ Atenção</Badge>;
     if (v.matched_linha_id) return <Badge className="bg-accent text-accent-foreground text-xs">Encontrada</Badge>;
     return <Badge variant="outline" className="text-xs text-muted-foreground">Não encontrada</Badge>;
   };
 
   const matchStats = useMemo(() => {
     const total = vendas.length;
-    const found = vendas.filter(v => (v.matched_linha_id || v.linha_operadora_id) && !v.is_duplicada).length;
-    const duplicadas = vendas.filter(v => v.is_duplicada).length;
-    const notFound = total - found - duplicadas;
+    const found = vendas.filter(v => (v.matched_linha_id || v.linha_operadora_id) && !v.is_atencao).length;
+    const atencao = vendas.filter(v => v.is_atencao).length;
+    const notFound = total - found - atencao;
     const percentage = total > 0 ? ((found / total) * 100).toFixed(1) : '0';
-    return { total, found, notFound, duplicadas, percentage };
+    return { total, found, notFound, atencao, percentage };
   }, [vendas]);
 
   if (isLoading) {
