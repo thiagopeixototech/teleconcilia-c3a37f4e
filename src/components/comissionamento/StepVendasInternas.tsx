@@ -535,10 +535,12 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
         // Fallback: smaller sub-batches of 50
         for (let j = 0; j < batch.length; j += 50) {
           const sub = batch.slice(j, j + 50);
-          await supabase.from('vendas_internas').insert(sub).catch(() => {
-            // Last resort: one by one
-            return Promise.all(sub.map(row => supabase.from('vendas_internas').insert(row)));
-          });
+          const { error: subErr } = await supabase.from('vendas_internas').insert(sub);
+          if (subErr) {
+            for (const row of sub) {
+              await supabase.from('vendas_internas').insert(row);
+            }
+          }
           setProcessingProgress({ phase: 'Inserindo vendas (retry)...', current: Math.min(i + j + 50, newVendas.length), total: newVendas.length });
           await new Promise(r => setTimeout(r, 5));
         }
