@@ -399,6 +399,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
     }
   };
 
+  const handleSelectAll = (checked: boolean) => {
     setSelectAll(checked);
     if (checked) {
       setSelectedIds(new Set(filteredVendas.map(v => v.id)));
