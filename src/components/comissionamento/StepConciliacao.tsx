@@ -42,10 +42,13 @@ interface ComVenda {
   status_make?: string;
   valor_venda?: number;
   vendedor_nome?: string;
+  data_venda?: string;
   // Pre-match fields (computed client-side)
   matched_linha_id?: string | null;
   matched_valor_lq?: number | null;
   matched_apelido?: string | null;
+  is_duplicada?: boolean;
+  duplicata_key?: string;
 }
 
 export function StepConciliacao({ comissionamentoId }: Props) {
