@@ -423,10 +423,11 @@ export function StepConciliacao({ comissionamentoId }: Props) {
 
   const matchStats = useMemo(() => {
     const total = vendas.length;
-    const found = vendas.filter(v => v.matched_linha_id || v.linha_operadora_id).length;
-    const notFound = total - found;
+    const found = vendas.filter(v => (v.matched_linha_id || v.linha_operadora_id) && !v.is_duplicada).length;
+    const duplicadas = vendas.filter(v => v.is_duplicada).length;
+    const notFound = total - found - duplicadas;
     const percentage = total > 0 ? ((found / total) * 100).toFixed(1) : '0';
-    return { total, found, notFound, percentage };
+    return { total, found, notFound, duplicadas, percentage };
   }, [vendas]);
 
   if (isLoading) {
