@@ -233,44 +233,27 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         }
       });
 
-      // Phase 2: Group candidates by matchKey to find duplicates
+      // Phase 2: Group candidates by matchKey to find cross-vendor attention cases
       const groupedByKey = new Map<string, MatchCandidate[]>();
       for (const c of candidates) {
         if (!groupedByKey.has(c.matchKey)) groupedByKey.set(c.matchKey, []);
         groupedByKey.get(c.matchKey)!.push(c);
       }
 
-      // Also check already-linked vendas for duplicate detection
-      const linkedKeys = new Set<string>();
-      for (const v of vendasData) {
-        if (v.linha_operadora_id) {
-          for (const [key, linhas] of linhasByProtocolo) {
-            if (linhas.some(l => l.id === v.linha_operadora_id)) {
-              linkedKeys.add(`proto:${key}`);
-              break;
-            }
-          }
-          for (const [key, linhas] of linhasByCpf) {
-            if (linhas.some(l => l.id === v.linha_operadora_id)) {
-              linkedKeys.add(`cpf:${key}`);
-              break;
-            }
-          }
-        }
-      }
-
-      // Phase 3: Apply matches and flag duplicates
+      // Phase 3: Apply matches and flag "atenção" (same CPF, different vendors)
       const updated = vendasData.map((venda, index) => {
         if (venda.linha_operadora_id) return venda;
 
         const candidate = candidates.find(c => c.vendaIndex === index);
         if (!candidate) {
-          return { ...venda, matched_linha_id: null, matched_valor_lq: null, matched_apelido: null, is_duplicada: false, duplicata_key: undefined };
+          return { ...venda, matched_linha_id: null, matched_valor_lq: null, matched_apelido: null, is_atencao: false, atencao_key: undefined };
         }
 
         const group = groupedByKey.get(candidate.matchKey)!;
-        const isAlreadyLinked = linkedKeys.has(candidate.matchKey);
-        const isDuplicate = group.length > 1 || isAlreadyLinked;
+        
+        // Check if the group has DIFFERENT vendors (that's what makes it "atenção")
+        const vendorNames = new Set(group.map(c => vendasData[c.vendaIndex].vendedor_nome).filter(Boolean));
+        const isAtencao = vendorNames.size > 1;
 
         const totalValorLq = candidate.linhas.reduce((sum: number, l: any) => sum + Number(l.valor_lq || 0), 0);
         const primaryLinha = candidate.linhas[0];
@@ -280,8 +263,8 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           matched_linha_id: primaryLinha.id,
           matched_valor_lq: totalValorLq,
           matched_apelido: candidate.apelido,
-          is_duplicada: isDuplicate,
-          duplicata_key: isDuplicate ? candidate.matchKey : undefined,
+          is_atencao: isAtencao,
+          atencao_key: isAtencao ? candidate.matchKey : undefined,
         };
       });
 
