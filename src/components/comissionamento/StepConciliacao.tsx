@@ -242,7 +242,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         groupedByKey.get(c.matchKey)!.push(c);
       }
 
-      // Phase 3: Apply matches and flag "atenção" (same CPF, different vendors)
+      // Phase 3: Apply matches and flag "atenção" (same CPF found in LAL, different identificador_make)
       const updated = vendasData.map((venda, index) => {
         if (venda.linha_operadora_id) return venda;
 
@@ -253,9 +253,12 @@ export function StepConciliacao({ comissionamentoId }: Props) {
 
         const group = groupedByKey.get(candidate.matchKey)!;
         
-        // Check if the group has DIFFERENT vendors (that's what makes it "atenção")
-        const vendorNames = new Set(group.map(c => vendasData[c.vendaIndex].vendedor_nome).filter(Boolean));
-        const isAtencao = vendorNames.size > 1;
+        // "Atenção" = same CPF found in LAL but multiple vendas with DIFFERENT identificador_make
+        let isAtencao = false;
+        if (group.length > 1) {
+          const idMakes = new Set(group.map(c => (vendasData[c.vendaIndex].identificador_make || '').trim()).filter(Boolean));
+          isAtencao = idMakes.size > 1;
+        }
 
         const totalValorLq = candidate.linhas.reduce((sum: number, l: any) => sum + Number(l.valor_lq || 0), 0);
         const primaryLinha = candidate.linhas[0];
