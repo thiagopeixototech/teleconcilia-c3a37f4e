@@ -291,9 +291,9 @@ export function StepConciliacao({ comissionamentoId }: Props) {
     }
     if (matchFilter !== 'all') {
       if (matchFilter === 'encontrada') {
-        result = result.filter(v => (v.matched_linha_id || v.linha_operadora_id) && !v.is_duplicada);
-      } else if (matchFilter === 'duplicada') {
-        result = result.filter(v => v.is_duplicada);
+        result = result.filter(v => (v.matched_linha_id || v.linha_operadora_id) && !v.is_atencao);
+      } else if (matchFilter === 'atencao') {
+        result = result.filter(v => v.is_atencao);
       } else {
         result = result.filter(v => !v.matched_linha_id && !v.linha_operadora_id);
       }
