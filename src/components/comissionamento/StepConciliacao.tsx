@@ -329,6 +329,54 @@ export function StepConciliacao({ comissionamentoId }: Props) {
 
   const displayedVendas = filteredVendas.slice(0, 200);
 
+  // Group duplicates by duplicata_key for accordion view
+  const duplicateGroups = useMemo(() => {
+    if (matchFilter !== 'duplicada') return new Map<string, ComVenda[]>();
+    const groups = new Map<string, ComVenda[]>();
+    filteredVendas.forEach(v => {
+      if (v.duplicata_key) {
+        if (!groups.has(v.duplicata_key)) groups.set(v.duplicata_key, []);
+        groups.get(v.duplicata_key)!.push(v);
+      }
+    });
+    return groups;
+  }, [filteredVendas, matchFilter]);
+
+  const handleConfirmDuplicate = async (groupKey: string) => {
+    const selectedId = duplicateSelections[groupKey];
+    if (!selectedId) { toast.error('Selecione o registro válido antes de confirmar'); return; }
+
+    const group = duplicateGroups.get(groupKey);
+    if (!group) return;
+
+    setIsProcessing(true);
+    try {
+      // Mark selected as OK
+      const selected = group.find(v => v.id === selectedId)!;
+      const okUpdate: any = { status_pag: 'OK' };
+      if (!selected.linha_operadora_id && selected.matched_linha_id) {
+        okUpdate.linha_operadora_id = selected.matched_linha_id;
+        okUpdate.receita_lal = selected.matched_valor_lq;
+        okUpdate.lal_apelido = selected.matched_apelido;
+      }
+      await supabase.from('comissionamento_vendas').update(okUpdate).eq('id', selectedId);
+
+      // Mark others as DESCONTADA
+      const otherIds = group.filter(v => v.id !== selectedId).map(v => v.id);
+      if (otherIds.length > 0) {
+        await supabase.from('comissionamento_vendas').update({ status_pag: 'DESCONTADA' }).in('id', otherIds);
+      }
+
+      toast.success(`Conciliação confirmada: 1 OK, ${otherIds.length} descartadas`);
+      setDuplicateSelections(prev => { const next = { ...prev }; delete next[groupKey]; return next; });
+      loadData();
+    } catch (err: any) {
+      toast.error('Erro: ' + err.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleSelectAll = (checked: boolean) => {
     setSelectAll(checked);
     if (checked) {
