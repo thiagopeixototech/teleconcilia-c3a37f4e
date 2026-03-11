@@ -559,8 +559,9 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
     const vendaIdMap = new Map<string, string>();
 
     setProcessingProgress({ phase: 'Vinculando ao comissionamento...', current: 0, total: allIdMakes.length });
-    for (let i = 0; i < allIdMakes.length; i += 200) {
-      const batch = allIdMakes.slice(i, i + 200);
+    const LINK_BATCH = 500;
+    for (let i = 0; i < allIdMakes.length; i += LINK_BATCH) {
+      const batch = allIdMakes.slice(i, i + LINK_BATCH);
       const { data } = await supabase
         .from('vendas_internas')
         .select('id, identificador_make, valor')
@@ -568,8 +569,8 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
       data?.forEach(d => {
         if (d.identificador_make) vendaIdMap.set(d.identificador_make, d.id);
       });
-      setProcessingProgress({ phase: 'Vinculando ao comissionamento...', current: Math.min(i + 200, allIdMakes.length), total: allIdMakes.length });
-      await new Promise(r => setTimeout(r, 10));
+      setProcessingProgress({ phase: 'Vinculando ao comissionamento...', current: Math.min(i + LINK_BATCH, allIdMakes.length), total: allIdMakes.length });
+      await new Promise(r => setTimeout(r, 5));
     }
 
     const comRows = allIdMakes
