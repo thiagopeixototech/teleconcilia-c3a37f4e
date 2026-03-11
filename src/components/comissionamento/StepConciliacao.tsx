@@ -513,6 +513,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           <SelectContent>
             <SelectItem value="all">Todos</SelectItem>
             <SelectItem value="encontrada">Encontrada no LAL</SelectItem>
+            <SelectItem value="duplicada">⚠ Duplicadas</SelectItem>
             <SelectItem value="nao_encontrada">Não Encontrada</SelectItem>
           </SelectContent>
         </Select>
