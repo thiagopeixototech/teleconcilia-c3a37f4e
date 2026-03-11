@@ -70,6 +70,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectAll, setSelectAll] = useState(false);
+  const [duplicateSelections, setDuplicateSelections] = useState<Record<string, string>>({});
 
   // Collect unique status_make values for dynamic filter
   const uniqueStatusMake = useMemo(() => {
