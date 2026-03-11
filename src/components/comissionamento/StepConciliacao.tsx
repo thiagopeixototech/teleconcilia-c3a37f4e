@@ -136,8 +136,8 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           matched_linha_id: row.linha_operadora_id || null,
           matched_valor_lq: row.receita_lal || null,
           matched_apelido: row.lal_apelido || null,
-          is_duplicada: false,
-          duplicata_key: undefined,
+          is_atencao: false,
+          atencao_key: undefined,
         };
       });
 
