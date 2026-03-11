@@ -512,32 +512,41 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
     const idsToCheck = vendaRows.map(r => r.identificador_make).filter(Boolean);
     setProcessingProgress({ phase: 'Verificando duplicatas...', current: 0, total: idsToCheck.length });
     const existingIds = new Map<string, string>();
-    for (let i = 0; i < idsToCheck.length; i += 200) {
-      const batch = idsToCheck.slice(i, i + 200);
+    for (let i = 0; i < idsToCheck.length; i += 500) {
+      const batch = idsToCheck.slice(i, i + 500);
       const { data } = await supabase
         .from('vendas_internas')
         .select('id, identificador_make')
         .in('identificador_make', batch);
       data?.forEach(d => { if (d.identificador_make) existingIds.set(d.identificador_make, d.id); });
-      setProcessingProgress({ phase: 'Verificando duplicatas...', current: Math.min(i + 200, idsToCheck.length), total: idsToCheck.length });
-      await new Promise(r => setTimeout(r, 10));
+      setProcessingProgress({ phase: 'Verificando duplicatas...', current: Math.min(i + 500, idsToCheck.length), total: idsToCheck.length });
+      await new Promise(r => setTimeout(r, 5));
     }
 
     const newVendas = vendaRows.filter(r => !existingIds.has(r.identificador_make));
     const existingVendas = vendaRows.filter(r => existingIds.has(r.identificador_make));
 
     setProcessingProgress({ phase: 'Inserindo vendas...', current: 0, total: newVendas.length });
-    for (let i = 0; i < newVendas.length; i += 500) {
-      const batch = newVendas.slice(i, i + 500);
+    const INSERT_BATCH = 500;
+    for (let i = 0; i < newVendas.length; i += INSERT_BATCH) {
+      const batch = newVendas.slice(i, i + INSERT_BATCH);
       const { error: batchErr } = await supabase.from('vendas_internas').insert(batch);
       if (batchErr) {
-        // Fallback: one by one
-        for (const row of batch) {
-          await supabase.from('vendas_internas').insert(row);
+        // Fallback: smaller sub-batches of 50
+        for (let j = 0; j < batch.length; j += 50) {
+          const sub = batch.slice(j, j + 50);
+          const { error: subErr } = await supabase.from('vendas_internas').insert(sub);
+          if (subErr) {
+            for (const row of sub) {
+              await supabase.from('vendas_internas').insert(row);
+            }
+          }
+          setProcessingProgress({ phase: 'Inserindo vendas (retry)...', current: Math.min(i + j + 50, newVendas.length), total: newVendas.length });
+          await new Promise(r => setTimeout(r, 5));
         }
       }
-      setProcessingProgress({ phase: 'Inserindo vendas...', current: Math.min(i + 500, newVendas.length), total: newVendas.length });
-      await new Promise(r => setTimeout(r, 30));
+      setProcessingProgress({ phase: 'Inserindo vendas...', current: Math.min(i + INSERT_BATCH, newVendas.length), total: newVendas.length });
+      await new Promise(r => setTimeout(r, 10));
     }
 
     // Build valor lookup map (O(n) instead of O(n²))
@@ -550,8 +559,9 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
     const vendaIdMap = new Map<string, string>();
 
     setProcessingProgress({ phase: 'Vinculando ao comissionamento...', current: 0, total: allIdMakes.length });
-    for (let i = 0; i < allIdMakes.length; i += 200) {
-      const batch = allIdMakes.slice(i, i + 200);
+    const LINK_BATCH = 500;
+    for (let i = 0; i < allIdMakes.length; i += LINK_BATCH) {
+      const batch = allIdMakes.slice(i, i + LINK_BATCH);
       const { data } = await supabase
         .from('vendas_internas')
         .select('id, identificador_make, valor')
@@ -559,8 +569,8 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
       data?.forEach(d => {
         if (d.identificador_make) vendaIdMap.set(d.identificador_make, d.id);
       });
-      setProcessingProgress({ phase: 'Vinculando ao comissionamento...', current: Math.min(i + 200, allIdMakes.length), total: allIdMakes.length });
-      await new Promise(r => setTimeout(r, 10));
+      setProcessingProgress({ phase: 'Vinculando ao comissionamento...', current: Math.min(i + LINK_BATCH, allIdMakes.length), total: allIdMakes.length });
+      await new Promise(r => setTimeout(r, 5));
     }
 
     const comRows = allIdMakes
@@ -573,12 +583,12 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
       }));
 
     setProcessingProgress({ phase: 'Inserindo vínculos no comissionamento...', current: 0, total: comRows.length });
-    for (let i = 0; i < comRows.length; i += 200) {
-      const batch = comRows.slice(i, i + 200);
+    for (let i = 0; i < comRows.length; i += 500) {
+      const batch = comRows.slice(i, i + 500);
       const { error: linkErr } = await supabase.from('comissionamento_vendas').insert(batch);
       if (linkErr) throw linkErr;
-      setProcessingProgress({ phase: 'Inserindo vínculos no comissionamento...', current: Math.min(i + 200, comRows.length), total: comRows.length });
-      await new Promise(r => setTimeout(r, 20));
+      setProcessingProgress({ phase: 'Inserindo vínculos no comissionamento...', current: Math.min(i + 500, comRows.length), total: comRows.length });
+      await new Promise(r => setTimeout(r, 5));
     }
 
     // Register in audit_log so it appears in import history
