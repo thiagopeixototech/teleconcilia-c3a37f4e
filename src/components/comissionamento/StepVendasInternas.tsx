@@ -512,15 +512,15 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
     const idsToCheck = vendaRows.map(r => r.identificador_make).filter(Boolean);
     setProcessingProgress({ phase: 'Verificando duplicatas...', current: 0, total: idsToCheck.length });
     const existingIds = new Map<string, string>();
-    for (let i = 0; i < idsToCheck.length; i += 200) {
-      const batch = idsToCheck.slice(i, i + 200);
+    for (let i = 0; i < idsToCheck.length; i += 500) {
+      const batch = idsToCheck.slice(i, i + 500);
       const { data } = await supabase
         .from('vendas_internas')
         .select('id, identificador_make')
         .in('identificador_make', batch);
       data?.forEach(d => { if (d.identificador_make) existingIds.set(d.identificador_make, d.id); });
-      setProcessingProgress({ phase: 'Verificando duplicatas...', current: Math.min(i + 200, idsToCheck.length), total: idsToCheck.length });
-      await new Promise(r => setTimeout(r, 10));
+      setProcessingProgress({ phase: 'Verificando duplicatas...', current: Math.min(i + 500, idsToCheck.length), total: idsToCheck.length });
+      await new Promise(r => setTimeout(r, 5));
     }
 
     const newVendas = vendaRows.filter(r => !existingIds.has(r.identificador_make));
