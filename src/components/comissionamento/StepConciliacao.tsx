@@ -19,9 +19,12 @@ import {
 } from '@/components/ui/table';
 import { Progress } from '@/components/ui/progress';
 import {
-  Loader2, GitCompare, CheckCircle2, Search, XCircle, RefreshCw, Trash2,
+  Loader2, GitCompare, CheckCircle2, Search, XCircle, RefreshCw, Trash2, ChevronDown,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Label } from '@/components/ui/label';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { toast } from 'sonner';
 
 interface Props {
