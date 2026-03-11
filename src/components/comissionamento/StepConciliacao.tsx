@@ -312,14 +312,14 @@ export function StepConciliacao({ comissionamentoId }: Props) {
 
   const displayedVendas = filteredVendas.slice(0, 200);
 
-  // Group duplicates by duplicata_key for accordion view
-  const duplicateGroups = useMemo(() => {
-    if (matchFilter !== 'duplicada') return new Map<string, ComVenda[]>();
+  // Group attention items by atencao_key for accordion view
+  const atencaoGroups = useMemo(() => {
+    if (matchFilter !== 'atencao') return new Map<string, ComVenda[]>();
     const groups = new Map<string, ComVenda[]>();
     filteredVendas.forEach(v => {
-      if (v.duplicata_key) {
-        if (!groups.has(v.duplicata_key)) groups.set(v.duplicata_key, []);
-        groups.get(v.duplicata_key)!.push(v);
+      if (v.atencao_key) {
+        if (!groups.has(v.atencao_key)) groups.set(v.atencao_key, []);
+        groups.get(v.atencao_key)!.push(v);
       }
     });
     return groups;
