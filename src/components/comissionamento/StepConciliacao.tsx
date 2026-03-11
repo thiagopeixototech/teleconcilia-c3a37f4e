@@ -50,8 +50,8 @@ interface ComVenda {
   matched_linha_id?: string | null;
   matched_valor_lq?: number | null;
   matched_apelido?: string | null;
-  is_duplicada?: boolean;
-  duplicata_key?: string;
+  is_atencao?: boolean;
+  atencao_key?: string;
 }
 
 export function StepConciliacao({ comissionamentoId }: Props) {
