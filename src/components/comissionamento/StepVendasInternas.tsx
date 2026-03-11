@@ -583,12 +583,12 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
       }));
 
     setProcessingProgress({ phase: 'Inserindo vínculos no comissionamento...', current: 0, total: comRows.length });
-    for (let i = 0; i < comRows.length; i += 200) {
-      const batch = comRows.slice(i, i + 200);
+    for (let i = 0; i < comRows.length; i += 500) {
+      const batch = comRows.slice(i, i + 500);
       const { error: linkErr } = await supabase.from('comissionamento_vendas').insert(batch);
       if (linkErr) throw linkErr;
-      setProcessingProgress({ phase: 'Inserindo vínculos no comissionamento...', current: Math.min(i + 200, comRows.length), total: comRows.length });
-      await new Promise(r => setTimeout(r, 20));
+      setProcessingProgress({ phase: 'Inserindo vínculos no comissionamento...', current: Math.min(i + 500, comRows.length), total: comRows.length });
+      await new Promise(r => setTimeout(r, 5));
     }
 
     // Register in audit_log so it appears in import history
