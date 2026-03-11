@@ -648,54 +648,133 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         </div>
       )}
 
-      {/* Table */}
-      <div className="overflow-x-auto border rounded-lg max-h-[400px]">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-8">
-                <Checkbox checked={selectAll} onCheckedChange={handleSelectAll} />
-              </TableHead>
-              <TableHead className="text-xs">Match</TableHead>
-              <TableHead className="text-xs">Cliente</TableHead>
-              <TableHead className="text-xs">CPF</TableHead>
-              <TableHead className="text-xs">Protocolo</TableHead>
-              <TableHead className="text-xs">Vendedor</TableHead>
-              <TableHead className="text-xs">Data Venda</TableHead>
-              <TableHead className="text-xs">Status Pedido</TableHead>
-              <TableHead className="text-xs">Status Pag</TableHead>
-              <TableHead className="text-xs">Receita Int.</TableHead>
-              <TableHead className="text-xs">Receita LAL</TableHead>
-              <TableHead className="text-xs">LAL</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {displayedVendas.map(v => (
-              <TableRow key={v.id} className={`${selectedIds.has(v.id) ? 'bg-accent/50' : ''} ${v.is_duplicada ? 'bg-warning/5' : ''}`}>
-                <TableCell>
-                  <Checkbox checked={selectedIds.has(v.id)} onCheckedChange={() => toggleSelect(v.id)} />
-                </TableCell>
-                <TableCell>{matchBadge(v)}</TableCell>
-                <TableCell className="text-xs max-w-[120px] truncate">{v.cliente_nome || '-'}</TableCell>
-                <TableCell className="text-xs font-mono">{v.cpf_cnpj || '-'}</TableCell>
-                <TableCell className="text-xs font-mono">{v.protocolo_interno || '-'}</TableCell>
-                <TableCell className="text-xs max-w-[100px] truncate">{v.vendedor_nome || '-'}</TableCell>
-                <TableCell className="text-xs">{v.data_venda || '-'}</TableCell>
-                <TableCell className="text-xs">{v.status_make || '-'}</TableCell>
-                <TableCell>{statusPagBadge(v.status_pag)}</TableCell>
-                <TableCell className="text-xs">{formatBRL(v.receita_interna)}</TableCell>
-                <TableCell className="text-xs">{formatBRL(v.matched_valor_lq ?? v.receita_lal)}</TableCell>
-                <TableCell className="text-xs max-w-[80px] truncate">{v.matched_apelido ?? v.lal_apelido ?? '-'}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+      {/* Duplicate Accordion View */}
+      {matchFilter === 'duplicada' && duplicateGroups.size > 0 ? (
+        <div className="border rounded-lg">
+          <Accordion type="multiple" className="w-full">
+            {Array.from(duplicateGroups.entries()).map(([groupKey, group]) => {
+              const first = group[0];
+              const lalValue = first.matched_valor_lq ?? first.receita_lal;
+              return (
+                <AccordionItem key={groupKey} value={groupKey} className="border-b last:border-b-0">
+                  <AccordionTrigger className="px-4 py-3 hover:no-underline hover:bg-accent/30">
+                    <div className="flex items-center gap-4 text-left w-full mr-4">
+                      <Badge className="bg-warning/20 text-warning text-xs shrink-0">
+                        {group.length} registros
+                      </Badge>
+                      <span className="text-sm font-medium truncate max-w-[200px]">{first.cliente_nome || '-'}</span>
+                      <span className="text-xs font-mono text-muted-foreground">{first.cpf_cnpj || first.protocolo_interno || '-'}</span>
+                      <span className="text-xs text-muted-foreground ml-auto">{formatBRL(lalValue)}</span>
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent className="px-4 pb-4">
+                    <RadioGroup
+                      value={duplicateSelections[groupKey] || ''}
+                      onValueChange={(val) => setDuplicateSelections(prev => ({ ...prev, [groupKey]: val }))}
+                      className="space-y-2"
+                    >
+                      {group.map(v => (
+                        <div
+                          key={v.id}
+                          className={`flex items-center gap-3 p-3 rounded-md border transition-colors ${
+                            duplicateSelections[groupKey] === v.id
+                              ? 'border-primary bg-primary/5'
+                              : 'border-border hover:bg-accent/20'
+                          }`}
+                        >
+                          <RadioGroupItem value={v.id} id={`dup-${v.id}`} />
+                          <Label htmlFor={`dup-${v.id}`} className="flex-1 cursor-pointer">
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                              <div>
+                                <span className="text-muted-foreground">Vendedor:</span>{' '}
+                                <span className="font-medium">{v.vendedor_nome || '-'}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Data Venda:</span>{' '}
+                                <span className="font-medium">{v.data_venda || '-'}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Status:</span>{' '}
+                                <span className="font-medium">{v.status_make || '-'}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Pag:</span>{' '}
+                                {statusPagBadge(v.status_pag)}
+                              </div>
+                            </div>
+                          </Label>
+                        </div>
+                      ))}
+                    </RadioGroup>
+                    <div className="mt-3 flex justify-end">
+                      <Button
+                        size="sm"
+                        onClick={() => handleConfirmDuplicate(groupKey)}
+                        disabled={!duplicateSelections[groupKey] || isProcessing}
+                        className="gap-1.5"
+                      >
+                        {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                        Confirmar Conciliação
+                      </Button>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              );
+            })}
+          </Accordion>
+        </div>
+      ) : (
+        /* Standard Table View */
+        <>
+          <div className="overflow-x-auto border rounded-lg max-h-[400px]">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-8">
+                    <Checkbox checked={selectAll} onCheckedChange={handleSelectAll} />
+                  </TableHead>
+                  <TableHead className="text-xs">Match</TableHead>
+                  <TableHead className="text-xs">Cliente</TableHead>
+                  <TableHead className="text-xs">CPF</TableHead>
+                  <TableHead className="text-xs">Protocolo</TableHead>
+                  <TableHead className="text-xs">Vendedor</TableHead>
+                  <TableHead className="text-xs">Data Venda</TableHead>
+                  <TableHead className="text-xs">Status Pedido</TableHead>
+                  <TableHead className="text-xs">Status Pag</TableHead>
+                  <TableHead className="text-xs">Receita Int.</TableHead>
+                  <TableHead className="text-xs">Receita LAL</TableHead>
+                  <TableHead className="text-xs">LAL</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {displayedVendas.map(v => (
+                  <TableRow key={v.id} className={`${selectedIds.has(v.id) ? 'bg-accent/50' : ''} ${v.is_duplicada ? 'bg-warning/5' : ''}`}>
+                    <TableCell>
+                      <Checkbox checked={selectedIds.has(v.id)} onCheckedChange={() => toggleSelect(v.id)} />
+                    </TableCell>
+                    <TableCell>{matchBadge(v)}</TableCell>
+                    <TableCell className="text-xs max-w-[120px] truncate">{v.cliente_nome || '-'}</TableCell>
+                    <TableCell className="text-xs font-mono">{v.cpf_cnpj || '-'}</TableCell>
+                    <TableCell className="text-xs font-mono">{v.protocolo_interno || '-'}</TableCell>
+                    <TableCell className="text-xs max-w-[100px] truncate">{v.vendedor_nome || '-'}</TableCell>
+                    <TableCell className="text-xs">{v.data_venda || '-'}</TableCell>
+                    <TableCell className="text-xs">{v.status_make || '-'}</TableCell>
+                    <TableCell>{statusPagBadge(v.status_pag)}</TableCell>
+                    <TableCell className="text-xs">{formatBRL(v.receita_interna)}</TableCell>
+                    <TableCell className="text-xs">{formatBRL(v.matched_valor_lq ?? v.receita_lal)}</TableCell>
+                    <TableCell className="text-xs max-w-[80px] truncate">{v.matched_apelido ?? v.lal_apelido ?? '-'}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
 
-      {filteredVendas.length > 200 && (
-        <p className="text-xs text-muted-foreground text-center">
-          Mostrando 200 de {filteredVendas.length}. Use os filtros para refinar.
-        </p>
+          {filteredVendas.length > 200 && (
+            <p className="text-xs text-muted-foreground text-center">
+              Mostrando 200 de {filteredVendas.length}. Use os filtros para refinar.
+            </p>
+          )}
+        </>
       )}
     </div>
   );
