@@ -42,6 +42,7 @@ interface ComVenda {
   cliente_nome?: string;
   cpf_cnpj?: string;
   protocolo_interno?: string;
+  identificador_make?: string;
   status_make?: string;
   valor_venda?: number;
   vendedor_nome?: string;
