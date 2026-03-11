@@ -130,6 +130,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           cliente_nome: vi?.cliente_nome,
           cpf_cnpj: vi?.cpf_cnpj,
           protocolo_interno: vi?.protocolo_interno,
+          identificador_make: vi?.identificador_make,
           status_make: vi?.status_make,
           valor_venda: vi?.valor,
           vendedor_nome: vi?.usuarios?.nome,
