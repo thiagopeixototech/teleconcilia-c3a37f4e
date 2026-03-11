@@ -176,11 +176,8 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       }
 
       const normDoc = normalizeCpfCnpjForMatch;
-      // Aggregate linhas by protocol and CPF (multiple records may exist for combos)
       const linhasByProtocolo = new Map<string, any[]>();
       const linhasByCpf = new Map<string, any[]>();
-      const usedProtocolKeys = new Set<string>();
-      const usedCpfKeys = new Set<string>();
 
       for (const linha of allLinhas) {
         if (linha.protocolo_operadora) {
@@ -195,33 +192,19 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         }
       }
 
-      // Mark already-linked protocols/CPFs as used
-      for (const v of vendasData) {
-        if (v.linha_operadora_id) {
-          // Find which protocol/cpf group this linha belongs to
-          for (const [key, linhas] of linhasByProtocolo) {
-            if (linhas.some(l => l.id === v.linha_operadora_id)) {
-              usedProtocolKeys.add(key);
-              break;
-            }
-          }
-          for (const [key, linhas] of linhasByCpf) {
-            if (linhas.some(l => l.id === v.linha_operadora_id)) {
-              usedCpfKeys.add(key);
-              break;
-            }
-          }
-        }
-      }
+      // Phase 1: Find which match key each venda would use
+      type MatchCandidate = {
+        vendaIndex: number;
+        matchKey: string;
+        matchType: 'protocolo' | 'cpf';
+        linhas: any[];
+        apelido: string;
+      };
 
-      const updated = vendasData.map(venda => {
-        // Already has a link saved in DB
-        if (venda.linha_operadora_id) return venda;
+      const candidates: MatchCandidate[] = [];
 
-        let matchedLinhas: any[] | null = null;
-        let matchedApelido: string | null = null;
-        let matchKey: string | null = null;
-        let matchType: 'protocolo' | 'cpf' | null = null;
+      vendasData.forEach((venda, index) => {
+        if (venda.linha_operadora_id) return; // already linked in DB
 
         for (const lal of lalData) {
           const tipoMatch = lal.tipo_match;
@@ -229,45 +212,73 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           if (tipoMatch === 'protocolo' && venda.protocolo_interno) {
             const key = venda.protocolo_interno.trim();
             const linhas = linhasByProtocolo.get(key);
-            if (linhas && linhas.length > 0 && !usedProtocolKeys.has(key)) {
-              matchedLinhas = linhas;
-              matchedApelido = lal.apelido;
-              matchKey = key;
-              matchType = 'protocolo';
-              break;
+            if (linhas && linhas.length > 0) {
+              candidates.push({ vendaIndex: index, matchKey: `proto:${key}`, matchType: 'protocolo', linhas, apelido: lal.apelido });
+              return; // first match wins per venda
             }
           }
 
           if (tipoMatch === 'cpf' && venda.cpf_cnpj) {
             const key = normDoc(venda.cpf_cnpj);
             const linhas = linhasByCpf.get(key);
-            if (linhas && linhas.length > 0 && !usedCpfKeys.has(key)) {
-              matchedLinhas = linhas;
-              matchedApelido = lal.apelido;
-              matchKey = key;
-              matchType = 'cpf';
+            if (linhas && linhas.length > 0) {
+              candidates.push({ vendaIndex: index, matchKey: `cpf:${key}`, matchType: 'cpf', linhas, apelido: lal.apelido });
+              return;
+            }
+          }
+        }
+      });
+
+      // Phase 2: Group candidates by matchKey to find duplicates
+      const groupedByKey = new Map<string, MatchCandidate[]>();
+      for (const c of candidates) {
+        if (!groupedByKey.has(c.matchKey)) groupedByKey.set(c.matchKey, []);
+        groupedByKey.get(c.matchKey)!.push(c);
+      }
+
+      // Also check already-linked vendas for duplicate detection
+      const linkedKeys = new Set<string>();
+      for (const v of vendasData) {
+        if (v.linha_operadora_id) {
+          for (const [key, linhas] of linhasByProtocolo) {
+            if (linhas.some(l => l.id === v.linha_operadora_id)) {
+              linkedKeys.add(`proto:${key}`);
+              break;
+            }
+          }
+          for (const [key, linhas] of linhasByCpf) {
+            if (linhas.some(l => l.id === v.linha_operadora_id)) {
+              linkedKeys.add(`cpf:${key}`);
               break;
             }
           }
         }
+      }
 
-        if (matchedLinhas && matchedLinhas.length > 0) {
-          // Sum valor_lq across all linhas with same protocol/CPF
-          const totalValorLq = matchedLinhas.reduce((sum, l) => sum + Number(l.valor_lq || 0), 0);
-          // Link to the first linha as primary reference
-          const primaryLinha = matchedLinhas[0];
-          // Mark group as used
-          if (matchType === 'protocolo' && matchKey) usedProtocolKeys.add(matchKey);
-          if (matchType === 'cpf' && matchKey) usedCpfKeys.add(matchKey);
-          return {
-            ...venda,
-            matched_linha_id: primaryLinha.id,
-            matched_valor_lq: totalValorLq,
-            matched_apelido: matchedApelido,
-          };
+      // Phase 3: Apply matches and flag duplicates
+      const updated = vendasData.map((venda, index) => {
+        if (venda.linha_operadora_id) return venda;
+
+        const candidate = candidates.find(c => c.vendaIndex === index);
+        if (!candidate) {
+          return { ...venda, matched_linha_id: null, matched_valor_lq: null, matched_apelido: null, is_duplicada: false, duplicata_key: undefined };
         }
 
-        return { ...venda, matched_linha_id: null, matched_valor_lq: null, matched_apelido: null };
+        const group = groupedByKey.get(candidate.matchKey)!;
+        const isAlreadyLinked = linkedKeys.has(candidate.matchKey);
+        const isDuplicate = group.length > 1 || isAlreadyLinked;
+
+        const totalValorLq = candidate.linhas.reduce((sum: number, l: any) => sum + Number(l.valor_lq || 0), 0);
+        const primaryLinha = candidate.linhas[0];
+
+        return {
+          ...venda,
+          matched_linha_id: primaryLinha.id,
+          matched_valor_lq: totalValorLq,
+          matched_apelido: candidate.apelido,
+          is_duplicada: isDuplicate,
+          duplicata_key: isDuplicate ? candidate.matchKey : undefined,
+        };
       });
 
       setVendas(updated);
