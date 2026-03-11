@@ -42,10 +42,13 @@ interface ComVenda {
   status_make?: string;
   valor_venda?: number;
   vendedor_nome?: string;
+  data_venda?: string;
   // Pre-match fields (computed client-side)
   matched_linha_id?: string | null;
   matched_valor_lq?: number | null;
   matched_apelido?: string | null;
+  is_duplicada?: boolean;
+  duplicata_key?: string;
 }
 
 export function StepConciliacao({ comissionamentoId }: Props) {
@@ -87,7 +90,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           .select(`
             id, venda_interna_id, status_pag, receita_interna, receita_lal, lal_apelido, linha_operadora_id,
             vendas_internas!comissionamento_vendas_venda_interna_id_fkey(
-              cliente_nome, cpf_cnpj, protocolo_interno, status_make, valor,
+              cliente_nome, cpf_cnpj, protocolo_interno, status_make, valor, data_venda,
               usuarios!vendas_internas_usuario_id_fkey(nome)
             )
           `)
@@ -125,9 +128,12 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           status_make: vi?.status_make,
           valor_venda: vi?.valor,
           vendedor_nome: vi?.usuarios?.nome,
+          data_venda: vi?.data_venda,
           matched_linha_id: row.linha_operadora_id || null,
           matched_valor_lq: row.receita_lal || null,
           matched_apelido: row.lal_apelido || null,
+          is_duplicada: false,
+          duplicata_key: undefined,
         };
       });
 
@@ -170,11 +176,8 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       }
 
       const normDoc = normalizeCpfCnpjForMatch;
-      // Aggregate linhas by protocol and CPF (multiple records may exist for combos)
       const linhasByProtocolo = new Map<string, any[]>();
       const linhasByCpf = new Map<string, any[]>();
-      const usedProtocolKeys = new Set<string>();
-      const usedCpfKeys = new Set<string>();
 
       for (const linha of allLinhas) {
         if (linha.protocolo_operadora) {
@@ -189,33 +192,19 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         }
       }
 
-      // Mark already-linked protocols/CPFs as used
-      for (const v of vendasData) {
-        if (v.linha_operadora_id) {
-          // Find which protocol/cpf group this linha belongs to
-          for (const [key, linhas] of linhasByProtocolo) {
-            if (linhas.some(l => l.id === v.linha_operadora_id)) {
-              usedProtocolKeys.add(key);
-              break;
-            }
-          }
-          for (const [key, linhas] of linhasByCpf) {
-            if (linhas.some(l => l.id === v.linha_operadora_id)) {
-              usedCpfKeys.add(key);
-              break;
-            }
-          }
-        }
-      }
+      // Phase 1: Find which match key each venda would use
+      type MatchCandidate = {
+        vendaIndex: number;
+        matchKey: string;
+        matchType: 'protocolo' | 'cpf';
+        linhas: any[];
+        apelido: string;
+      };
 
-      const updated = vendasData.map(venda => {
-        // Already has a link saved in DB
-        if (venda.linha_operadora_id) return venda;
+      const candidates: MatchCandidate[] = [];
 
-        let matchedLinhas: any[] | null = null;
-        let matchedApelido: string | null = null;
-        let matchKey: string | null = null;
-        let matchType: 'protocolo' | 'cpf' | null = null;
+      vendasData.forEach((venda, index) => {
+        if (venda.linha_operadora_id) return; // already linked in DB
 
         for (const lal of lalData) {
           const tipoMatch = lal.tipo_match;
@@ -223,45 +212,73 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           if (tipoMatch === 'protocolo' && venda.protocolo_interno) {
             const key = venda.protocolo_interno.trim();
             const linhas = linhasByProtocolo.get(key);
-            if (linhas && linhas.length > 0 && !usedProtocolKeys.has(key)) {
-              matchedLinhas = linhas;
-              matchedApelido = lal.apelido;
-              matchKey = key;
-              matchType = 'protocolo';
-              break;
+            if (linhas && linhas.length > 0) {
+              candidates.push({ vendaIndex: index, matchKey: `proto:${key}`, matchType: 'protocolo', linhas, apelido: lal.apelido });
+              return; // first match wins per venda
             }
           }
 
           if (tipoMatch === 'cpf' && venda.cpf_cnpj) {
             const key = normDoc(venda.cpf_cnpj);
             const linhas = linhasByCpf.get(key);
-            if (linhas && linhas.length > 0 && !usedCpfKeys.has(key)) {
-              matchedLinhas = linhas;
-              matchedApelido = lal.apelido;
-              matchKey = key;
-              matchType = 'cpf';
+            if (linhas && linhas.length > 0) {
+              candidates.push({ vendaIndex: index, matchKey: `cpf:${key}`, matchType: 'cpf', linhas, apelido: lal.apelido });
+              return;
+            }
+          }
+        }
+      });
+
+      // Phase 2: Group candidates by matchKey to find duplicates
+      const groupedByKey = new Map<string, MatchCandidate[]>();
+      for (const c of candidates) {
+        if (!groupedByKey.has(c.matchKey)) groupedByKey.set(c.matchKey, []);
+        groupedByKey.get(c.matchKey)!.push(c);
+      }
+
+      // Also check already-linked vendas for duplicate detection
+      const linkedKeys = new Set<string>();
+      for (const v of vendasData) {
+        if (v.linha_operadora_id) {
+          for (const [key, linhas] of linhasByProtocolo) {
+            if (linhas.some(l => l.id === v.linha_operadora_id)) {
+              linkedKeys.add(`proto:${key}`);
+              break;
+            }
+          }
+          for (const [key, linhas] of linhasByCpf) {
+            if (linhas.some(l => l.id === v.linha_operadora_id)) {
+              linkedKeys.add(`cpf:${key}`);
               break;
             }
           }
         }
+      }
 
-        if (matchedLinhas && matchedLinhas.length > 0) {
-          // Sum valor_lq across all linhas with same protocol/CPF
-          const totalValorLq = matchedLinhas.reduce((sum, l) => sum + Number(l.valor_lq || 0), 0);
-          // Link to the first linha as primary reference
-          const primaryLinha = matchedLinhas[0];
-          // Mark group as used
-          if (matchType === 'protocolo' && matchKey) usedProtocolKeys.add(matchKey);
-          if (matchType === 'cpf' && matchKey) usedCpfKeys.add(matchKey);
-          return {
-            ...venda,
-            matched_linha_id: primaryLinha.id,
-            matched_valor_lq: totalValorLq,
-            matched_apelido: matchedApelido,
-          };
+      // Phase 3: Apply matches and flag duplicates
+      const updated = vendasData.map((venda, index) => {
+        if (venda.linha_operadora_id) return venda;
+
+        const candidate = candidates.find(c => c.vendaIndex === index);
+        if (!candidate) {
+          return { ...venda, matched_linha_id: null, matched_valor_lq: null, matched_apelido: null, is_duplicada: false, duplicata_key: undefined };
         }
 
-        return { ...venda, matched_linha_id: null, matched_valor_lq: null, matched_apelido: null };
+        const group = groupedByKey.get(candidate.matchKey)!;
+        const isAlreadyLinked = linkedKeys.has(candidate.matchKey);
+        const isDuplicate = group.length > 1 || isAlreadyLinked;
+
+        const totalValorLq = candidate.linhas.reduce((sum: number, l: any) => sum + Number(l.valor_lq || 0), 0);
+        const primaryLinha = candidate.linhas[0];
+
+        return {
+          ...venda,
+          matched_linha_id: primaryLinha.id,
+          matched_valor_lq: totalValorLq,
+          matched_apelido: candidate.apelido,
+          is_duplicada: isDuplicate,
+          duplicata_key: isDuplicate ? candidate.matchKey : undefined,
+        };
       });
 
       setVendas(updated);
@@ -287,7 +304,9 @@ export function StepConciliacao({ comissionamentoId }: Props) {
     }
     if (matchFilter !== 'all') {
       if (matchFilter === 'encontrada') {
-        result = result.filter(v => v.matched_linha_id || v.linha_operadora_id);
+        result = result.filter(v => (v.matched_linha_id || v.linha_operadora_id) && !v.is_duplicada);
+      } else if (matchFilter === 'duplicada') {
+        result = result.filter(v => v.is_duplicada);
       } else {
         result = result.filter(v => !v.matched_linha_id && !v.linha_operadora_id);
       }
@@ -396,17 +415,19 @@ export function StepConciliacao({ comissionamentoId }: Props) {
   };
 
   const matchBadge = (v: ComVenda) => {
-    if (v.linha_operadora_id) return <Badge className="bg-success/20 text-success text-xs">Vinculada</Badge>;
-    if (v.matched_linha_id) return <Badge className="bg-blue-500/20 text-blue-600 text-xs">Encontrada</Badge>;
+    if (v.linha_operadora_id && !v.is_duplicada) return <Badge className="bg-success/20 text-success text-xs">Vinculada</Badge>;
+    if (v.is_duplicada) return <Badge className="bg-warning/20 text-warning text-xs">⚠ Duplicada</Badge>;
+    if (v.matched_linha_id) return <Badge className="bg-accent text-accent-foreground text-xs">Encontrada</Badge>;
     return <Badge variant="outline" className="text-xs text-muted-foreground">Não encontrada</Badge>;
   };
 
   const matchStats = useMemo(() => {
     const total = vendas.length;
-    const found = vendas.filter(v => v.matched_linha_id || v.linha_operadora_id).length;
-    const notFound = total - found;
+    const found = vendas.filter(v => (v.matched_linha_id || v.linha_operadora_id) && !v.is_duplicada).length;
+    const duplicadas = vendas.filter(v => v.is_duplicada).length;
+    const notFound = total - found - duplicadas;
     const percentage = total > 0 ? ((found / total) * 100).toFixed(1) : '0';
-    return { total, found, notFound, percentage };
+    return { total, found, notFound, duplicadas, percentage };
   }, [vendas]);
 
   if (isLoading) {
@@ -430,7 +451,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       {/* Match Indicators */}
       <Card className="border-primary/20 bg-primary/5">
         <CardContent className="pt-4 pb-4">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
             <div className="text-center">
               <p className="text-xs text-muted-foreground">Total no Comissionamento</p>
               <p className="text-xl font-bold">{matchStats.total}</p>
@@ -438,6 +459,10 @@ export function StepConciliacao({ comissionamentoId }: Props) {
             <div className="text-center">
               <p className="text-xs text-muted-foreground">Encontradas no LAL</p>
               <p className="text-xl font-bold text-success">{matchStats.found}</p>
+            </div>
+            <div className="text-center cursor-pointer" onClick={() => setMatchFilter(matchFilter === 'duplicada' ? 'all' : 'duplicada')}>
+              <p className="text-xs text-muted-foreground">Duplicadas</p>
+              <p className="text-xl font-bold text-warning">{matchStats.duplicadas}</p>
             </div>
             <div className="text-center">
               <p className="text-xs text-muted-foreground">Não Encontradas</p>
@@ -488,6 +513,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           <SelectContent>
             <SelectItem value="all">Todos</SelectItem>
             <SelectItem value="encontrada">Encontrada no LAL</SelectItem>
+            <SelectItem value="duplicada">⚠ Duplicadas</SelectItem>
             <SelectItem value="nao_encontrada">Não Encontrada</SelectItem>
           </SelectContent>
         </Select>
@@ -583,6 +609,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
               <TableHead className="text-xs">CPF</TableHead>
               <TableHead className="text-xs">Protocolo</TableHead>
               <TableHead className="text-xs">Vendedor</TableHead>
+              <TableHead className="text-xs">Data Venda</TableHead>
               <TableHead className="text-xs">Status Pedido</TableHead>
               <TableHead className="text-xs">Status Pag</TableHead>
               <TableHead className="text-xs">Receita Int.</TableHead>
@@ -592,7 +619,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           </TableHeader>
           <TableBody>
             {displayedVendas.map(v => (
-              <TableRow key={v.id} className={selectedIds.has(v.id) ? 'bg-accent/50' : ''}>
+              <TableRow key={v.id} className={`${selectedIds.has(v.id) ? 'bg-accent/50' : ''} ${v.is_duplicada ? 'bg-warning/5' : ''}`}>
                 <TableCell>
                   <Checkbox checked={selectedIds.has(v.id)} onCheckedChange={() => toggleSelect(v.id)} />
                 </TableCell>
@@ -601,6 +628,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
                 <TableCell className="text-xs font-mono">{v.cpf_cnpj || '-'}</TableCell>
                 <TableCell className="text-xs font-mono">{v.protocolo_interno || '-'}</TableCell>
                 <TableCell className="text-xs max-w-[100px] truncate">{v.vendedor_nome || '-'}</TableCell>
+                <TableCell className="text-xs">{v.data_venda || '-'}</TableCell>
                 <TableCell className="text-xs">{v.status_make || '-'}</TableCell>
                 <TableCell>{statusPagBadge(v.status_pag)}</TableCell>
                 <TableCell className="text-xs">{formatBRL(v.receita_interna)}</TableCell>
