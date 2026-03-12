@@ -944,28 +944,63 @@ export default function VendasInternas() {
           <CardContent>
             {/* Bulk action bar */}
             {(isAdmin || isSupervisor) && selectedIds.size > 0 && (
-              <div className="flex items-center gap-3 mb-4 p-3 rounded-md bg-muted border">
+              <div className="flex flex-wrap items-center gap-3 mb-4 p-3 rounded-md bg-muted border">
                 <CheckSquare className="h-4 w-4 text-primary" />
                 <span className="text-sm font-medium">{selectedIds.size} selecionada(s)</span>
-                <Select value={bulkStatus} onValueChange={(v) => setBulkStatus(v as StatusInterno)}>
-                  <SelectTrigger className="w-52">
-                    <SelectValue placeholder="Atualizar status para..." />
+                <Select value={bulkAction} onValueChange={(v) => { setBulkAction(v as any); setBulkStatus(''); setBulkVendedor(''); }}>
+                  <SelectTrigger className="w-44">
+                    <SelectValue placeholder="Ação em massa..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.entries(statusLabels).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>{label}</SelectItem>
-                    ))}
+                    <SelectItem value="status">Alterar Status</SelectItem>
+                    <SelectItem value="vendedor">Alterar Vendedor</SelectItem>
                   </SelectContent>
                 </Select>
-                <Button 
-                  size="sm" 
-                  disabled={!bulkStatus || isBulkSaving}
-                  onClick={handleBulkStatusUpdate}
-                >
-                  {isBulkSaving && <Loader2 className="mr-2 h-3 w-3 animate-spin" />}
-                  Atualizar
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
+                {bulkAction === 'status' && (
+                  <>
+                    <Select value={bulkStatus} onValueChange={(v) => setBulkStatus(v as StatusInterno)}>
+                      <SelectTrigger className="w-52">
+                        <SelectValue placeholder="Selecione o status..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(statusLabels).map(([value, label]) => (
+                          <SelectItem key={value} value={value}>{label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button 
+                      size="sm" 
+                      disabled={!bulkStatus || isBulkSaving}
+                      onClick={handleBulkStatusUpdate}
+                    >
+                      {isBulkSaving && <Loader2 className="mr-2 h-3 w-3 animate-spin" />}
+                      Aplicar
+                    </Button>
+                  </>
+                )}
+                {bulkAction === 'vendedor' && (
+                  <>
+                    <Select value={bulkVendedor} onValueChange={setBulkVendedor}>
+                      <SelectTrigger className="w-52">
+                        <SelectValue placeholder="Selecione o vendedor..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {vendedorOptions.map(v => (
+                          <SelectItem key={v.id} value={v.id}>{v.nome}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button 
+                      size="sm" 
+                      disabled={!bulkVendedor || isBulkSaving}
+                      onClick={handleBulkVendedorUpdate}
+                    >
+                      {isBulkSaving && <Loader2 className="mr-2 h-3 w-3 animate-spin" />}
+                      Aplicar
+                    </Button>
+                  </>
+                )}
+                <Button variant="ghost" size="sm" onClick={() => { setSelectedIds(new Set()); setBulkAction(''); }}>
                   Limpar seleção
                 </Button>
               </div>
