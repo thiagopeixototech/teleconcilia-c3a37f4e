@@ -519,6 +519,34 @@ export default function VendasInternas() {
       toast.success(`${ids.length} vendas atualizadas para "${statusLabels[bulkStatus]}"`);
       setSelectedIds(new Set());
       setBulkStatus('');
+      setBulkAction('');
+      fetchVendas();
+    } catch (error: any) {
+      toast.error('Erro ao atualizar vendas: ' + (error.message || ''));
+    } finally {
+      setIsBulkSaving(false);
+    }
+  };
+
+  const handleBulkVendedorUpdate = async () => {
+    if (!bulkVendedor || selectedIds.size === 0) return;
+    setIsBulkSaving(true);
+    try {
+      const ids = Array.from(selectedIds);
+      const BATCH = 200;
+      for (let i = 0; i < ids.length; i += BATCH) {
+        const batch = ids.slice(i, i + BATCH);
+        const { error } = await supabase
+          .from('vendas_internas')
+          .update({ usuario_id: bulkVendedor })
+          .in('id', batch);
+        if (error) throw error;
+      }
+      const vendedorNome = vendedorOptions.find(v => v.id === bulkVendedor)?.nome || '';
+      toast.success(`${ids.length} vendas transferidas para "${vendedorNome}"`);
+      setSelectedIds(new Set());
+      setBulkVendedor('');
+      setBulkAction('');
       fetchVendas();
     } catch (error: any) {
       toast.error('Erro ao atualizar vendas: ' + (error.message || ''));
