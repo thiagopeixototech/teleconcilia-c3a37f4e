@@ -512,9 +512,9 @@ export function StepConciliacao({ comissionamentoId }: Props) {
               <p className="text-xs text-muted-foreground">Total no Comissionamento</p>
               <p className="text-xl font-bold">{matchStats.total}</p>
             </div>
-            <div className="text-center">
-              <p className="text-xs text-muted-foreground">Encontradas no LAL</p>
-              <p className="text-xl font-bold text-success">{matchStats.found}</p>
+            <div className="text-center cursor-pointer" onClick={() => setMatchFilter(matchFilter === 'encontrada_total' ? 'all' : 'encontrada_total')}>
+              <p className="text-xs text-muted-foreground">Encontradas (total)</p>
+              <p className="text-xl font-bold text-success">{matchStats.foundTotal}</p>
             </div>
             <div className="text-center cursor-pointer" onClick={() => setMatchFilter(matchFilter === 'atencao' ? 'all' : 'atencao')}>
               <p className="text-xs text-muted-foreground">⚠ Atenção</p>
