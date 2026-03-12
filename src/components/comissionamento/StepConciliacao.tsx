@@ -47,6 +47,11 @@ interface ComVenda {
   valor_venda?: number;
   vendedor_nome?: string;
   data_venda?: string;
+  plano?: string;
+  endereco?: string;
+  cep?: string;
+  telefone?: string;
+  operadora_nome?: string;
   // Pre-match fields (computed client-side)
   matched_linha_id?: string | null;
   matched_valor_lq?: number | null;
