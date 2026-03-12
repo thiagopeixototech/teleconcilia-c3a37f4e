@@ -429,6 +429,29 @@ export default function VendedoresPage() {
   const supervisores = vendedores.filter(v => v.role === 'supervisor' || v.role === 'admin');
   const vendedoresDisponiveis = vendedores.filter(v => v.role === 'vendedor' || !v.role);
 
+  const exportUsuariosCSV = () => {
+    const headers = ['Nome', 'Email', 'CPF', 'Empresa', 'Supervisor', 'Perfil', 'Status'];
+    const rows = filteredVendedores.map(v => [
+      v.nome,
+      v.email,
+      v.cpf || '',
+      v.empresa?.nome || '',
+      v.supervisor?.[0]?.nome || '',
+      v.role || 'vendedor',
+      v.ativo ? 'Ativo' : 'Inativo',
+    ]);
+    const csvContent = [headers, ...rows]
+      .map(row => row.map(cell => `"${cell}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `usuarios_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   if (isLoading) {
     return (
       <AppLayout title="Usuários">
