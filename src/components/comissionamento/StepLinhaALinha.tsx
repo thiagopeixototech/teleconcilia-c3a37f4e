@@ -131,7 +131,7 @@ export function StepLinhaALinha({ comissionamentoId }: Props) {
           valor: valor,
           valor_lq: valor,
           tipo_plano: plano || null,
-          data_status: map.data_status ? row[map.data_status] : null,
+          data_status: map.data_status ? parseDate(row[map.data_status]) : null,
           status_operadora: ((map.status_operadora ? row[map.status_operadora] : 'pendente') || 'pendente') as 'aprovado' | 'instalado' | 'cancelado' | 'pendente',
           quinzena_ref: map.quinzena_ref ? row[map.quinzena_ref] : null,
           arquivo_origem: lal.arquivo?.name || null,

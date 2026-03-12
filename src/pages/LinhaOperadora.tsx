@@ -360,7 +360,7 @@ export default function LinhaOperadoraPage() {
           valor_lq: valor,
           valor_make: null,
           tipo_plano: row[map.plano] || null,
-          data_status: row[map.data_status] || null,
+          data_status: parseDate(row[map.data_status]) || null,
           status_operadora: (row[map.status_operadora] as StatusOperadora) || 'pendente',
           quinzena_ref: row[map.quinzena_ref] || null,
           arquivo_origem: selectedFile.name,

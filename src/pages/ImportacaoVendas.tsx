@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { normalizeProtocolo } from '@/lib/normalizeProtocolo';
 import { normalizeCpfCnpj } from '@/lib/normalizeCpfCnpj';
+import { parseDate } from '@/lib/parseDate';
 import { parseCSV as parseCSVLib } from '@/lib/parseCSV';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/supabase/client';
