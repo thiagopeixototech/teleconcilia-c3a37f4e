@@ -307,7 +307,9 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       result = result.filter(v => (v.status_make || '').toLowerCase() === statusMakeFilter.toLowerCase());
     }
     if (matchFilter !== 'all') {
-      if (matchFilter === 'encontrada') {
+      if (matchFilter === 'encontrada_total') {
+        result = result.filter(v => v.matched_linha_id || v.linha_operadora_id);
+      } else if (matchFilter === 'encontrada') {
         result = result.filter(v => (v.matched_linha_id || v.linha_operadora_id) && !v.is_atencao);
       } else if (matchFilter === 'atencao') {
         result = result.filter(v => v.is_atencao);
