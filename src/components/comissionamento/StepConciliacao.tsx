@@ -478,11 +478,12 @@ export function StepConciliacao({ comissionamentoId }: Props) {
 
   const matchStats = useMemo(() => {
     const total = vendas.length;
-    const found = vendas.filter(v => (v.matched_linha_id || v.linha_operadora_id) && !v.is_atencao).length;
+    const foundTotal = vendas.filter(v => v.matched_linha_id || v.linha_operadora_id).length;
     const atencao = vendas.filter(v => v.is_atencao).length;
-    const notFound = total - found - atencao;
-    const percentage = total > 0 ? ((found / total) * 100).toFixed(1) : '0';
-    return { total, found, notFound, atencao, percentage };
+    const found = foundTotal - atencao;
+    const notFound = total - foundTotal;
+    const percentage = total > 0 ? ((foundTotal / total) * 100).toFixed(1) : '0';
+    return { total, found, foundTotal, notFound, atencao, percentage };
   }, [vendas]);
 
   if (isLoading) {
