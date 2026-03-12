@@ -641,6 +641,7 @@ export default function VendasInternas() {
     setEmpresaFilter('all');
     setIdMakeSearch('');
     setProtocoloSearch('');
+    setCpfSearch('');
     setDataVendaInicio(null);
     setDataVendaFim(null);
     setDataInstalacaoInicio(null);
