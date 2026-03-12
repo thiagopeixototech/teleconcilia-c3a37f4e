@@ -71,7 +71,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectAll, setSelectAll] = useState(false);
-  const [duplicateSelections, setDuplicateSelections] = useState<Record<string, string>>({});
+  const [duplicateSelections, setDuplicateSelections] = useState<Record<string, Record<string, 'OK' | 'DESCONTADA'>>>({});
 
   // Collect unique status_make values for dynamic filter
   const uniqueStatusMake = useMemo(() => {
@@ -330,66 +330,33 @@ export function StepConciliacao({ comissionamentoId }: Props) {
     return groups;
   }, [filteredVendas, matchFilter]);
 
-  const handleConfirmAtencao = async (groupKey: string) => {
-    const selectedId = duplicateSelections[groupKey];
-    if (!selectedId) { toast.error('Selecione o registro válido antes de confirmar'); return; }
-
-    const group = atencaoGroups.get(groupKey);
-    if (!group) return;
-
-    setIsProcessing(true);
-    try {
-      // Mark selected as OK
-      const selected = group.find(v => v.id === selectedId)!;
-      const okUpdate: any = { status_pag: 'OK' };
-      if (!selected.linha_operadora_id && selected.matched_linha_id) {
-        okUpdate.linha_operadora_id = selected.matched_linha_id;
-        okUpdate.receita_lal = selected.matched_valor_lq;
-        okUpdate.lal_apelido = selected.matched_apelido;
-      }
-      await supabase.from('comissionamento_vendas').update(okUpdate).eq('id', selectedId);
-
-      // Mark others as DESCONTADA
-      const otherIds = group.filter(v => v.id !== selectedId).map(v => v.id);
-      if (otherIds.length > 0) {
-        await supabase.from('comissionamento_vendas').update({ status_pag: 'DESCONTADA' }).in('id', otherIds);
-      }
-
-      toast.success(`Conciliação confirmada: 1 OK, ${otherIds.length} descartadas`);
-      setDuplicateSelections(prev => { const next = { ...prev }; delete next[groupKey]; return next; });
-      loadData();
-    } catch (err: any) {
-      toast.error('Erro: ' + err.message);
-    } finally {
-      setIsProcessing(false);
+  const handleConfirmAtencaoGroup = async (groupKey: string) => {
+    const groupSelections = duplicateSelections[groupKey];
+    if (!groupSelections || Object.keys(groupSelections).length === 0) {
+      toast.error('Defina o status de pelo menos um registro antes de confirmar');
+      return;
     }
-  };
-
-  const handleConfirmAtencaoWithStatus = async (groupKey: string, status: 'OK' | 'DESCONTADA') => {
-    const selectedId = duplicateSelections[groupKey];
-    if (!selectedId) { toast.error('Selecione o registro primeiro'); return; }
 
     const group = atencaoGroups.get(groupKey);
     if (!group) return;
 
     setIsProcessing(true);
     try {
-      const selected = group.find(v => v.id === selectedId)!;
-      const updateData: any = { status_pag: status };
-      if (!selected.linha_operadora_id && selected.matched_linha_id) {
-        updateData.linha_operadora_id = selected.matched_linha_id;
-        updateData.receita_lal = selected.matched_valor_lq;
-        updateData.lal_apelido = selected.matched_apelido;
-      }
-      await supabase.from('comissionamento_vendas').update(updateData).eq('id', selectedId);
+      for (const v of group) {
+        const status = groupSelections[v.id];
+        if (!status) continue; // skip unset
 
-      // Mark others as DESCONTADA
-      const otherIds = group.filter(v => v.id !== selectedId).map(v => v.id);
-      if (otherIds.length > 0) {
-        await supabase.from('comissionamento_vendas').update({ status_pag: 'DESCONTADA' }).in('id', otherIds);
+        const updateData: any = { status_pag: status };
+        if (!v.linha_operadora_id && v.matched_linha_id) {
+          updateData.linha_operadora_id = v.matched_linha_id;
+          updateData.receita_lal = v.matched_valor_lq;
+          updateData.lal_apelido = v.matched_apelido;
+        }
+        await supabase.from('comissionamento_vendas').update(updateData).eq('id', v.id);
       }
 
-      toast.success(`Selecionada marcada como ${status}, ${otherIds.length} descartadas`);
+      const count = Object.keys(groupSelections).length;
+      toast.success(`${count} registros atualizados`);
       setDuplicateSelections(prev => { const next = { ...prev }; delete next[groupKey]; return next; });
       loadData();
     } catch (err: any) {
@@ -692,18 +659,19 @@ export function StepConciliacao({ comissionamentoId }: Props) {
                   <AccordionContent className="px-4 pb-4">
                     <div className="space-y-2">
                       {group.map(v => {
-                        const isSelected = duplicateSelections[groupKey] === v.id;
+                        const selectedStatus = duplicateSelections[groupKey]?.[v.id] || null;
                         return (
                           <div
                             key={v.id}
-                            onClick={() => setDuplicateSelections(prev => ({ ...prev, [groupKey]: v.id }))}
-                            className={`p-3 rounded-md border transition-colors cursor-pointer ${
-                              isSelected
-                                ? 'border-primary bg-primary/5'
-                                : 'border-border hover:bg-accent/20'
+                            className={`p-3 rounded-md border transition-colors ${
+                              selectedStatus === 'OK'
+                                ? 'border-success bg-success/5'
+                                : selectedStatus === 'DESCONTADA'
+                                ? 'border-destructive bg-destructive/5'
+                                : 'border-border'
                             }`}
                           >
-                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
+                            <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-xs items-center">
                               <div>
                                 <span className="text-muted-foreground">Vendedor:</span>{' '}
                                 <span className="font-medium">{v.vendedor_nome || '-'}</span>
@@ -721,35 +689,51 @@ export function StepConciliacao({ comissionamentoId }: Props) {
                                 <span className="font-medium">{v.status_make || '-'}</span>
                               </div>
                               <div>
-                                <span className="text-muted-foreground">Pag:</span>{' '}
+                                <span className="text-muted-foreground">Pag atual:</span>{' '}
                                 {statusPagBadge(v.status_pag)}
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <Button
+                                  size="sm"
+                                  variant={selectedStatus === 'OK' ? 'default' : 'outline'}
+                                  className={`h-7 text-xs gap-1 ${selectedStatus === 'OK' ? 'bg-success hover:bg-success/90 text-success-foreground' : ''}`}
+                                  onClick={() => setDuplicateSelections(prev => ({
+                                    ...prev,
+                                    [groupKey]: { ...(prev[groupKey] || {}), [v.id]: 'OK' }
+                                  }))}
+                                >
+                                  <CheckCircle2 className="h-3 w-3" /> OK
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant={selectedStatus === 'DESCONTADA' ? 'destructive' : 'outline'}
+                                  className="h-7 text-xs gap-1"
+                                  onClick={() => setDuplicateSelections(prev => ({
+                                    ...prev,
+                                    [groupKey]: { ...(prev[groupKey] || {}), [v.id]: 'DESCONTADA' }
+                                  }))}
+                                >
+                                  <XCircle className="h-3 w-3" /> DESC
+                                </Button>
                               </div>
                             </div>
                           </div>
                         );
                       })}
                     </div>
-                    {duplicateSelections[groupKey] && (
+                    {duplicateSelections[groupKey] && Object.keys(duplicateSelections[groupKey]).length > 0 && (
                       <div className="mt-3 flex items-center justify-end gap-2">
-                        <span className="text-xs text-muted-foreground mr-2">Selecionada → marcar como:</span>
+                        <span className="text-xs text-muted-foreground mr-2">
+                          {Object.values(duplicateSelections[groupKey]).filter(s => s === 'OK').length} OK, {Object.values(duplicateSelections[groupKey]).filter(s => s === 'DESCONTADA').length} Descontadas
+                        </span>
                         <Button
                           size="sm"
-                          onClick={() => handleConfirmAtencao(groupKey)}
+                          onClick={() => handleConfirmAtencaoGroup(groupKey)}
                           disabled={isProcessing}
                           className="gap-1.5"
                         >
                           {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                          OK (Conciliar)
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => handleConfirmAtencaoWithStatus(groupKey, 'DESCONTADA')}
-                          disabled={isProcessing}
-                          className="gap-1.5"
-                        >
-                          {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
-                          DESCONTADA
+                          Confirmar Grupo
                         </Button>
                       </div>
                     )}

@@ -160,7 +160,7 @@ export function ComissionamentoWizard({ mode, comissionamentoId, onClose }: Wiza
   };
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-4 h-full">
       {/* Step indicator */}
       <div className="flex items-center gap-1 overflow-x-auto pb-2">
         {STEPS.map((step, i) => {
@@ -193,7 +193,7 @@ export function ComissionamentoWizard({ mode, comissionamentoId, onClose }: Wiza
       <Progress value={((currentStep + 1) / STEPS.length) * 100} className="h-1" />
 
       {/* Step content */}
-      <div className="min-h-[300px]">
+      <div className="min-h-[400px] flex-1 overflow-y-auto">
         {currentStep === 0 && (
           <StepInfo
             nome={nome}
