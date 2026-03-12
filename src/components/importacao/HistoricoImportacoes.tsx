@@ -161,6 +161,8 @@ export function HistoricoImportacoes() {
             <TableBody>
               {records.map(record => {
                 const d = record.dados_novos;
+                const hasErrors = (d?.erros || 0) > 0;
+                const isFromComissionamento = d?.origem === 'comissionamento';
                 const hasVendaIds = d?.venda_ids && d.venda_ids.length > 0;
 
                 return (
