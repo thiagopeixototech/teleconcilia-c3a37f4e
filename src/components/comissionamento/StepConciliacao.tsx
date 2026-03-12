@@ -47,6 +47,11 @@ interface ComVenda {
   valor_venda?: number;
   vendedor_nome?: string;
   data_venda?: string;
+  plano?: string;
+  endereco?: string;
+  cep?: string;
+  telefone?: string;
+  operadora_nome?: string;
   // Pre-match fields (computed client-side)
   matched_linha_id?: string | null;
   matched_valor_lq?: number | null;
@@ -96,7 +101,9 @@ export function StepConciliacao({ comissionamentoId }: Props) {
             id, venda_interna_id, status_pag, receita_interna, receita_lal, lal_apelido, linha_operadora_id,
             vendas_internas!comissionamento_vendas_venda_interna_id_fkey(
               cliente_nome, cpf_cnpj, protocolo_interno, identificador_make, status_make, valor, data_venda,
-              usuarios!vendas_internas_usuario_id_fkey(nome)
+              plano, endereco, cep, telefone,
+              usuarios!vendas_internas_usuario_id_fkey(nome),
+              operadoras!vendas_internas_operadora_id_fkey(nome)
             )
           `)
           .eq('comissionamento_id', comissionamentoId)
@@ -135,6 +142,11 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           valor_venda: vi?.valor,
           vendedor_nome: vi?.usuarios?.nome,
           data_venda: vi?.data_venda,
+          plano: vi?.plano,
+          endereco: vi?.endereco,
+          cep: vi?.cep,
+          telefone: vi?.telefone,
+          operadora_nome: vi?.operadoras?.nome,
           matched_linha_id: row.linha_operadora_id || null,
           matched_valor_lq: row.receita_lal || null,
           matched_apelido: row.lal_apelido || null,
@@ -671,28 +683,54 @@ export function StepConciliacao({ comissionamentoId }: Props) {
                                 : 'border-border'
                             }`}
                           >
-                            <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-xs items-center">
-                              <div>
-                                <span className="text-muted-foreground">Vendedor:</span>{' '}
-                                <span className="font-medium">{v.vendedor_nome || '-'}</span>
+                            <div className="space-y-2">
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs">
+                                <div>
+                                  <span className="text-muted-foreground">Vendedor:</span>{' '}
+                                  <span className="font-medium">{v.vendedor_nome || '-'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">ID Make:</span>{' '}
+                                  <span className="font-mono font-medium">{v.identificador_make || '-'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Data Venda:</span>{' '}
+                                  <span className="font-medium">{v.data_venda || '-'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Status Make:</span>{' '}
+                                  <span className="font-medium">{v.status_make || '-'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Plano:</span>{' '}
+                                  <span className="font-medium">{v.plano || '-'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Valor:</span>{' '}
+                                  <span className="font-medium">{formatBRL(v.valor_venda)}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Telefone:</span>{' '}
+                                  <span className="font-medium">{v.telefone || '-'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Operadora:</span>{' '}
+                                  <span className="font-medium">{v.operadora_nome || '-'}</span>
+                                </div>
+                                <div className="col-span-2">
+                                  <span className="text-muted-foreground">Endereço:</span>{' '}
+                                  <span className="font-medium">{[v.endereco, v.cep].filter(Boolean).join(' - ') || '-'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Protocolo:</span>{' '}
+                                  <span className="font-mono font-medium">{v.protocolo_interno || '-'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Pag atual:</span>{' '}
+                                  {statusPagBadge(v.status_pag)}
+                                </div>
                               </div>
-                              <div>
-                                <span className="text-muted-foreground">ID Make:</span>{' '}
-                                <span className="font-mono font-medium">{v.identificador_make || '-'}</span>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">Data Venda:</span>{' '}
-                                <span className="font-medium">{v.data_venda || '-'}</span>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">Status:</span>{' '}
-                                <span className="font-medium">{v.status_make || '-'}</span>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">Pag atual:</span>{' '}
-                                {statusPagBadge(v.status_pag)}
-                              </div>
-                              <div className="flex items-center gap-1.5">
+                              <div className="flex items-center gap-1.5 pt-1">
                                 <Button
                                   size="sm"
                                   variant={selectedStatus === 'OK' ? 'default' : 'outline'}
