@@ -651,7 +651,7 @@ export default function VendasInternas() {
 
   useEffect(() => {
     setVisibleCount(50);
-  }, [searchTerm, statusFilter, operadoraFilter, vendedorFilter, statusMakeFilter, confirmadaFilter, linhaALinhaFilter, statusPagFilter, empresaFilter, idMakeSearch, protocoloSearch]);
+  }, [searchTerm, statusFilter, operadoraFilter, vendedorFilter, statusMakeFilter, confirmadaFilter, linhaALinhaFilter, statusPagFilter, empresaFilter, idMakeSearch, protocoloSearch, cpfSearch]);
 
   const filteredVendas = (() => {
     const filtered = vendas.filter(venda => {
