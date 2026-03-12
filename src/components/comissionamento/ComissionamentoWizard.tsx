@@ -125,50 +125,30 @@ export function ComissionamentoWizard({ mode, comissionamentoId, onClose }: Wiza
     }
     setIsCleaningUp(true);
     try {
-      // 1. Get venda_ids linked to this comissionamento
-      const { data: cvRows } = await supabase
-        .from('comissionamento_vendas')
-        .select('venda_interna_id')
-        .eq('comissionamento_id', activeComId);
-      
-      const vendaIds = cvRows?.map(r => r.venda_interna_id) || [];
-
-      // 2. Get apelidos of LAL before deleting
+      // 1. Get apelidos of LAL before deleting (used to clean imported linha_operadora)
       const { data: lalRows } = await supabase
         .from('comissionamento_lal')
         .select('apelido')
         .eq('comissionamento_id', activeComId);
-      
+
       const apelidos = lalRows?.map(r => r.apelido) || [];
 
-      // 3. Delete comissionamento cascade (vendas, fontes, lal)
+      // 2. Delete only comissionamento-owned records
       await supabase.from('comissionamento_vendas').delete().eq('comissionamento_id', activeComId);
       await supabase.from('comissionamento_lal').delete().eq('comissionamento_id', activeComId);
       await supabase.from('comissionamento_fontes').delete().eq('comissionamento_id', activeComId);
 
-      // 4. Delete linked conciliacoes and audit for these vendas (NOT the vendas themselves)
-      if (vendaIds.length > 0) {
-        const batchSize = 50;
-        for (let i = 0; i < vendaIds.length; i += batchSize) {
-          const batch = vendaIds.slice(i, i + batchSize);
-          await supabase.from('conciliacoes').delete().in('venda_interna_id', batch);
-          await supabase.from('audit_log_vendas').delete().in('venda_id', batch);
-          // Desvincular estornos sem apagá-los
-          await supabase.from('estornos').update({ venda_id: null, match_status: 'NO_MATCH' }).in('venda_id', batch);
-        }
-      }
-
-      // 5. Delete linha_operadora imported for this comissionamento
+      // 3. Delete linha_operadora imported for this comissionamento
       if (apelidos.length > 0) {
         await supabase.from('linha_operadora').delete().in('apelido', apelidos);
       }
 
-      // 6. Delete the comissionamento itself (only if we created it in this session)
+      // 4. Delete the comissionamento itself (only if we created it in this session)
       if (mode === 'criar') {
         await supabase.from('comissionamentos').delete().eq('id', activeComId);
       }
 
-      toast.success('Dados importados foram removidos');
+      toast.success('Dados do comissionamento removidos');
     } catch (err: any) {
       console.error('Erro ao limpar dados:', err);
       toast.error('Erro ao limpar dados: ' + err.message);
@@ -289,9 +269,11 @@ export function ComissionamentoWizard({ mode, comissionamentoId, onClose }: Wiza
             <AlertDialogTitle>Sair sem finalizar?</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div>
-                O processo de comissionamento não foi concluído. Ao sair agora, <strong>todos os arquivos importados e os registros gerados por eles</strong> (vendas internas, linhas da operadora, conciliações e estornos) <strong>serão apagados permanentemente</strong>.
+                O processo de comissionamento não foi concluído. Ao sair agora, <strong>somente os dados desta competência</strong> (vínculos, fontes, LAL e linhas importadas da operadora) <strong>serão removidos permanentemente</strong>.
                 <br /><br />
-                Deseja realmente sair e apagar os dados importados?
+                <strong>As vendas internas originais não serão apagadas.</strong>
+                <br /><br />
+                Deseja realmente sair e apagar os dados desta competência?
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
