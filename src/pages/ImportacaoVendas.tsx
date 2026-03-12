@@ -43,6 +43,8 @@ import {
   ArrowRight,
   Save,
   ChevronRight,
+  Files,
+  SkipForward,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -85,7 +87,7 @@ const CAMPOS_VENDAS: { key: string; label: string; required: boolean }[] = [
   { key: 'observacoes', label: 'Observações', required: false },
 ];
 
-type Step = 'upload' | 'mapping' | 'preview' | 'result';
+type Step = 'upload' | 'mapping' | 'preview' | 'result' | 'summary';
 
 interface ImportResult {
   total: number;
@@ -94,17 +96,33 @@ interface ImportResult {
   errors: { line: number; reason: string; data: Record<string, string> }[];
 }
 
+interface FileData {
+  file: File;
+  headers: string[];
+  rows: Record<string, string>[];
+}
+
+interface FileResult {
+  fileName: string;
+  result: ImportResult;
+}
+
 export default function ImportacaoVendas() {
   const { user } = useAuth();
 
   // Step state
   const [step, setStep] = useState<Step>('upload');
 
-  // Upload step
-  const [file, setFile] = useState<File | null>(null);
-  const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
-  const [csvRows, setCsvRows] = useState<Record<string, string>[]>([]);
+  // Multi-file upload
+  const [allFiles, setAllFiles] = useState<FileData[]>([]);
+  const [currentFileIndex, setCurrentFileIndex] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Derived current file data
+  const currentFileData = allFiles[currentFileIndex] || null;
+  const csvHeaders = currentFileData?.headers || [];
+  const csvRows = currentFileData?.rows || [];
+  const file = currentFileData?.file || null;
 
   // Mapping step
   const [mapeamentos, setMapeamentos] = useState<MapeamentoVendas[]>([]);
@@ -128,6 +146,9 @@ export default function ImportacaoVendas() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [importProgress, setImportProgress] = useState<{ current: number; total: number; percent: number } | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
+
+  // Multi-file results
+  const [fileResults, setFileResults] = useState<FileResult[]>([]);
 
   // Error correction state
   const [errorCorrections, setErrorCorrections] = useState<Record<number, { vendedor_id?: string; operadora_id?: string }>>({});
@@ -157,23 +178,31 @@ export default function ImportacaoVendas() {
   const parseCSV = parseCSVLib;
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    setFile(f);
-    const content = await f.text();
-    const { headers, rows } = parseCSV(content);
-    if (headers.length === 0) {
-      toast.error('Arquivo vazio ou formato inválido');
-      return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const parsedFiles: FileData[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      const content = await f.text();
+      const { headers, rows } = parseCSV(content);
+      if (headers.length === 0) {
+        toast.error(`Arquivo ${f.name}: vazio ou formato inválido`);
+        continue;
+      }
+      parsedFiles.push({ file: f, headers, rows });
     }
-    setCsvHeaders(headers);
-    setCsvRows(rows);
-    toast.success(`${rows.length} linhas encontradas`);
+
+    if (parsedFiles.length === 0) return;
+
+    setAllFiles(parsedFiles);
+    setCurrentFileIndex(0);
+    toast.success(`${parsedFiles.length} arquivo(s) carregado(s) — ${parsedFiles.reduce((s, f) => s + f.rows.length, 0)} linhas no total`);
   };
 
   const goToMapping = () => {
-    if (!file || csvRows.length === 0) {
-      toast.error('Selecione um arquivo válido primeiro');
+    if (allFiles.length === 0) {
+      toast.error('Selecione ao menos um arquivo válido');
       return;
     }
     setStep('mapping');
@@ -255,14 +284,17 @@ export default function ImportacaoVendas() {
   const goToPreview = () => {
     const err = validateMapping();
     if (err) { toast.error(err); return; }
+    // Reset multi-file tracking
+    setCurrentFileIndex(0);
+    setFileResults([]);
+    setResult(null);
+    setErrorCorrections({});
+    setSelectedErrorIndices(new Set());
     setStep('preview');
   };
 
   // Normalize helpers
-  // normalizeCpfCnpj imported from lib
   const normalizeTelefone = (v: string) => v.replace(/[^\d]/g, '');
-
-  // parseDate imported from lib/parseDate
 
   // Find operadora by name from row
   const findOperadora = (row: Record<string, string>): Operadora | null => {
@@ -303,9 +335,9 @@ export default function ImportacaoVendas() {
       return { row, vendedor, operadora, vendedorRawValue, operadoraRawValue, index: i };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, csvRows, mapping, vendedorMode, vendedorColumn, fixedVendedorId, operadoraMode, operadoraId, operadoraColumn, operadoras, usuarios]);
+  }, [step, csvRows, currentFileIndex, mapping, vendedorMode, vendedorColumn, fixedVendedorId, operadoraMode, operadoraId, operadoraColumn, operadoras, usuarios]);
 
-  // Process import
+  // Process import for current file
   const processImport = async () => {
     setIsProcessing(true);
     const totalRows = csvRows.length;
@@ -313,7 +345,7 @@ export default function ImportacaoVendas() {
     const importResult: ImportResult = { total: totalRows, success: 0, updated: 0, errors: [] };
 
     try {
-      // === Phase 1: Check existing IDs (show progress as "preparing") ===
+      // === Phase 1: Check existing IDs ===
       const idsToCheck = csvRows
         .map(r => r[mapping.identificador_make]?.trim())
         .filter(Boolean);
@@ -327,7 +359,6 @@ export default function ImportacaoVendas() {
           .select('id, identificador_make')
           .in('identificador_make', batch);
         data?.forEach(d => { if (d.identificador_make) existingMap.set(d.identificador_make, d.id); });
-        // Show preparation progress (0-10% range)
         const prepPercent = Math.round(((i + batch.length) / idsToCheck.length) * 10);
         setImportProgress({ current: 0, total: totalRows, percent: prepPercent });
         await new Promise(r => setTimeout(r, 10));
@@ -355,7 +386,7 @@ export default function ImportacaoVendas() {
         }
       }
 
-      // === Phase 2b: Build insert/update arrays from deduplicated rows ===
+      // === Phase 2b: Build insert/update arrays ===
       const rowsToInsert: any[] = [];
       const rowsToUpdate: { id: string; data: any }[] = [];
 
@@ -415,7 +446,7 @@ export default function ImportacaoVendas() {
         }
       }
 
-      // === Phase 3: Insert in batches of 500 (progress 10-80%) ===
+      // === Phase 3: Insert in batches of 500 ===
       let processed = 0;
       const totalToProcess = rowsToInsert.length + rowsToUpdate.length;
       const INSERT_BATCH = 500;
@@ -423,7 +454,6 @@ export default function ImportacaoVendas() {
         const batch = rowsToInsert.slice(i, i + INSERT_BATCH);
         const { error } = await supabase.from('vendas_internas').insert(batch);
         if (error) {
-          // Fallback: try one by one with yielding
           for (let j = 0; j < batch.length; j++) {
             const { error: singleError } = await supabase.from('vendas_internas').insert(batch[j]);
             if (singleError) {
@@ -431,7 +461,6 @@ export default function ImportacaoVendas() {
             } else {
               importResult.success++;
             }
-            // Yield every 10 rows to prevent freeze
             if (j % 10 === 0) await new Promise(r => setTimeout(r, 5));
           }
         } else {
@@ -443,7 +472,7 @@ export default function ImportacaoVendas() {
         await new Promise(r => setTimeout(r, 30));
       }
 
-      // === Phase 4: Update in batches of 50 via Promise.all (progress 80-100%) ===
+      // === Phase 4: Update in batches of 50 ===
       const UPDATE_BATCH = 50;
       for (let i = 0; i < rowsToUpdate.length; i += UPDATE_BATCH) {
         const batch = rowsToUpdate.slice(i, i + UPDATE_BATCH);
@@ -465,7 +494,7 @@ export default function ImportacaoVendas() {
         await new Promise(r => setTimeout(r, 30));
       }
 
-      // Fetch IDs of imported vendas for deletion capability
+      // Fetch IDs of imported vendas for audit
       let importedVendaIds: string[] = [];
       try {
         const allIdMakes = rowsToInsert.map(r => r.identificador_make).filter(Boolean);
@@ -501,7 +530,7 @@ export default function ImportacaoVendas() {
 
       setResult(importResult);
       setStep('result');
-      toast.success(`Importação concluída: ${importResult.success} novas, ${importResult.updated} atualizadas`);
+      toast.success(`${file?.name}: ${importResult.success} novas, ${importResult.updated} atualizadas`);
     } catch (err: any) {
       toast.error(err.message || 'Erro ao processar importação');
     } finally {
@@ -525,18 +554,56 @@ export default function ImportacaoVendas() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `erros_importacao_${format(new Date(), 'yyyy-MM-dd_HHmm')}.csv`;
+    link.download = `erros_${file?.name || 'importacao'}_${format(new Date(), 'yyyy-MM-dd_HHmm')}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
 
+  // Move to next file or show summary
+  const goToNextFile = () => {
+    // Save current result
+    if (result && file) {
+      setFileResults(prev => [...prev, { fileName: file.name, result }]);
+    }
+
+    const nextIndex = currentFileIndex + 1;
+    if (nextIndex < allFiles.length) {
+      setCurrentFileIndex(nextIndex);
+      setResult(null);
+      setErrorCorrections({});
+      setSelectedErrorIndices(new Set());
+      setBulkVendedorId('');
+      setBulkOperadoraId('');
+      setStep('preview');
+    } else {
+      setStep('summary');
+    }
+  };
+
+  // Skip current file without importing
+  const skipCurrentFile = () => {
+    if (file) {
+      setFileResults(prev => [...prev, { fileName: file.name, result: { total: csvRows.length, success: 0, updated: 0, errors: [{ line: 0, reason: 'Arquivo pulado', data: {} }] } }]);
+    }
+    const nextIndex = currentFileIndex + 1;
+    if (nextIndex < allFiles.length) {
+      setCurrentFileIndex(nextIndex);
+      setResult(null);
+      setErrorCorrections({});
+      setSelectedErrorIndices(new Set());
+      setStep('preview');
+    } else {
+      setStep('summary');
+    }
+  };
+
   const reset = () => {
     setStep('upload');
-    setFile(null);
-    setCsvHeaders([]);
-    setCsvRows([]);
+    setAllFiles([]);
+    setCurrentFileIndex(0);
     setMapping({});
     setResult(null);
+    setFileResults([]);
     setSelectedMapeamentoId('');
     setErrorCorrections({});
     setSelectedErrorIndices(new Set());
@@ -602,10 +669,8 @@ export default function ImportacaoVendas() {
       const errRow = result.errors[i];
       const row = errRow.data;
 
-      // Determine vendedor
       let vendedorId = correction.vendedor_id;
       if (!vendedorId) {
-        // Try original logic
         const v = findVendedor(row);
         if (v) vendedorId = v.id;
       }
@@ -615,7 +680,6 @@ export default function ImportacaoVendas() {
         continue;
       }
 
-      // Determine operadora
       let opId = correction.operadora_id;
       if (!opId) {
         const op = findOperadora(row);
@@ -661,7 +725,6 @@ export default function ImportacaoVendas() {
         status_interno: 'aguardando',
       };
 
-      // Check if it already exists (upsert logic)
       if (identificador) {
         const { data: existing } = await supabase
           .from('vendas_internas')
@@ -695,20 +758,26 @@ export default function ImportacaoVendas() {
   // Check if an error is about vendedor or operadora
   const errorNeedsVendedor = (reason: string) => reason.toLowerCase().includes('vendedor');
   const errorNeedsOperadora = (reason: string) => reason.toLowerCase().includes('operadora');
-  const steps: { key: Step; label: string }[] = [
+
+  const stepLabels: { key: Step; label: string }[] = [
     { key: 'upload', label: 'Upload' },
     { key: 'mapping', label: 'Mapeamento' },
     { key: 'preview', label: 'Pré-visualização' },
     { key: 'result', label: 'Resultado' },
   ];
-  const stepIndex = steps.findIndex(s => s.key === step);
+  const stepIndex = stepLabels.findIndex(s => s.key === (step === 'summary' ? 'result' : step));
+
+  // Totals for summary
+  const allResults = step === 'summary'
+    ? [...fileResults, ...(result && file ? [{ fileName: file.name, result }] : [])]
+    : fileResults;
 
   return (
     <AppLayout title="Importação de Vendas">
       <div className="space-y-6">
         {/* Stepper */}
         <div className="flex items-center gap-2">
-          {steps.map((s, i) => (
+          {stepLabels.map((s, i) => (
             <div key={s.key} className="flex items-center gap-2">
               <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
                 i === stepIndex ? 'bg-primary text-primary-foreground' :
@@ -720,9 +789,16 @@ export default function ImportacaoVendas() {
                 </span>
                 {s.label}
               </div>
-              {i < steps.length - 1 && <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+              {i < stepLabels.length - 1 && <ChevronRight className="h-4 w-4 text-muted-foreground" />}
             </div>
           ))}
+          {/* Multi-file indicator */}
+          {allFiles.length > 1 && (step === 'preview' || step === 'result') && (
+            <Badge variant="secondary" className="ml-auto">
+              <Files className="h-3 w-3 mr-1" />
+              Arquivo {currentFileIndex + 1} de {allFiles.length}
+            </Badge>
+          )}
         </div>
 
         {/* Step: Upload */}
@@ -731,10 +807,10 @@ export default function ImportacaoVendas() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Upload className="h-5 w-5" />
-                Upload do Arquivo
+                Upload dos Arquivos
               </CardTitle>
               <CardDescription>
-                Selecione um arquivo CSV com as vendas a serem importadas
+                Selecione um ou mais arquivos CSV. Eles serão processados um a um.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -744,40 +820,55 @@ export default function ImportacaoVendas() {
                   ref={fileInputRef}
                   type="file"
                   accept=".csv"
+                  multiple
                   onChange={handleFileSelect}
                   className="max-w-xs mx-auto"
                 />
-                <p className="text-sm text-muted-foreground mt-2">Formatos aceitos: CSV (separado por vírgula ou ponto-e-vírgula)</p>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Formatos aceitos: CSV (separado por vírgula ou ponto-e-vírgula) — Múltiplos arquivos permitidos
+                </p>
               </div>
 
-              {file && csvRows.length > 0 && (
+              {allFiles.length > 0 && (
                 <>
                   <Alert>
                     <CheckCircle2 className="h-4 w-4" />
                     <AlertDescription>
-                      <strong>{file.name}</strong> — {csvRows.length} linhas encontradas, {csvHeaders.length} colunas
+                      <strong>{allFiles.length} arquivo(s)</strong> selecionado(s):
                     </AlertDescription>
                   </Alert>
 
+                  <div className="space-y-2">
+                    {allFiles.map((fd, i) => (
+                      <div key={i} className="flex items-center gap-3 p-3 bg-muted rounded-lg">
+                        <FileSpreadsheet className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                        <span className="text-sm font-medium flex-1 truncate">{fd.file.name}</span>
+                        <Badge variant="outline" className="text-xs">{fd.rows.length} linhas</Badge>
+                        <Badge variant="outline" className="text-xs">{fd.headers.length} colunas</Badge>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Preview first file headers */}
                   <div className="overflow-x-auto max-h-64 border rounded-md">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          {csvHeaders.slice(0, 8).map(h => (
+                          {allFiles[0].headers.slice(0, 8).map(h => (
                             <TableHead key={h} className="text-xs whitespace-nowrap">{h}</TableHead>
                           ))}
-                          {csvHeaders.length > 8 && <TableHead className="text-xs">...</TableHead>}
+                          {allFiles[0].headers.length > 8 && <TableHead className="text-xs">...</TableHead>}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {csvRows.slice(0, 5).map((row, i) => (
+                        {allFiles[0].rows.slice(0, 5).map((row, i) => (
                           <TableRow key={i}>
-                            {csvHeaders.slice(0, 8).map(h => (
+                            {allFiles[0].headers.slice(0, 8).map(h => (
                               <TableCell key={h} className="text-xs whitespace-nowrap max-w-[150px] truncate">
                                 {row[h]}
                               </TableCell>
                             ))}
-                            {csvHeaders.length > 8 && <TableCell className="text-xs">...</TableCell>}
+                            {allFiles[0].headers.length > 8 && <TableCell className="text-xs">...</TableCell>}
                           </TableRow>
                         ))}
                       </TableBody>
@@ -806,6 +897,11 @@ export default function ImportacaoVendas() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Modelo de Mapeamento</CardTitle>
+                {allFiles.length > 1 && (
+                  <CardDescription>
+                    Este modelo será aplicado a todos os {allFiles.length} arquivos selecionados
+                  </CardDescription>
+                )}
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex gap-3 items-end">
@@ -869,7 +965,7 @@ export default function ImportacaoVendas() {
                       <Select value={operadoraColumn} onValueChange={setOperadoraColumn}>
                         <SelectTrigger><SelectValue placeholder="Selecione a coluna..." /></SelectTrigger>
                         <SelectContent>
-                          {csvHeaders.map(h => (
+                          {allFiles[0]?.headers.map(h => (
                             <SelectItem key={h} value={h}>{h}</SelectItem>
                           ))}
                         </SelectContent>
@@ -948,7 +1044,7 @@ export default function ImportacaoVendas() {
                       <Select value={vendedorColumn} onValueChange={setVendedorColumn}>
                         <SelectTrigger><SelectValue placeholder="Selecione a coluna..." /></SelectTrigger>
                         <SelectContent>
-                          {csvHeaders.map(h => (
+                          {allFiles[0]?.headers.map(h => (
                             <SelectItem key={h} value={h}>{h}</SelectItem>
                           ))}
                         </SelectContent>
@@ -995,7 +1091,7 @@ export default function ImportacaoVendas() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="__none__">— Não mapear —</SelectItem>
-                          {csvHeaders.map(h => (
+                          {allFiles[0]?.headers.map(h => (
                             <SelectItem key={h} value={h}>{h}</SelectItem>
                           ))}
                         </SelectContent>
@@ -1025,7 +1121,12 @@ export default function ImportacaoVendas() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <FileSpreadsheet className="h-5 w-5" />
-                Pré-visualização e Importação
+                Pré-visualização — {file?.name}
+                {allFiles.length > 1 && (
+                  <Badge variant="secondary" className="ml-2">
+                    {currentFileIndex + 1}/{allFiles.length}
+                  </Badge>
+                )}
               </CardTitle>
               <CardDescription>
                 Confira os dados mapeados antes de importar. Serão processadas {csvRows.length} linhas.
@@ -1122,10 +1223,18 @@ export default function ImportacaoVendas() {
               )}
 
               <div className="flex justify-between">
-                <Button variant="outline" onClick={() => setStep('mapping')} disabled={isProcessing}>
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Voltar
-                </Button>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => currentFileIndex === 0 ? setStep('mapping') : skipCurrentFile()} disabled={isProcessing}>
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    {currentFileIndex === 0 ? 'Voltar' : 'Voltar ao Mapeamento'}
+                  </Button>
+                  {allFiles.length > 1 && (
+                    <Button variant="ghost" onClick={skipCurrentFile} disabled={isProcessing}>
+                      <SkipForward className="mr-2 h-4 w-4" />
+                      Pular arquivo
+                    </Button>
+                  )}
+                </div>
                 <Button onClick={processImport} disabled={isProcessing}>
                   {isProcessing ? (
                     <>
@@ -1144,13 +1253,18 @@ export default function ImportacaoVendas() {
           </Card>
         )}
 
-        {/* Step: Result */}
+        {/* Step: Result (per file) */}
         {step === 'result' && result && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <CheckCircle2 className="h-5 w-5 text-primary" />
-                Resultado da Importação
+                Resultado — {file?.name}
+                {allFiles.length > 1 && (
+                  <Badge variant="secondary" className="ml-2">
+                    {currentFileIndex + 1}/{allFiles.length}
+                  </Badge>
+                )}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1347,6 +1461,112 @@ export default function ImportacaoVendas() {
                   )}
                 </>
               )}
+
+              <div className="flex justify-end gap-2">
+                {allFiles.length > 1 && currentFileIndex < allFiles.length - 1 ? (
+                  <Button onClick={goToNextFile}>
+                    Próximo Arquivo ({currentFileIndex + 2}/{allFiles.length})
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                ) : allFiles.length > 1 ? (
+                  <Button onClick={goToNextFile}>
+                    Ver Resumo Final
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                ) : (
+                  <Button onClick={reset}>
+                    Nova Importação
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Step: Summary (multi-file) */}
+        {step === 'summary' && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CheckCircle2 className="h-5 w-5 text-primary" />
+                Resumo Final — {allResults.length} arquivo(s)
+              </CardTitle>
+              <CardDescription>
+                Resultado consolidado de todas as importações
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Consolidated stats */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-muted rounded-lg p-4 text-center">
+                  <div className="text-3xl font-bold">
+                    {allResults.reduce((s, r) => s + r.result.total, 0)}
+                  </div>
+                  <div className="text-sm text-muted-foreground">Total de linhas</div>
+                </div>
+                <div className="bg-primary/10 rounded-lg p-4 text-center">
+                  <div className="text-3xl font-bold text-primary">
+                    {allResults.reduce((s, r) => s + r.result.success, 0)}
+                  </div>
+                  <div className="text-sm text-muted-foreground">Novas</div>
+                </div>
+                <div className="bg-accent rounded-lg p-4 text-center">
+                  <div className="text-3xl font-bold text-accent-foreground">
+                    {allResults.reduce((s, r) => s + r.result.updated, 0)}
+                  </div>
+                  <div className="text-sm text-muted-foreground">Atualizadas</div>
+                </div>
+                <div className="bg-destructive/10 rounded-lg p-4 text-center">
+                  <div className="text-3xl font-bold text-destructive">
+                    {allResults.reduce((s, r) => s + r.result.errors.length, 0)}
+                  </div>
+                  <div className="text-sm text-muted-foreground">Erros</div>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Per-file breakdown */}
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium">Detalhamento por arquivo:</h4>
+                <div className="overflow-x-auto border rounded-md">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-xs">Arquivo</TableHead>
+                        <TableHead className="text-xs text-center">Total</TableHead>
+                        <TableHead className="text-xs text-center">Novas</TableHead>
+                        <TableHead className="text-xs text-center">Atualizadas</TableHead>
+                        <TableHead className="text-xs text-center">Erros</TableHead>
+                        <TableHead className="text-xs text-center">Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {allResults.map((fr, i) => {
+                        const skipped = fr.result.errors.length === 1 && fr.result.errors[0]?.reason === 'Arquivo pulado';
+                        return (
+                          <TableRow key={i}>
+                            <TableCell className="text-xs font-medium">{fr.fileName}</TableCell>
+                            <TableCell className="text-xs text-center">{fr.result.total}</TableCell>
+                            <TableCell className="text-xs text-center text-primary font-medium">{fr.result.success}</TableCell>
+                            <TableCell className="text-xs text-center">{fr.result.updated}</TableCell>
+                            <TableCell className="text-xs text-center text-destructive">{skipped ? '-' : fr.result.errors.length}</TableCell>
+                            <TableCell className="text-xs text-center">
+                              {skipped ? (
+                                <Badge variant="secondary" className="text-xs">Pulado</Badge>
+                              ) : fr.result.errors.length === 0 ? (
+                                <Badge className="text-xs bg-primary/20 text-primary">OK</Badge>
+                              ) : (
+                                <Badge variant="destructive" className="text-xs">Com erros</Badge>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
 
               <div className="flex justify-end">
                 <Button onClick={reset}>
