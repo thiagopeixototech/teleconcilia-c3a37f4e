@@ -83,6 +83,7 @@ export default function VendasInternas() {
   const [confirmadaFilter, setConfirmadaFilter] = useState<string>('all');
   const [idMakeSearch, setIdMakeSearch] = useState('');
   const [protocoloSearch, setProtocoloSearch] = useState('');
+  const [cpfSearch, setCpfSearch] = useState('');
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [vendedorFilter, setVendedorFilter] = useState<string>('all');
   const [vendedorOptions, setVendedorOptions] = useState<{ id: string; nome: string }[]>([]);
