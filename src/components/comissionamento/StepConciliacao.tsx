@@ -307,7 +307,9 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       result = result.filter(v => (v.status_make || '').toLowerCase() === statusMakeFilter.toLowerCase());
     }
     if (matchFilter !== 'all') {
-      if (matchFilter === 'encontrada') {
+      if (matchFilter === 'encontrada_total') {
+        result = result.filter(v => v.matched_linha_id || v.linha_operadora_id);
+      } else if (matchFilter === 'encontrada') {
         result = result.filter(v => (v.matched_linha_id || v.linha_operadora_id) && !v.is_atencao);
       } else if (matchFilter === 'atencao') {
         result = result.filter(v => v.is_atencao);
@@ -476,11 +478,12 @@ export function StepConciliacao({ comissionamentoId }: Props) {
 
   const matchStats = useMemo(() => {
     const total = vendas.length;
-    const found = vendas.filter(v => (v.matched_linha_id || v.linha_operadora_id) && !v.is_atencao).length;
+    const foundTotal = vendas.filter(v => v.matched_linha_id || v.linha_operadora_id).length;
     const atencao = vendas.filter(v => v.is_atencao).length;
-    const notFound = total - found - atencao;
-    const percentage = total > 0 ? ((found / total) * 100).toFixed(1) : '0';
-    return { total, found, notFound, atencao, percentage };
+    const found = foundTotal - atencao;
+    const notFound = total - foundTotal;
+    const percentage = total > 0 ? ((foundTotal / total) * 100).toFixed(1) : '0';
+    return { total, found, foundTotal, notFound, atencao, percentage };
   }, [vendas]);
 
   if (isLoading) {
@@ -509,9 +512,9 @@ export function StepConciliacao({ comissionamentoId }: Props) {
               <p className="text-xs text-muted-foreground">Total no Comissionamento</p>
               <p className="text-xl font-bold">{matchStats.total}</p>
             </div>
-            <div className="text-center">
-              <p className="text-xs text-muted-foreground">Encontradas no LAL</p>
-              <p className="text-xl font-bold text-success">{matchStats.found}</p>
+            <div className="text-center cursor-pointer" onClick={() => setMatchFilter(matchFilter === 'encontrada_total' ? 'all' : 'encontrada_total')}>
+              <p className="text-xs text-muted-foreground">Encontradas (total)</p>
+              <p className="text-xl font-bold text-success">{matchStats.foundTotal}</p>
             </div>
             <div className="text-center cursor-pointer" onClick={() => setMatchFilter(matchFilter === 'atencao' ? 'all' : 'atencao')}>
               <p className="text-xs text-muted-foreground">⚠ Atenção</p>
@@ -565,9 +568,10 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           <SelectTrigger className="h-8 w-40 text-xs"><SelectValue placeholder="Match LAL" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos</SelectItem>
-            <SelectItem value="encontrada">Encontrada no LAL</SelectItem>
+            <SelectItem value="encontrada_total">Encontradas (total)</SelectItem>
             <SelectItem value="atencao">⚠ Atenção</SelectItem>
-            <SelectItem value="nao_encontrada">Não Encontrada</SelectItem>
+            <SelectItem value="encontrada">Encontradas (sem duplicados)</SelectItem>
+            <SelectItem value="nao_encontrada">Não Encontradas</SelectItem>
           </SelectContent>
         </Select>
         <Select value={statusMakeFilter} onValueChange={setStatusMakeFilter}>
