@@ -62,6 +62,11 @@ export default function LimparDados() {
         const { error } = await supabase.from(table.key).delete().neq("id", "00000000-0000-0000-0000-000000000000");
         if (error) throw new Error(`Erro ao limpar ${table.label}: ${error.message}`);
       }
+
+      // Se vendas_internas foi selecionada, limpar também o histórico de importações no audit_log
+      if (selected.has("vendas_internas")) {
+        await supabase.from("audit_log").delete().eq("acao", "IMPORTACAO_MASSA");
+      }
       toast.success(`${ordered.length} tabela(s) limpas com sucesso!`);
       setSelected(new Set());
       setConfirmText("");
