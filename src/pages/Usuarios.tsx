@@ -454,6 +454,10 @@ export default function VendedoresPage() {
                   className="pl-9"
                 />
               </div>
+              <Button variant="outline" onClick={exportUsuariosCSV}>
+                <Download className="h-4 w-4 mr-2" />
+                Baixar Lista
+              </Button>
               <Button onClick={() => handleOpenDialog()}>
                 <UserPlus className="h-4 w-4 mr-2" />
                 Novo Usuário
