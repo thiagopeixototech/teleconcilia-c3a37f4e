@@ -808,7 +808,7 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
           receita_interna: vendaRows.find(r => r.identificador_make === idm)?.valor || null,
         }));
         for (let i = 0; i < comRows.length; i += 500) {
-          await supabase.from('comissionamento_vendas').insert(comRows.slice(i, i + 500));
+          await supabase.from('comissionamento_vendas').upsert(comRows.slice(i, i + 500), { onConflict: 'comissionamento_id,venda_interna_id', ignoreDuplicates: true });
         }
       }
 
