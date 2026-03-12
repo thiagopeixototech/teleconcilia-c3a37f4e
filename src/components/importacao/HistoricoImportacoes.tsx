@@ -161,8 +161,6 @@ export function HistoricoImportacoes() {
             <TableBody>
               {records.map(record => {
                 const d = record.dados_novos;
-                const hasErrors = (d?.erros || 0) > 0;
-                const isFromComissionamento = d?.origem === 'comissionamento';
                 const hasVendaIds = d?.venda_ids && d.venda_ids.length > 0;
 
                 return (
@@ -208,31 +206,28 @@ export function HistoricoImportacoes() {
                       )}
                     </TableCell>
                     <TableCell className="text-center">
-                      {hasVendaIds ? (
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive hover:text-destructive" disabled={deletingId === record.id}>
-                              {deletingId === record.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Excluir importação?</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Isso removerá {d?.venda_ids?.length || 0} vendas e todos os vínculos associados (conciliações, comissionamentos, estornos). Esta ação não pode ser desfeita.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => deleteImport(record)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                                Excluir
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive hover:text-destructive" disabled={deletingId === record.id}>
+                            {deletingId === record.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Excluir registro do histórico?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Isso removerá apenas o registro do histórico. Nenhuma venda será apagada.
+                              {hasVendaIds ? ` Este item referencia ${d?.venda_ids?.length || 0} venda(s).` : ''}
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => deleteImport(record)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                              Excluir
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </TableCell>
                   </TableRow>
                 );
