@@ -567,9 +567,10 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           <SelectTrigger className="h-8 w-40 text-xs"><SelectValue placeholder="Match LAL" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos</SelectItem>
-            <SelectItem value="encontrada">Encontrada no LAL</SelectItem>
+            <SelectItem value="encontrada_total">Encontradas (total)</SelectItem>
             <SelectItem value="atencao">⚠ Atenção</SelectItem>
-            <SelectItem value="nao_encontrada">Não Encontrada</SelectItem>
+            <SelectItem value="encontrada">Encontradas (sem duplicados)</SelectItem>
+            <SelectItem value="nao_encontrada">Não Encontradas</SelectItem>
           </SelectContent>
         </Select>
         <Select value={statusMakeFilter} onValueChange={setStatusMakeFilter}>
