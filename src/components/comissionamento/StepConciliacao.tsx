@@ -659,18 +659,19 @@ export function StepConciliacao({ comissionamentoId }: Props) {
                   <AccordionContent className="px-4 pb-4">
                     <div className="space-y-2">
                       {group.map(v => {
-                        const isSelected = duplicateSelections[groupKey] === v.id;
+                        const selectedStatus = duplicateSelections[groupKey]?.[v.id] || null;
                         return (
                           <div
                             key={v.id}
-                            onClick={() => setDuplicateSelections(prev => ({ ...prev, [groupKey]: v.id }))}
-                            className={`p-3 rounded-md border transition-colors cursor-pointer ${
-                              isSelected
-                                ? 'border-primary bg-primary/5'
-                                : 'border-border hover:bg-accent/20'
+                            className={`p-3 rounded-md border transition-colors ${
+                              selectedStatus === 'OK'
+                                ? 'border-success bg-success/5'
+                                : selectedStatus === 'DESCONTADA'
+                                ? 'border-destructive bg-destructive/5'
+                                : 'border-border'
                             }`}
                           >
-                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
+                            <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-xs items-center">
                               <div>
                                 <span className="text-muted-foreground">Vendedor:</span>{' '}
                                 <span className="font-medium">{v.vendedor_nome || '-'}</span>
@@ -688,35 +689,51 @@ export function StepConciliacao({ comissionamentoId }: Props) {
                                 <span className="font-medium">{v.status_make || '-'}</span>
                               </div>
                               <div>
-                                <span className="text-muted-foreground">Pag:</span>{' '}
+                                <span className="text-muted-foreground">Pag atual:</span>{' '}
                                 {statusPagBadge(v.status_pag)}
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <Button
+                                  size="sm"
+                                  variant={selectedStatus === 'OK' ? 'default' : 'outline'}
+                                  className={`h-7 text-xs gap-1 ${selectedStatus === 'OK' ? 'bg-success hover:bg-success/90 text-success-foreground' : ''}`}
+                                  onClick={() => setDuplicateSelections(prev => ({
+                                    ...prev,
+                                    [groupKey]: { ...(prev[groupKey] || {}), [v.id]: 'OK' }
+                                  }))}
+                                >
+                                  <CheckCircle2 className="h-3 w-3" /> OK
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant={selectedStatus === 'DESCONTADA' ? 'destructive' : 'outline'}
+                                  className="h-7 text-xs gap-1"
+                                  onClick={() => setDuplicateSelections(prev => ({
+                                    ...prev,
+                                    [groupKey]: { ...(prev[groupKey] || {}), [v.id]: 'DESCONTADA' }
+                                  }))}
+                                >
+                                  <XCircle className="h-3 w-3" /> DESC
+                                </Button>
                               </div>
                             </div>
                           </div>
                         );
                       })}
                     </div>
-                    {duplicateSelections[groupKey] && (
+                    {duplicateSelections[groupKey] && Object.keys(duplicateSelections[groupKey]).length > 0 && (
                       <div className="mt-3 flex items-center justify-end gap-2">
-                        <span className="text-xs text-muted-foreground mr-2">Selecionada → marcar como:</span>
+                        <span className="text-xs text-muted-foreground mr-2">
+                          {Object.values(duplicateSelections[groupKey]).filter(s => s === 'OK').length} OK, {Object.values(duplicateSelections[groupKey]).filter(s => s === 'DESCONTADA').length} Descontadas
+                        </span>
                         <Button
                           size="sm"
-                          onClick={() => handleConfirmAtencao(groupKey)}
+                          onClick={() => handleConfirmAtencaoGroup(groupKey)}
                           disabled={isProcessing}
                           className="gap-1.5"
                         >
                           {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                          OK (Conciliar)
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => handleConfirmAtencaoWithStatus(groupKey, 'DESCONTADA')}
-                          disabled={isProcessing}
-                          className="gap-1.5"
-                        >
-                          {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
-                          DESCONTADA
+                          Confirmar Grupo
                         </Button>
                       </div>
                     )}
