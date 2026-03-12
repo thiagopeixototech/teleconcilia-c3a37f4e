@@ -220,26 +220,7 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
     updateFonte(fonteId, { mapeamentoId: mapId });
   };
 
-  const parseDate = (v: string): string | null => {
-    if (!v) return null;
-    const dateOnly = v.replace(/\s+\d{1,2}:\d{2}(:\d{2})?.*$/, '').trim();
-    const expandYear = (y: string) => {
-      if (y.length === 4) return y;
-      const num = parseInt(y, 10);
-      return num >= 0 && num <= 49 ? `20${y.padStart(2, '0')}` : `19${y.padStart(2, '0')}`;
-    };
-    const isoMatch = dateOnly.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
-    if (isoMatch) return `${isoMatch[1]}-${isoMatch[2].padStart(2, '0')}-${isoMatch[3].padStart(2, '0')}`;
-    const slashMatch = dateOnly.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-    if (slashMatch) {
-      const [, p1, p2, p3] = slashMatch;
-      const year = expandYear(p3);
-      const n1 = parseInt(p1, 10);
-      if (n1 > 12) return `${year}-${p2.padStart(2, '0')}-${p1.padStart(2, '0')}`;
-      return `${year}-${p1.padStart(2, '0')}-${p2.padStart(2, '0')}`;
-    }
-    return null;
-  };
+  // parseDate imported from lib/parseDate
 
   // normalizeCpfCnpj imported from lib
 
