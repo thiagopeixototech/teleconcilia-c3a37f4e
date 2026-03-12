@@ -887,21 +887,33 @@ export default function VendasInternas() {
                       </Select>
                     </div>
                     <div>
-                      <Label className="text-xs mb-1.5 block">ID Make</Label>
-                      <Input
-                        placeholder="Buscar ID Make..."
+                      <Label className="text-xs mb-1.5 block">ID Make (múltiplos: separar por vírgula)</Label>
+                      <Textarea
+                        placeholder="Ex: 123456, 789012, 345678"
                         value={idMakeSearch}
                         onChange={(e) => setIdMakeSearch(e.target.value)}
-                        className="w-full"
+                        className="w-full min-h-[40px] h-10 resize-y"
+                        rows={1}
                       />
                     </div>
                     <div>
-                      <Label className="text-xs mb-1.5 block">Protocolo</Label>
-                      <Input
-                        placeholder="Buscar protocolo..."
+                      <Label className="text-xs mb-1.5 block">Protocolo (múltiplos: separar por vírgula)</Label>
+                      <Textarea
+                        placeholder="Ex: PROT001, PROT002"
                         value={protocoloSearch}
                         onChange={(e) => setProtocoloSearch(e.target.value)}
-                        className="w-full"
+                        className="w-full min-h-[40px] h-10 resize-y"
+                        rows={1}
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs mb-1.5 block">CPF/CNPJ (múltiplos: separar por vírgula)</Label>
+                      <Textarea
+                        placeholder="Ex: 12345678900, 98765432100"
+                        value={cpfSearch}
+                        onChange={(e) => setCpfSearch(e.target.value)}
+                        className="w-full min-h-[40px] h-10 resize-y"
+                        rows={1}
                       />
                     </div>
                   </div>
