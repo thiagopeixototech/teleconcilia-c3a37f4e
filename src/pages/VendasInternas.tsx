@@ -618,7 +618,7 @@ export default function VendasInternas() {
   const hasActiveFilters = statusFilter !== 'all' || operadoraFilter !== 'all' || vendedorFilter !== 'all' ||
     statusMakeFilter !== 'all' || confirmadaFilter !== 'all' || linhaALinhaFilter !== 'all' ||
     statusPagFilter !== 'all' || empresaFilter !== 'all' ||
-    idMakeSearch !== '' || protocoloSearch !== '' ||
+    idMakeSearch !== '' || protocoloSearch !== '' || cpfSearch !== '' ||
     dataVendaInicio !== null || dataVendaFim !== null || dataInstalacaoInicio !== null || dataInstalacaoFim !== null;
 
   const activeFilterCount = [
