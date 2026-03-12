@@ -671,11 +671,20 @@ export default function VendasInternas() {
       const matchesConfirmada = confirmadaFilter === 'all' || 
         (confirmadaFilter === 'confirmada' ? venda.status_interno === 'confirmada' : venda.status_interno !== 'confirmada');
 
-      const matchesIdMake = !idMakeSearch || 
-        venda.identificador_make?.toLowerCase().includes(idMakeSearch.toLowerCase());
+      // Multi-value client-side filter for ID Make
+      const idMakeValues = idMakeSearch.split(',').map(v => v.trim().toLowerCase()).filter(Boolean);
+      const matchesIdMake = idMakeValues.length === 0 || 
+        idMakeValues.some(v => venda.identificador_make?.toLowerCase().includes(v));
       
-      const matchesProtocolo = !protocoloSearch || 
-        venda.protocolo_interno?.toLowerCase().includes(protocoloSearch.toLowerCase());
+      // Multi-value client-side filter for Protocolo
+      const protocoloValues = protocoloSearch.split(',').map(v => v.trim().toLowerCase()).filter(Boolean);
+      const matchesProtocolo = protocoloValues.length === 0 || 
+        protocoloValues.some(v => venda.protocolo_interno?.toLowerCase().includes(v));
+
+      // Multi-value client-side filter for CPF
+      const cpfValues = cpfSearch.split(',').map(v => v.trim().replace(/[^\d]/g, '').toLowerCase()).filter(Boolean);
+      const matchesCpf = cpfValues.length === 0 || 
+        cpfValues.some(v => venda.cpf_cnpj?.replace(/[^\d]/g, '').includes(v));
 
       const matchesLinhaALinha = linhaALinhaFilter === 'all' ||
         (linhaALinhaFilter === '_sem_' ? !venda._linha_a_linha_apelido : venda._linha_a_linha_apelido === linhaALinhaFilter);
@@ -687,7 +696,7 @@ export default function VendasInternas() {
       
       return matchesSearch && matchesStatus && matchesOperadora && matchesVendedor &&
         matchesStatusMake && matchesConfirmada &&
-        matchesIdMake && matchesProtocolo && matchesLinhaALinha && matchesStatusPag && matchesEmpresa;
+        matchesIdMake && matchesProtocolo && matchesCpf && matchesLinhaALinha && matchesStatusPag && matchesEmpresa;
     });
 
     if (!sortKey) return filtered;
