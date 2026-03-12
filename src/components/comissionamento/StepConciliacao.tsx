@@ -683,28 +683,54 @@ export function StepConciliacao({ comissionamentoId }: Props) {
                                 : 'border-border'
                             }`}
                           >
-                            <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-xs items-center">
-                              <div>
-                                <span className="text-muted-foreground">Vendedor:</span>{' '}
-                                <span className="font-medium">{v.vendedor_nome || '-'}</span>
+                            <div className="space-y-2">
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs">
+                                <div>
+                                  <span className="text-muted-foreground">Vendedor:</span>{' '}
+                                  <span className="font-medium">{v.vendedor_nome || '-'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">ID Make:</span>{' '}
+                                  <span className="font-mono font-medium">{v.identificador_make || '-'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Data Venda:</span>{' '}
+                                  <span className="font-medium">{v.data_venda || '-'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Status Make:</span>{' '}
+                                  <span className="font-medium">{v.status_make || '-'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Plano:</span>{' '}
+                                  <span className="font-medium">{v.plano || '-'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Valor:</span>{' '}
+                                  <span className="font-medium">{formatBRL(v.valor_venda)}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Telefone:</span>{' '}
+                                  <span className="font-medium">{v.telefone || '-'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Operadora:</span>{' '}
+                                  <span className="font-medium">{v.operadora_nome || '-'}</span>
+                                </div>
+                                <div className="col-span-2">
+                                  <span className="text-muted-foreground">Endereço:</span>{' '}
+                                  <span className="font-medium">{[v.endereco, v.cep].filter(Boolean).join(' - ') || '-'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Protocolo:</span>{' '}
+                                  <span className="font-mono font-medium">{v.protocolo_interno || '-'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Pag atual:</span>{' '}
+                                  {statusPagBadge(v.status_pag)}
+                                </div>
                               </div>
-                              <div>
-                                <span className="text-muted-foreground">ID Make:</span>{' '}
-                                <span className="font-mono font-medium">{v.identificador_make || '-'}</span>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">Data Venda:</span>{' '}
-                                <span className="font-medium">{v.data_venda || '-'}</span>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">Status:</span>{' '}
-                                <span className="font-medium">{v.status_make || '-'}</span>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">Pag atual:</span>{' '}
-                                {statusPagBadge(v.status_pag)}
-                              </div>
-                              <div className="flex items-center gap-1.5">
+                              <div className="flex items-center gap-1.5 pt-1">
                                 <Button
                                   size="sm"
                                   variant={selectedStatus === 'OK' ? 'default' : 'outline'}
