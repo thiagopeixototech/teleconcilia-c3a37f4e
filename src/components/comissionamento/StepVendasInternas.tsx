@@ -427,7 +427,7 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
     setProcessingProgress({ phase: 'Vinculando vendas...', current: 0, total: rows.length });
     for (let i = 0; i < rows.length; i += 500) {
       const batch = rows.slice(i, i + 500);
-      const { error: insertErr } = await supabase.from('comissionamento_vendas').insert(batch);
+      const { error: insertErr } = await supabase.from('comissionamento_vendas').upsert(batch, { onConflict: 'comissionamento_id,venda_interna_id', ignoreDuplicates: true });
       if (insertErr) throw insertErr;
       setProcessingProgress({ phase: 'Vinculando vendas...', current: Math.min(i + 500, rows.length), total: rows.length });
       await new Promise(r => setTimeout(r, 30));
@@ -808,7 +808,7 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
           receita_interna: vendaRows.find(r => r.identificador_make === idm)?.valor || null,
         }));
         for (let i = 0; i < comRows.length; i += 500) {
-          await supabase.from('comissionamento_vendas').insert(comRows.slice(i, i + 500));
+          await supabase.from('comissionamento_vendas').upsert(comRows.slice(i, i + 500), { onConflict: 'comissionamento_id,venda_interna_id', ignoreDuplicates: true });
         }
       }
 
