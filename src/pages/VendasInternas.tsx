@@ -263,8 +263,31 @@ export default function VendasInternas() {
         }
         if (confirmadaFilter === 'confirmada') query = query.eq('status_interno', 'confirmada');
         else if (confirmadaFilter === 'nao_confirmada') query = query.neq('status_interno', 'confirmada');
-        if (idMakeSearch) query = query.ilike('identificador_make', `%${idMakeSearch}%`);
-        if (protocoloSearch) query = query.ilike('protocolo_interno', `%${protocoloSearch}%`);
+        // Multi-value filters: parse comma-separated values
+        if (idMakeSearch) {
+          const values = idMakeSearch.split(',').map(v => v.trim()).filter(Boolean);
+          if (values.length === 1) {
+            query = query.ilike('identificador_make', `%${values[0]}%`);
+          } else if (values.length > 1) {
+            query = query.or(values.map(v => `identificador_make.ilike.%${v}%`).join(','));
+          }
+        }
+        if (protocoloSearch) {
+          const values = protocoloSearch.split(',').map(v => v.trim()).filter(Boolean);
+          if (values.length === 1) {
+            query = query.ilike('protocolo_interno', `%${values[0]}%`);
+          } else if (values.length > 1) {
+            query = query.or(values.map(v => `protocolo_interno.ilike.%${v}%`).join(','));
+          }
+        }
+        if (cpfSearch) {
+          const values = cpfSearch.split(',').map(v => v.trim().replace(/[^\d]/g, '')).filter(Boolean);
+          if (values.length === 1) {
+            query = query.ilike('cpf_cnpj', `%${values[0]}%`);
+          } else if (values.length > 1) {
+            query = query.or(values.map(v => `cpf_cnpj.ilike.%${v}%`).join(','));
+          }
+        }
         if (searchTerm) {
           query = query.or(`cliente_nome.ilike.%${searchTerm}%,cpf_cnpj.ilike.%${searchTerm}%,protocolo_interno.ilike.%${searchTerm}%,identificador_make.ilike.%${searchTerm}%`);
         }
