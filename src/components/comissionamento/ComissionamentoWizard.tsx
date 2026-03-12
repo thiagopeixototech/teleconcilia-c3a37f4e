@@ -269,9 +269,11 @@ export function ComissionamentoWizard({ mode, comissionamentoId, onClose }: Wiza
             <AlertDialogTitle>Sair sem finalizar?</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div>
-                O processo de comissionamento não foi concluído. Ao sair agora, <strong>todos os arquivos importados e os registros gerados por eles</strong> (vendas internas, linhas da operadora, conciliações e estornos) <strong>serão apagados permanentemente</strong>.
+                O processo de comissionamento não foi concluído. Ao sair agora, <strong>somente os dados desta competência</strong> (vínculos, fontes, LAL e linhas importadas da operadora) <strong>serão removidos permanentemente</strong>.
                 <br /><br />
-                Deseja realmente sair e apagar os dados importados?
+                <strong>As vendas internas originais não serão apagadas.</strong>
+                <br /><br />
+                Deseja realmente sair e apagar os dados desta competência?
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
