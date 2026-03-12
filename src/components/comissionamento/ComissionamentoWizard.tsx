@@ -193,7 +193,7 @@ export function ComissionamentoWizard({ mode, comissionamentoId, onClose }: Wiza
       <Progress value={((currentStep + 1) / STEPS.length) * 100} className="h-1" />
 
       {/* Step content */}
-      <div className="min-h-[300px]">
+      <div className="min-h-[400px] flex-1 overflow-y-auto">
         {currentStep === 0 && (
           <StepInfo
             nome={nome}
