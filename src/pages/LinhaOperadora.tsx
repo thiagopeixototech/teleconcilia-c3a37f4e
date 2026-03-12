@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { normalizeCpfCnpj } from '@/lib/normalizeCpfCnpj';
+import { parseDate } from '@/lib/parseDate';
 import { parseCSV as parseCSVLib } from '@/lib/parseCSV';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/supabase/client';
@@ -359,7 +360,7 @@ export default function LinhaOperadoraPage() {
           valor_lq: valor,
           valor_make: null,
           tipo_plano: row[map.plano] || null,
-          data_status: row[map.data_status] || null,
+          data_status: parseDate(row[map.data_status]) || null,
           status_operadora: (row[map.status_operadora] as StatusOperadora) || 'pendente',
           quinzena_ref: row[map.quinzena_ref] || null,
           arquivo_origem: selectedFile.name,

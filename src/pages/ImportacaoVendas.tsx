@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { normalizeProtocolo } from '@/lib/normalizeProtocolo';
 import { normalizeCpfCnpj } from '@/lib/normalizeCpfCnpj';
+import { parseDate } from '@/lib/parseDate';
 import { parseCSV as parseCSVLib } from '@/lib/parseCSV';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/supabase/client';
@@ -261,43 +262,7 @@ export default function ImportacaoVendas() {
   // normalizeCpfCnpj imported from lib
   const normalizeTelefone = (v: string) => v.replace(/[^\d]/g, '');
 
-  const parseDate = (v: string): string | null => {
-    if (!v) return null;
-    // Strip time component if present (e.g. "10/28/25 13:07")
-    const dateOnly = v.replace(/\s+\d{1,2}:\d{2}(:\d{2})?.*$/, '').trim();
-    
-    const expandYear = (y: string) => {
-      if (y.length === 4) return y;
-      const num = parseInt(y, 10);
-      return num >= 0 && num <= 49 ? `20${y.padStart(2, '0')}` : `19${y.padStart(2, '0')}`;
-    };
-
-    // ISO: YYYY-MM-DD or YYYY/MM/DD
-    const isoMatch = dateOnly.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
-    if (isoMatch) return `${isoMatch[1]}-${isoMatch[2].padStart(2, '0')}-${isoMatch[3].padStart(2, '0')}`;
-
-    // Detect BR (DD/MM) vs US (MM/DD) by checking if first part > 12 (must be day)
-    const slashMatch = dateOnly.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-    if (slashMatch) {
-      const [, p1, p2, p3] = slashMatch;
-      const year = expandYear(p3);
-      const n1 = parseInt(p1, 10);
-      const n2 = parseInt(p2, 10);
-      
-      if (n1 > 12) {
-        // First part > 12, must be day → DD/MM/YYYY
-        return `${year}-${p2.padStart(2, '0')}-${p1.padStart(2, '0')}`;
-      } else if (n2 > 12) {
-        // Second part > 12, must be day → MM/DD/YYYY
-        return `${year}-${p1.padStart(2, '0')}-${p2.padStart(2, '0')}`;
-      } else {
-        // Ambiguous (both ≤ 12): assume US format MM/DD/YYYY (matches the user's data pattern)
-        return `${year}-${p1.padStart(2, '0')}-${p2.padStart(2, '0')}`;
-      }
-    }
-
-    return null;
-  };
+  // parseDate imported from lib/parseDate
 
   // Find operadora by name from row
   const findOperadora = (row: Record<string, string>): Operadora | null => {
