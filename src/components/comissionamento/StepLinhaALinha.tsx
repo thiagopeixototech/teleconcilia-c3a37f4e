@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { normalizeCpfCnpj } from '@/lib/normalizeCpfCnpj';
+import { parseDate } from '@/lib/parseDate';
 import { parseCSV } from '@/lib/parseCSV';
 import { supabase } from '@/integrations/supabase/client';
 import { MapeamentoColunas, CampoSistema } from '@/types/database';
