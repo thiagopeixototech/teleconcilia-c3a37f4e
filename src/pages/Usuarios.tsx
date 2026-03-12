@@ -39,7 +39,8 @@ import {
   Trash2,
   Users,
   UserPlus,
-  KeyRound
+  KeyRound,
+  Download
 } from 'lucide-react';
 import {
   AlertDialog,
@@ -428,6 +429,29 @@ export default function VendedoresPage() {
   const supervisores = vendedores.filter(v => v.role === 'supervisor' || v.role === 'admin');
   const vendedoresDisponiveis = vendedores.filter(v => v.role === 'vendedor' || !v.role);
 
+  const exportUsuariosCSV = () => {
+    const headers = ['Nome', 'Email', 'CPF', 'Empresa', 'Supervisor', 'Perfil', 'Status'];
+    const rows = filteredVendedores.map(v => [
+      v.nome,
+      v.email,
+      v.cpf || '',
+      v.empresa?.nome || '',
+      v.supervisor?.[0]?.nome || '',
+      v.role || 'vendedor',
+      v.ativo ? 'Ativo' : 'Inativo',
+    ]);
+    const csvContent = [headers, ...rows]
+      .map(row => row.map(cell => `"${cell}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `usuarios_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   if (isLoading) {
     return (
       <AppLayout title="Usuários">
@@ -454,6 +478,10 @@ export default function VendedoresPage() {
                   className="pl-9"
                 />
               </div>
+              <Button variant="outline" onClick={exportUsuariosCSV}>
+                <Download className="h-4 w-4 mr-2" />
+                Baixar Lista
+              </Button>
               <Button onClick={() => handleOpenDialog()}>
                 <UserPlus className="h-4 w-4 mr-2" />
                 Novo Usuário

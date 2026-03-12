@@ -83,6 +83,7 @@ export default function VendasInternas() {
   const [confirmadaFilter, setConfirmadaFilter] = useState<string>('all');
   const [idMakeSearch, setIdMakeSearch] = useState('');
   const [protocoloSearch, setProtocoloSearch] = useState('');
+  const [cpfSearch, setCpfSearch] = useState('');
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [vendedorFilter, setVendedorFilter] = useState<string>('all');
   const [vendedorOptions, setVendedorOptions] = useState<{ id: string; nome: string }[]>([]);
@@ -111,6 +112,8 @@ export default function VendasInternas() {
   // Bulk selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState<StatusInterno | ''>('');
+  const [bulkVendedor, setBulkVendedor] = useState<string>('');
+  const [bulkAction, setBulkAction] = useState<'status' | 'vendedor' | ''>('');
   const [isBulkSaving, setIsBulkSaving] = useState(false);
 
   // Cancel ref
@@ -260,8 +263,31 @@ export default function VendasInternas() {
         }
         if (confirmadaFilter === 'confirmada') query = query.eq('status_interno', 'confirmada');
         else if (confirmadaFilter === 'nao_confirmada') query = query.neq('status_interno', 'confirmada');
-        if (idMakeSearch) query = query.ilike('identificador_make', `%${idMakeSearch}%`);
-        if (protocoloSearch) query = query.ilike('protocolo_interno', `%${protocoloSearch}%`);
+        // Multi-value filters: parse comma-separated values
+        if (idMakeSearch) {
+          const values = idMakeSearch.split(',').map(v => v.trim()).filter(Boolean);
+          if (values.length === 1) {
+            query = query.ilike('identificador_make', `%${values[0]}%`);
+          } else if (values.length > 1) {
+            query = query.or(values.map(v => `identificador_make.ilike.%${v}%`).join(','));
+          }
+        }
+        if (protocoloSearch) {
+          const values = protocoloSearch.split(',').map(v => v.trim()).filter(Boolean);
+          if (values.length === 1) {
+            query = query.ilike('protocolo_interno', `%${values[0]}%`);
+          } else if (values.length > 1) {
+            query = query.or(values.map(v => `protocolo_interno.ilike.%${v}%`).join(','));
+          }
+        }
+        if (cpfSearch) {
+          const values = cpfSearch.split(',').map(v => v.trim().replace(/[^\d]/g, '')).filter(Boolean);
+          if (values.length === 1) {
+            query = query.ilike('cpf_cnpj', `%${values[0]}%`);
+          } else if (values.length > 1) {
+            query = query.or(values.map(v => `cpf_cnpj.ilike.%${v}%`).join(','));
+          }
+        }
         if (searchTerm) {
           query = query.or(`cliente_nome.ilike.%${searchTerm}%,cpf_cnpj.ilike.%${searchTerm}%,protocolo_interno.ilike.%${searchTerm}%,identificador_make.ilike.%${searchTerm}%`);
         }
@@ -517,6 +543,34 @@ export default function VendasInternas() {
       toast.success(`${ids.length} vendas atualizadas para "${statusLabels[bulkStatus]}"`);
       setSelectedIds(new Set());
       setBulkStatus('');
+      setBulkAction('');
+      fetchVendas();
+    } catch (error: any) {
+      toast.error('Erro ao atualizar vendas: ' + (error.message || ''));
+    } finally {
+      setIsBulkSaving(false);
+    }
+  };
+
+  const handleBulkVendedorUpdate = async () => {
+    if (!bulkVendedor || selectedIds.size === 0) return;
+    setIsBulkSaving(true);
+    try {
+      const ids = Array.from(selectedIds);
+      const BATCH = 200;
+      for (let i = 0; i < ids.length; i += BATCH) {
+        const batch = ids.slice(i, i + BATCH);
+        const { error } = await supabase
+          .from('vendas_internas')
+          .update({ usuario_id: bulkVendedor })
+          .in('id', batch);
+        if (error) throw error;
+      }
+      const vendedorNome = vendedorOptions.find(v => v.id === bulkVendedor)?.nome || '';
+      toast.success(`${ids.length} vendas transferidas para "${vendedorNome}"`);
+      setSelectedIds(new Set());
+      setBulkVendedor('');
+      setBulkAction('');
       fetchVendas();
     } catch (error: any) {
       toast.error('Erro ao atualizar vendas: ' + (error.message || ''));
@@ -564,7 +618,7 @@ export default function VendasInternas() {
   const hasActiveFilters = statusFilter !== 'all' || operadoraFilter !== 'all' || vendedorFilter !== 'all' ||
     statusMakeFilter !== 'all' || confirmadaFilter !== 'all' || linhaALinhaFilter !== 'all' ||
     statusPagFilter !== 'all' || empresaFilter !== 'all' ||
-    idMakeSearch !== '' || protocoloSearch !== '' ||
+    idMakeSearch !== '' || protocoloSearch !== '' || cpfSearch !== '' ||
     dataVendaInicio !== null || dataVendaFim !== null || dataInstalacaoInicio !== null || dataInstalacaoFim !== null;
 
   const activeFilterCount = [
@@ -587,6 +641,7 @@ export default function VendasInternas() {
     setEmpresaFilter('all');
     setIdMakeSearch('');
     setProtocoloSearch('');
+    setCpfSearch('');
     setDataVendaInicio(null);
     setDataVendaFim(null);
     setDataInstalacaoInicio(null);
@@ -596,7 +651,7 @@ export default function VendasInternas() {
 
   useEffect(() => {
     setVisibleCount(50);
-  }, [searchTerm, statusFilter, operadoraFilter, vendedorFilter, statusMakeFilter, confirmadaFilter, linhaALinhaFilter, statusPagFilter, empresaFilter, idMakeSearch, protocoloSearch]);
+  }, [searchTerm, statusFilter, operadoraFilter, vendedorFilter, statusMakeFilter, confirmadaFilter, linhaALinhaFilter, statusPagFilter, empresaFilter, idMakeSearch, protocoloSearch, cpfSearch]);
 
   const filteredVendas = (() => {
     const filtered = vendas.filter(venda => {
@@ -616,11 +671,20 @@ export default function VendasInternas() {
       const matchesConfirmada = confirmadaFilter === 'all' || 
         (confirmadaFilter === 'confirmada' ? venda.status_interno === 'confirmada' : venda.status_interno !== 'confirmada');
 
-      const matchesIdMake = !idMakeSearch || 
-        venda.identificador_make?.toLowerCase().includes(idMakeSearch.toLowerCase());
+      // Multi-value client-side filter for ID Make
+      const idMakeValues = idMakeSearch.split(',').map(v => v.trim().toLowerCase()).filter(Boolean);
+      const matchesIdMake = idMakeValues.length === 0 || 
+        idMakeValues.some(v => venda.identificador_make?.toLowerCase().includes(v));
       
-      const matchesProtocolo = !protocoloSearch || 
-        venda.protocolo_interno?.toLowerCase().includes(protocoloSearch.toLowerCase());
+      // Multi-value client-side filter for Protocolo
+      const protocoloValues = protocoloSearch.split(',').map(v => v.trim().toLowerCase()).filter(Boolean);
+      const matchesProtocolo = protocoloValues.length === 0 || 
+        protocoloValues.some(v => venda.protocolo_interno?.toLowerCase().includes(v));
+
+      // Multi-value client-side filter for CPF
+      const cpfValues = cpfSearch.split(',').map(v => v.trim().replace(/[^\d]/g, '').toLowerCase()).filter(Boolean);
+      const matchesCpf = cpfValues.length === 0 || 
+        cpfValues.some(v => venda.cpf_cnpj?.replace(/[^\d]/g, '').includes(v));
 
       const matchesLinhaALinha = linhaALinhaFilter === 'all' ||
         (linhaALinhaFilter === '_sem_' ? !venda._linha_a_linha_apelido : venda._linha_a_linha_apelido === linhaALinhaFilter);
@@ -632,7 +696,7 @@ export default function VendasInternas() {
       
       return matchesSearch && matchesStatus && matchesOperadora && matchesVendedor &&
         matchesStatusMake && matchesConfirmada &&
-        matchesIdMake && matchesProtocolo && matchesLinhaALinha && matchesStatusPag && matchesEmpresa;
+        matchesIdMake && matchesProtocolo && matchesCpf && matchesLinhaALinha && matchesStatusPag && matchesEmpresa;
     });
 
     if (!sortKey) return filtered;
@@ -857,21 +921,33 @@ export default function VendasInternas() {
                       </Select>
                     </div>
                     <div>
-                      <Label className="text-xs mb-1.5 block">ID Make</Label>
-                      <Input
-                        placeholder="Buscar ID Make..."
+                      <Label className="text-xs mb-1.5 block">ID Make (múltiplos: separar por vírgula)</Label>
+                      <Textarea
+                        placeholder="Ex: 123456, 789012, 345678"
                         value={idMakeSearch}
                         onChange={(e) => setIdMakeSearch(e.target.value)}
-                        className="w-full"
+                        className="w-full min-h-[40px] h-10 resize-y"
+                        rows={1}
                       />
                     </div>
                     <div>
-                      <Label className="text-xs mb-1.5 block">Protocolo</Label>
-                      <Input
-                        placeholder="Buscar protocolo..."
+                      <Label className="text-xs mb-1.5 block">Protocolo (múltiplos: separar por vírgula)</Label>
+                      <Textarea
+                        placeholder="Ex: PROT001, PROT002"
                         value={protocoloSearch}
                         onChange={(e) => setProtocoloSearch(e.target.value)}
-                        className="w-full"
+                        className="w-full min-h-[40px] h-10 resize-y"
+                        rows={1}
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs mb-1.5 block">CPF/CNPJ (múltiplos: separar por vírgula)</Label>
+                      <Textarea
+                        placeholder="Ex: 12345678900, 98765432100"
+                        value={cpfSearch}
+                        onChange={(e) => setCpfSearch(e.target.value)}
+                        className="w-full min-h-[40px] h-10 resize-y"
+                        rows={1}
                       />
                     </div>
                   </div>
@@ -914,28 +990,63 @@ export default function VendasInternas() {
           <CardContent>
             {/* Bulk action bar */}
             {(isAdmin || isSupervisor) && selectedIds.size > 0 && (
-              <div className="flex items-center gap-3 mb-4 p-3 rounded-md bg-muted border">
+              <div className="flex flex-wrap items-center gap-3 mb-4 p-3 rounded-md bg-muted border">
                 <CheckSquare className="h-4 w-4 text-primary" />
                 <span className="text-sm font-medium">{selectedIds.size} selecionada(s)</span>
-                <Select value={bulkStatus} onValueChange={(v) => setBulkStatus(v as StatusInterno)}>
-                  <SelectTrigger className="w-52">
-                    <SelectValue placeholder="Atualizar status para..." />
+                <Select value={bulkAction} onValueChange={(v) => { setBulkAction(v as any); setBulkStatus(''); setBulkVendedor(''); }}>
+                  <SelectTrigger className="w-44">
+                    <SelectValue placeholder="Ação em massa..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.entries(statusLabels).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>{label}</SelectItem>
-                    ))}
+                    <SelectItem value="status">Alterar Status</SelectItem>
+                    <SelectItem value="vendedor">Alterar Vendedor</SelectItem>
                   </SelectContent>
                 </Select>
-                <Button 
-                  size="sm" 
-                  disabled={!bulkStatus || isBulkSaving}
-                  onClick={handleBulkStatusUpdate}
-                >
-                  {isBulkSaving && <Loader2 className="mr-2 h-3 w-3 animate-spin" />}
-                  Atualizar
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
+                {bulkAction === 'status' && (
+                  <>
+                    <Select value={bulkStatus} onValueChange={(v) => setBulkStatus(v as StatusInterno)}>
+                      <SelectTrigger className="w-52">
+                        <SelectValue placeholder="Selecione o status..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(statusLabels).map(([value, label]) => (
+                          <SelectItem key={value} value={value}>{label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button 
+                      size="sm" 
+                      disabled={!bulkStatus || isBulkSaving}
+                      onClick={handleBulkStatusUpdate}
+                    >
+                      {isBulkSaving && <Loader2 className="mr-2 h-3 w-3 animate-spin" />}
+                      Aplicar
+                    </Button>
+                  </>
+                )}
+                {bulkAction === 'vendedor' && (
+                  <>
+                    <Select value={bulkVendedor} onValueChange={setBulkVendedor}>
+                      <SelectTrigger className="w-52">
+                        <SelectValue placeholder="Selecione o vendedor..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {vendedorOptions.map(v => (
+                          <SelectItem key={v.id} value={v.id}>{v.nome}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button 
+                      size="sm" 
+                      disabled={!bulkVendedor || isBulkSaving}
+                      onClick={handleBulkVendedorUpdate}
+                    >
+                      {isBulkSaving && <Loader2 className="mr-2 h-3 w-3 animate-spin" />}
+                      Aplicar
+                    </Button>
+                  </>
+                )}
+                <Button variant="ghost" size="sm" onClick={() => { setSelectedIds(new Set()); setBulkAction(''); }}>
                   Limpar seleção
                 </Button>
               </div>
