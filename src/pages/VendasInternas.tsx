@@ -111,6 +111,8 @@ export default function VendasInternas() {
   // Bulk selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState<StatusInterno | ''>('');
+  const [bulkVendedor, setBulkVendedor] = useState<string>('');
+  const [bulkAction, setBulkAction] = useState<'status' | 'vendedor' | ''>('');
   const [isBulkSaving, setIsBulkSaving] = useState(false);
 
   // Cancel ref
