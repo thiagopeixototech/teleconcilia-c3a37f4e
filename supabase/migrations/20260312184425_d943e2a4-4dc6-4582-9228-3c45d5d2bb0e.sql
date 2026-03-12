@@ -1,0 +1,1 @@
+ALTER TABLE public.comissionamento_vendas ADD CONSTRAINT comissionamento_vendas_comissionamento_venda_unique UNIQUE (comissionamento_id, venda_interna_id);
