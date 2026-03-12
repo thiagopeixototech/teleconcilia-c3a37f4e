@@ -146,15 +146,15 @@ export function ComissionamentoWizard({ mode, comissionamentoId, onClose }: Wiza
       await supabase.from('comissionamento_lal').delete().eq('comissionamento_id', activeComId);
       await supabase.from('comissionamento_fontes').delete().eq('comissionamento_id', activeComId);
 
-      // 4. Delete linked conciliacoes, estornos, audit for these vendas
+      // 4. Delete linked conciliacoes and audit for these vendas (NOT the vendas themselves)
       if (vendaIds.length > 0) {
         const batchSize = 50;
         for (let i = 0; i < vendaIds.length; i += batchSize) {
           const batch = vendaIds.slice(i, i + batchSize);
           await supabase.from('conciliacoes').delete().in('venda_interna_id', batch);
-          await supabase.from('estornos').delete().in('venda_id', batch);
           await supabase.from('audit_log_vendas').delete().in('venda_id', batch);
-          await supabase.from('vendas_internas').delete().in('id', batch);
+          // Desvincular estornos sem apagá-los
+          await supabase.from('estornos').update({ venda_id: null, match_status: 'NO_MATCH' }).in('venda_id', batch);
         }
       }
 
