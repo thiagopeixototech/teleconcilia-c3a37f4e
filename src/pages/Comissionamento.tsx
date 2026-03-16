@@ -323,6 +323,14 @@ export default function ComissionamentoPage() {
       setOperadoraRows(
         Array.from(operadoraMap.values()).sort((a, b) => b.receita_liquida - a.receita_liquida)
       );
+      setOperadoraInfos(
+        Array.from(opInfoMap.values()).sort((a, b) => a.nome.localeCompare(b.nome))
+      );
+      setGridData(grid);
+      setVendedoresList(
+        Array.from(vendMap.entries()).map(([id, nome]) => ({ id, nome })).sort((a, b) => a.nome.localeCompare(b.nome))
+      );
+      setOperadoraTotals(opTotals);
     } catch (err) {
       console.error(err);
       toast.error('Erro ao carregar estatísticas');
