@@ -497,7 +497,6 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       }
       toast.success(`${ids.length} vendas removidas da competência`);
       setSelectedAtencaoIds(new Set());
-      // Clean from duplicate selections
       setDuplicateSelections(prev => {
         const next = { ...prev };
         for (const id of ids) {
@@ -510,6 +509,40 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         }
         return next;
       });
+      loadData();
+    } catch (err: any) {
+      toast.error('Erro: ' + err.message);
+    } finally {
+      setIsProcessing(false);
+      setProgress(null);
+    }
+  };
+
+  const bulkSetStatusAtencaoSelected = async (status: 'OK' | 'DESCONTADA') => {
+    if (selectedAtencaoIds.size === 0) { toast.error('Selecione vendas primeiro'); return; }
+    setIsProcessing(true);
+    try {
+      const ids = Array.from(selectedAtencaoIds);
+      const vendasById = new Map(vendas.map(v => [v.id, v]));
+      let updated = 0;
+      for (let i = 0; i < ids.length; i += 50) {
+        const batch = ids.slice(i, i + 50);
+        for (const id of batch) {
+          const v = vendasById.get(id);
+          if (!v) continue;
+          const updateData: any = { status_pag: status };
+          if (!v.linha_operadora_id && v.matched_linha_id) {
+            updateData.linha_operadora_id = v.matched_linha_id;
+            updateData.receita_lal = v.matched_valor_lq;
+            updateData.lal_apelido = v.matched_apelido;
+          }
+          await supabase.from('comissionamento_vendas').update(updateData).eq('id', id);
+          updated++;
+        }
+        setProgress({ current: Math.min(i + 50, ids.length), total: ids.length });
+      }
+      toast.success(`${updated} vendas marcadas como ${status}`);
+      setSelectedAtencaoIds(new Set());
       loadData();
     } catch (err: any) {
       toast.error('Erro: ' + err.message);
