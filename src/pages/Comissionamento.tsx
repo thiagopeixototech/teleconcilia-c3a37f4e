@@ -89,6 +89,7 @@ export default function ComissionamentoPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [stats, setStats] = useState<ComissionamentoStats | null>(null);
   const [vendedorRows, setVendedorRows] = useState<VendedorRow[]>([]);
+  const [operadoraRows, setOperadoraRows] = useState<OperadoraRow[]>([]);
   const [statsLoading, setStatsLoading] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardMode, setWizardMode] = useState<'criar' | 'atualizar'>('criar');
