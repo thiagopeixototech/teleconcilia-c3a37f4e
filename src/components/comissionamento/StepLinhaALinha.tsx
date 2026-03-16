@@ -118,8 +118,8 @@ export function StepLinhaALinha({ comissionamentoId }: Props) {
       const linhas = lal.csvRows!.map(row => {
         const cpf = row[map.cpf_cnpj] || null;
         const protocolo = row[map.protocolo_operadora] || null;
-        const valorStr = map.valor && row[map.valor] ? row[map.valor].replace(',', '.').replace(/[^\d.-]/g, '') : '';
-        const valor = valorStr ? parseFloat(valorStr) : null;
+        const valorStr = map.valor && row[map.valor] ? row[map.valor] : '';
+        const valor = parseCurrency(valorStr);
         const plano = map.plano ? row[map.plano] : null;
 
         return {
