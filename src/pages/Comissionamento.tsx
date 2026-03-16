@@ -163,8 +163,9 @@ export default function ComissionamentoPage() {
             vendas_internas!comissionamento_vendas_venda_interna_id_fkey(
               status_make,
               valor,
-              usuarios!vendas_internas_usuario_id_fkey(nome),
-              operadoras!vendas_internas_operadora_id_fkey(nome)
+              usuario_id,
+              usuarios!vendas_internas_usuario_id_fkey(id, nome),
+              operadoras!vendas_internas_operadora_id_fkey(id, nome, cor_hex)
             )
           `)
           .eq('comissionamento_id', comId)
