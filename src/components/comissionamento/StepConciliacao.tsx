@@ -937,6 +937,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
                                     {statusPagBadge(v.status_pag)}
                                   </div>
                                 </div>
+                                </div>
                                 <div className="flex items-center gap-1.5 pt-1">
                                   <Button
                                     size="sm"
