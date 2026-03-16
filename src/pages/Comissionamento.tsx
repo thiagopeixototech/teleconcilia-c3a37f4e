@@ -300,6 +300,7 @@ export default function ComissionamentoPage() {
       setSelectedId('');
       setStats(null);
       setVendedorRows([]);
+      setOperadoraRows([]);
       loadComissionamentos();
     } catch (err: any) {
       toast.error('Erro ao excluir: ' + err.message);
