@@ -497,7 +497,6 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       }
       toast.success(`${ids.length} vendas removidas da competência`);
       setSelectedAtencaoIds(new Set());
-      // Clean from duplicate selections
       setDuplicateSelections(prev => {
         const next = { ...prev };
         for (const id of ids) {
@@ -510,6 +509,40 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         }
         return next;
       });
+      loadData();
+    } catch (err: any) {
+      toast.error('Erro: ' + err.message);
+    } finally {
+      setIsProcessing(false);
+      setProgress(null);
+    }
+  };
+
+  const bulkSetStatusAtencaoSelected = async (status: 'OK' | 'DESCONTADA') => {
+    if (selectedAtencaoIds.size === 0) { toast.error('Selecione vendas primeiro'); return; }
+    setIsProcessing(true);
+    try {
+      const ids = Array.from(selectedAtencaoIds);
+      const vendasById = new Map(vendas.map(v => [v.id, v]));
+      let updated = 0;
+      for (let i = 0; i < ids.length; i += 50) {
+        const batch = ids.slice(i, i + 50);
+        for (const id of batch) {
+          const v = vendasById.get(id);
+          if (!v) continue;
+          const updateData: any = { status_pag: status };
+          if (!v.linha_operadora_id && v.matched_linha_id) {
+            updateData.linha_operadora_id = v.matched_linha_id;
+            updateData.receita_lal = v.matched_valor_lq;
+            updateData.lal_apelido = v.matched_apelido;
+          }
+          await supabase.from('comissionamento_vendas').update(updateData).eq('id', id);
+          updated++;
+        }
+        setProgress({ current: Math.min(i + 50, ids.length), total: ids.length });
+      }
+      toast.success(`${updated} vendas marcadas como ${status}`);
+      setSelectedAtencaoIds(new Set());
       loadData();
     } catch (err: any) {
       toast.error('Erro: ' + err.message);
@@ -802,6 +835,50 @@ export function StepConciliacao({ comissionamentoId }: Props) {
                 <span className="text-sm font-medium">{selectedAtencaoIds.size} selecionada(s)</span>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
+                    <Button size="sm" variant="outline" disabled={isProcessing} className="gap-1.5 border-green-500/30 text-green-700 hover:bg-green-500/10">
+                      <CheckCircle2 className="h-4 w-4" />
+                      Marcar OK
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Marcar {selectedAtencaoIds.size} vendas como OK?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        As vendas selecionadas terão o status de pagamento definido como OK.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => bulkSetStatusAtencaoSelected('OK')} className="bg-green-600 text-white hover:bg-green-700">
+                        Confirmar OK
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button size="sm" variant="outline" disabled={isProcessing} className="gap-1.5 border-orange-500/30 text-orange-700 hover:bg-orange-500/10">
+                      <XCircle className="h-4 w-4" />
+                      Marcar DESCONTADA
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Marcar {selectedAtencaoIds.size} vendas como DESCONTADA?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        As vendas selecionadas terão o status de pagamento definido como DESCONTADA.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => bulkSetStatusAtencaoSelected('DESCONTADA')} className="bg-orange-600 text-white hover:bg-orange-700">
+                        Confirmar DESCONTADA
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
                     <Button size="sm" variant="outline" disabled={isProcessing} className="gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10">
                       <Trash2 className="h-4 w-4" />
                       Excluir Selecionadas
@@ -825,7 +902,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
                 <Button size="sm" variant="ghost" onClick={() => setSelectedAtencaoIds(new Set())}>Limpar seleção</Button>
               </>
             ) : (
-              <span className="text-xs text-muted-foreground">Marque as vendas que deseja excluir e use o botão acima.</span>
+              <span className="text-xs text-muted-foreground">Marque as vendas e escolha: OK, DESCONTADA ou Excluir.</span>
             )}
             {Object.keys(duplicateSelections).length > 0 && (
               <div className="ml-auto flex items-center gap-2">
