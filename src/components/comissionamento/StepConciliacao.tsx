@@ -52,6 +52,7 @@ interface ComVenda {
   cep?: string;
   telefone?: string;
   operadora_nome?: string;
+  operadora_id?: string | null;
   // Pre-match fields (computed client-side)
   matched_linha_id?: string | null;
   matched_valor_lq?: number | null;
