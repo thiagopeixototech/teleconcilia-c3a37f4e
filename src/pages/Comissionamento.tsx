@@ -57,6 +57,16 @@ interface VendedorRow {
   receita_liquida: number;
 }
 
+interface OperadoraRow {
+  operadora_nome: string;
+  total_vendas: number;
+  receita_interna: number;
+  receita_lal: number;
+  estorno: number;
+  churn: number;
+  receita_liquida: number;
+}
+
 const formatBRL = (value: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
@@ -79,6 +89,7 @@ export default function ComissionamentoPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [stats, setStats] = useState<ComissionamentoStats | null>(null);
   const [vendedorRows, setVendedorRows] = useState<VendedorRow[]>([]);
+  const [operadoraRows, setOperadoraRows] = useState<OperadoraRow[]>([]);
   const [statsLoading, setStatsLoading] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardMode, setWizardMode] = useState<'criar' | 'atualizar'>('criar');
@@ -131,7 +142,8 @@ export default function ComissionamentoPage() {
             vendas_internas!comissionamento_vendas_venda_interna_id_fkey(
               status_make,
               valor,
-              usuarios!vendas_internas_usuario_id_fkey(nome)
+              usuarios!vendas_internas_usuario_id_fkey(nome),
+              operadoras!vendas_internas_operadora_id_fkey(nome)
             )
           `)
           .eq('comissionamento_id', comId)
@@ -153,8 +165,9 @@ export default function ComissionamentoPage() {
       let totalEstornos = 0;
       let churn = 0;
 
-      // Vendedor aggregation
+      // Vendedor & Operadora aggregation
       const vendedorMap = new Map<string, VendedorRow>();
+      const operadoraMap = new Map<string, OperadoraRow>();
 
       for (const row of rows) {
         const vi = row.vendas_internas as any;
@@ -162,6 +175,7 @@ export default function ComissionamentoPage() {
         const isInstalada = statusMake.startsWith('instalad');
         const isChurn = statusMake.startsWith('churn');
         const vendedorNome = vi?.usuarios?.nome || 'Não identificado';
+        const operadoraNome = vi?.operadoras?.nome || 'Sem operadora';
 
         if (isInstalada) vendasInstaladas++;
         const churnVal = isChurn ? Number(row.receita_interna || vi?.valor || 0) : 0;
@@ -195,11 +209,33 @@ export default function ComissionamentoPage() {
         vr.receita_lal += lalVal;
         vr.estorno += estornoVal;
         vr.churn += churnVal;
+
+        // Aggregate per operadora
+        if (!operadoraMap.has(operadoraNome)) {
+          operadoraMap.set(operadoraNome, {
+            operadora_nome: operadoraNome,
+            total_vendas: 0,
+            receita_interna: 0,
+            receita_lal: 0,
+            estorno: 0,
+            churn: 0,
+            receita_liquida: 0,
+          });
+        }
+        const or = operadoraMap.get(operadoraNome)!;
+        or.total_vendas++;
+        or.receita_interna += Number(row.receita_interna || 0);
+        or.receita_lal += lalVal;
+        or.estorno += estornoVal;
+        or.churn += churnVal;
       }
 
-      // Calculate receita_liquida per vendedor
+      // Calculate receita_liquida
       for (const vr of vendedorMap.values()) {
         vr.receita_liquida = vr.receita_lal - vr.estorno - vr.churn;
+      }
+      for (const or of operadoraMap.values()) {
+        or.receita_liquida = or.receita_lal - or.estorno - or.churn;
       }
 
       const receitaLiquida = receitaConciliada - totalEstornos - churn;
@@ -217,6 +253,9 @@ export default function ComissionamentoPage() {
 
       setVendedorRows(
         Array.from(vendedorMap.values()).sort((a, b) => b.receita_liquida - a.receita_liquida)
+      );
+      setOperadoraRows(
+        Array.from(operadoraMap.values()).sort((a, b) => b.receita_liquida - a.receita_liquida)
       );
     } catch (err) {
       console.error(err);
@@ -261,6 +300,7 @@ export default function ComissionamentoPage() {
       setSelectedId('');
       setStats(null);
       setVendedorRows([]);
+      setOperadoraRows([]);
       loadComissionamentos();
     } catch (err: any) {
       toast.error('Erro ao excluir: ' + err.message);
@@ -780,6 +820,47 @@ export default function ComissionamentoPage() {
                               <TableCell className="text-sm text-right text-destructive">{formatBRL(vr.churn)}</TableCell>
                               <TableCell className={cn("text-sm text-right font-bold", vr.receita_liquida >= 0 ? 'text-success' : 'text-destructive')}>
                                 {formatBRL(vr.receita_liquida)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Operadora Breakdown Table */}
+              {operadoraRows.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm">Detalhamento por Operadora</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="overflow-x-auto border rounded-lg">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="text-xs">Operadora</TableHead>
+                            <TableHead className="text-xs text-right">Vendas</TableHead>
+                            <TableHead className="text-xs text-right">Receita Interna</TableHead>
+                            <TableHead className="text-xs text-right">Receita LAL</TableHead>
+                            <TableHead className="text-xs text-right">Estorno</TableHead>
+                            <TableHead className="text-xs text-right">Churn</TableHead>
+                            <TableHead className="text-xs text-right">Receita Líquida</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {operadoraRows.map((or, i) => (
+                            <TableRow key={i}>
+                              <TableCell className="text-sm font-medium">{or.operadora_nome}</TableCell>
+                              <TableCell className="text-sm text-right">{or.total_vendas}</TableCell>
+                              <TableCell className="text-sm text-right">{formatBRL(or.receita_interna)}</TableCell>
+                              <TableCell className="text-sm text-right">{formatBRL(or.receita_lal)}</TableCell>
+                              <TableCell className="text-sm text-right text-destructive">{formatBRL(or.estorno)}</TableCell>
+                              <TableCell className="text-sm text-right text-destructive">{formatBRL(or.churn)}</TableCell>
+                              <TableCell className={cn("text-sm text-right font-bold", or.receita_liquida >= 0 ? 'text-success' : 'text-destructive')}>
+                                {formatBRL(or.receita_liquida)}
                               </TableCell>
                             </TableRow>
                           ))}
