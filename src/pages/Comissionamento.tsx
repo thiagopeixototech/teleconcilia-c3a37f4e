@@ -107,6 +107,10 @@ export default function ComissionamentoPage() {
   const [stats, setStats] = useState<ComissionamentoStats | null>(null);
   const [vendedorRows, setVendedorRows] = useState<VendedorRow[]>([]);
   const [operadoraRows, setOperadoraRows] = useState<OperadoraRow[]>([]);
+  const [operadoraInfos, setOperadoraInfos] = useState<OperadoraInfo[]>([]);
+  const [gridData, setGridData] = useState<Map<string, Map<string, GridCell>>>(new Map());
+  const [vendedoresList, setVendedoresList] = useState<{ id: string; nome: string }[]>([]);
+  const [operadoraTotals, setOperadoraTotals] = useState<Map<string, GridCell>>(new Map());
   const [statsLoading, setStatsLoading] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardMode, setWizardMode] = useState<'criar' | 'atualizar'>('criar');
