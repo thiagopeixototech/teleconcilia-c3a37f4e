@@ -165,8 +165,9 @@ export default function ComissionamentoPage() {
       let totalEstornos = 0;
       let churn = 0;
 
-      // Vendedor aggregation
+      // Vendedor & Operadora aggregation
       const vendedorMap = new Map<string, VendedorRow>();
+      const operadoraMap = new Map<string, OperadoraRow>();
 
       for (const row of rows) {
         const vi = row.vendas_internas as any;
@@ -174,6 +175,7 @@ export default function ComissionamentoPage() {
         const isInstalada = statusMake.startsWith('instalad');
         const isChurn = statusMake.startsWith('churn');
         const vendedorNome = vi?.usuarios?.nome || 'Não identificado';
+        const operadoraNome = vi?.operadoras?.nome || 'Sem operadora';
 
         if (isInstalada) vendasInstaladas++;
         const churnVal = isChurn ? Number(row.receita_interna || vi?.valor || 0) : 0;
@@ -207,11 +209,33 @@ export default function ComissionamentoPage() {
         vr.receita_lal += lalVal;
         vr.estorno += estornoVal;
         vr.churn += churnVal;
+
+        // Aggregate per operadora
+        if (!operadoraMap.has(operadoraNome)) {
+          operadoraMap.set(operadoraNome, {
+            operadora_nome: operadoraNome,
+            total_vendas: 0,
+            receita_interna: 0,
+            receita_lal: 0,
+            estorno: 0,
+            churn: 0,
+            receita_liquida: 0,
+          });
+        }
+        const or = operadoraMap.get(operadoraNome)!;
+        or.total_vendas++;
+        or.receita_interna += Number(row.receita_interna || 0);
+        or.receita_lal += lalVal;
+        or.estorno += estornoVal;
+        or.churn += churnVal;
       }
 
-      // Calculate receita_liquida per vendedor
+      // Calculate receita_liquida
       for (const vr of vendedorMap.values()) {
         vr.receita_liquida = vr.receita_lal - vr.estorno - vr.churn;
+      }
+      for (const or of operadoraMap.values()) {
+        or.receita_liquida = or.receita_lal - or.estorno - or.churn;
       }
 
       const receitaLiquida = receitaConciliada - totalEstornos - churn;
@@ -229,6 +253,9 @@ export default function ComissionamentoPage() {
 
       setVendedorRows(
         Array.from(vendedorMap.values()).sort((a, b) => b.receita_liquida - a.receita_liquida)
+      );
+      setOperadoraRows(
+        Array.from(operadoraMap.values()).sort((a, b) => b.receita_liquida - a.receita_liquida)
       );
     } catch (err) {
       console.error(err);
