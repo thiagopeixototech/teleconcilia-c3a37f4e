@@ -374,7 +374,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
     try {
       for (const v of group) {
         const status = groupSelections[v.id];
-        if (!status) continue; // skip unset
+        if (!status) continue;
 
         const updateData: any = { status_pag: status };
         if (!v.linha_operadora_id && v.matched_linha_id) {
@@ -388,6 +388,77 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       const count = Object.keys(groupSelections).length;
       toast.success(`${count} registros atualizados`);
       setDuplicateSelections(prev => { const next = { ...prev }; delete next[groupKey]; return next; });
+      loadData();
+    } catch (err: any) {
+      toast.error('Erro: ' + err.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleConfirmAllAtencaoGroups = async () => {
+    const groupKeys = Object.keys(duplicateSelections).filter(key => {
+      const sel = duplicateSelections[key];
+      return sel && Object.keys(sel).length > 0;
+    });
+
+    if (groupKeys.length === 0) {
+      toast.error('Nenhum grupo possui seleções para confirmar');
+      return;
+    }
+
+    setIsProcessing(true);
+    let totalUpdated = 0;
+    try {
+      for (const groupKey of groupKeys) {
+        const groupSelections = duplicateSelections[groupKey];
+        const group = atencaoGroups.get(groupKey);
+        if (!group) continue;
+
+        for (const v of group) {
+          const status = groupSelections[v.id];
+          if (!status) continue;
+
+          const updateData: any = { status_pag: status };
+          if (!v.linha_operadora_id && v.matched_linha_id) {
+            updateData.linha_operadora_id = v.matched_linha_id;
+            updateData.receita_lal = v.matched_valor_lq;
+            updateData.lal_apelido = v.matched_apelido;
+          }
+          await supabase.from('comissionamento_vendas').update(updateData).eq('id', v.id);
+          totalUpdated++;
+        }
+      }
+
+      toast.success(`${totalUpdated} registros atualizados em ${groupKeys.length} grupos`);
+      setDuplicateSelections({});
+      loadData();
+    } catch (err: any) {
+      toast.error('Erro: ' + err.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleRemoveVendaFromCommission = async (vendaId: string, groupKey: string) => {
+    setIsProcessing(true);
+    try {
+      const { error } = await supabase
+        .from('comissionamento_vendas')
+        .delete()
+        .eq('id', vendaId);
+      if (error) throw error;
+
+      toast.success('Venda removida da competência');
+      // Clean from selections
+      setDuplicateSelections(prev => {
+        const next = { ...prev };
+        if (next[groupKey]) {
+          delete next[groupKey][vendaId];
+          if (Object.keys(next[groupKey]).length === 0) delete next[groupKey];
+        }
+        return next;
+      });
       loadData();
     } catch (err: any) {
       toast.error('Erro: ' + err.message);
