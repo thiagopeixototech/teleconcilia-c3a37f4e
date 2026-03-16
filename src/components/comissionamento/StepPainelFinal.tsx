@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import {
-  Loader2, Download, DollarSign, Users, RotateCcw, TrendingDown, Receipt, FileDown,
+  Loader2, Download, DollarSign, Users, RotateCcw, TrendingDown, Receipt, FileDown, Grid3X3,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -26,7 +26,6 @@ interface VendaRow {
   receita_descontada: number | null;
   lal_apelido: string | null;
   comissionamento_desconto: string | null;
-  // Joined
   cliente_nome?: string;
   cpf_cnpj?: string;
   protocolo_interno?: string;
@@ -34,6 +33,8 @@ interface VendaRow {
   vendedor_nome?: string;
   vendedor_id?: string;
   operadora_nome?: string;
+  operadora_id?: string;
+  operadora_cor?: string;
   data_instalacao?: string;
 }
 
@@ -48,13 +49,30 @@ interface VendedorResumo {
   liquido: number;
 }
 
+interface OperadoraInfo {
+  id: string;
+  nome: string;
+  cor_hex: string;
+}
+
+interface GridCell {
+  vendas: number;
+  receita: number;
+  churn: number;
+  estorno: number;
+  liquido: number;
+}
+
 const formatBRL = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+
+const formatCompact = (v: number) =>
+  v === 0 ? '-' : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(v);
 
 export function StepPainelFinal({ comissionamentoId }: Props) {
   const [vendas, setVendas] = useState<VendaRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeView, setActiveView] = useState<'resumo' | 'detalhes'>('resumo');
+  const [activeView, setActiveView] = useState<'grade' | 'resumo' | 'detalhes'>('grade');
 
   useEffect(() => {
     const load = async () => {
@@ -67,9 +85,9 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
             lal_apelido, comissionamento_desconto,
             vendas_internas!comissionamento_vendas_venda_interna_id_fkey(
               cliente_nome, cpf_cnpj, protocolo_interno, status_make, data_instalacao,
-              usuario_id,
+              usuario_id, operadora_id,
               usuarios!vendas_internas_usuario_id_fkey(id, nome),
-              operadoras!vendas_internas_operadora_id_fkey(nome)
+              operadoras!vendas_internas_operadora_id_fkey(id, nome, cor_hex)
             )
           `)
           .eq('comissionamento_id', comissionamentoId);
@@ -94,6 +112,8 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
             vendedor_nome: vi?.usuarios?.nome,
             vendedor_id: vi?.usuarios?.id || vi?.usuario_id,
             operadora_nome: vi?.operadoras?.nome,
+            operadora_id: vi?.operadoras?.id || vi?.operadora_id,
+            operadora_cor: vi?.operadoras?.cor_hex || '#CBD5E1',
             data_instalacao: vi?.data_instalacao,
           };
         });
@@ -108,23 +128,87 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
     load();
   }, [comissionamentoId]);
 
-  // Aggregate by vendedor
+  // Unique operadoras
+  const operadoras = useMemo(() => {
+    const map = new Map<string, OperadoraInfo>();
+    for (const v of vendas) {
+      if (v.operadora_id && v.operadora_nome) {
+        map.set(v.operadora_id, { id: v.operadora_id, nome: v.operadora_nome, cor_hex: v.operadora_cor || '#CBD5E1' });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => a.nome.localeCompare(b.nome));
+  }, [vendas]);
+
+  // Unique vendedores
+  const vendedores = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const v of vendas) {
+      const vid = v.vendedor_id || 'desconhecido';
+      const vname = v.vendedor_nome || 'Desconhecido';
+      if (!map.has(vid)) map.set(vid, vname);
+    }
+    return Array.from(map.entries()).map(([id, nome]) => ({ id, nome })).sort((a, b) => a.nome.localeCompare(b.nome));
+  }, [vendas]);
+
+  // Grid data: vendedor x operadora
+  const gridData = useMemo(() => {
+    const grid = new Map<string, Map<string, GridCell>>();
+    const emptyCell = (): GridCell => ({ vendas: 0, receita: 0, churn: 0, estorno: 0, liquido: 0 });
+
+    for (const v of vendas) {
+      const vid = v.vendedor_id || 'desconhecido';
+      const oid = v.operadora_id || 'sem_operadora';
+
+      if (!grid.has(vid)) grid.set(vid, new Map());
+      const vendedorRow = grid.get(vid)!;
+      if (!vendedorRow.has(oid)) vendedorRow.set(oid, emptyCell());
+      const cell = vendedorRow.get(oid)!;
+
+      cell.vendas++;
+      cell.receita += Number(v.receita_lal || 0);
+      cell.estorno += Number(v.receita_descontada || 0);
+      if ((v.status_make || '').toLowerCase().startsWith('churn')) {
+        cell.churn += Number(v.receita_interna || 0);
+      }
+    }
+
+    // Calculate liquido
+    for (const vendedorRow of grid.values()) {
+      for (const cell of vendedorRow.values()) {
+        cell.liquido = cell.receita - cell.estorno - cell.churn;
+      }
+    }
+
+    return grid;
+  }, [vendas]);
+
+  // Totals per operadora
+  const operadoraTotals = useMemo(() => {
+    const totals = new Map<string, GridCell>();
+    const emptyCell = (): GridCell => ({ vendas: 0, receita: 0, churn: 0, estorno: 0, liquido: 0 });
+
+    for (const [, vendedorRow] of gridData) {
+      for (const [oid, cell] of vendedorRow) {
+        if (!totals.has(oid)) totals.set(oid, emptyCell());
+        const t = totals.get(oid)!;
+        t.vendas += cell.vendas;
+        t.receita += cell.receita;
+        t.churn += cell.churn;
+        t.estorno += cell.estorno;
+        t.liquido += cell.liquido;
+      }
+    }
+    return totals;
+  }, [gridData]);
+
+  // Aggregate by vendedor (for resumo tab)
   const resumoPorVendedor = useMemo(() => {
     const map = new Map<string, VendedorResumo>();
     for (const v of vendas) {
       const vid = v.vendedor_id || 'desconhecido';
       const vname = v.vendedor_nome || 'Desconhecido';
       if (!map.has(vid)) {
-        map.set(vid, {
-          vendedor_id: vid,
-          vendedor_nome: vname,
-          totalVendas: 0,
-          receitaInterna: 0,
-          receitaLal: 0,
-          estorno: 0,
-          churn: 0,
-          liquido: 0,
-        });
+        map.set(vid, { vendedor_id: vid, vendedor_nome: vname, totalVendas: 0, receitaInterna: 0, receitaLal: 0, estorno: 0, churn: 0, liquido: 0 });
       }
       const r = map.get(vid)!;
       r.totalVendas++;
@@ -135,14 +219,12 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
         r.churn += Number(v.receita_interna || 0);
       }
     }
-    // Calculate liquido
     for (const r of map.values()) {
       r.liquido = r.receitaLal - r.estorno - r.churn;
     }
     return Array.from(map.values()).sort((a, b) => b.liquido - a.liquido);
   }, [vendas]);
 
-  // Global totals
   const totals = useMemo(() => {
     return resumoPorVendedor.reduce(
       (acc, r) => ({
@@ -181,18 +263,11 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
       'LAL', 'Estorno', 'Comiss. Desconto',
     ];
     const rows = vendas.map(v => [
-      v.vendedor_nome || '',
-      v.data_instalacao || '',
-      v.protocolo_interno || '',
-      v.cpf_cnpj || '',
-      v.cliente_nome || '',
-      v.operadora_nome || '',
-      v.status_make || '',
-      v.status_pag || '',
-      v.receita_interna?.toString() || '',
-      v.receita_lal?.toString() || '',
-      v.lal_apelido || '',
-      v.receita_descontada?.toString() || '',
+      v.vendedor_nome || '', v.data_instalacao || '', v.protocolo_interno || '',
+      v.cpf_cnpj || '', v.cliente_nome || '', v.operadora_nome || '',
+      v.status_make || '', v.status_pag || '',
+      v.receita_interna?.toString() || '', v.receita_lal?.toString() || '',
+      v.lal_apelido || '', v.receita_descontada?.toString() || '',
       v.comissionamento_desconto || '',
     ]);
     downloadBlob(buildCsvBlob(headers, rows), `comissionamento_${format(new Date(), 'yyyy-MM-dd')}.csv`);
@@ -201,13 +276,8 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
   const exportResumoVendedor = () => {
     const headers = ['Vendedor', 'Vendas', 'Receita Interna', 'Receita LAL', 'Estorno', 'Churn', 'Receita Líquida'];
     const rows = resumoPorVendedor.map(r => [
-      r.vendedor_nome,
-      r.totalVendas.toString(),
-      r.receitaInterna.toFixed(2),
-      r.receitaLal.toFixed(2),
-      r.estorno.toFixed(2),
-      r.churn.toFixed(2),
-      r.liquido.toFixed(2),
+      r.vendedor_nome, r.totalVendas.toString(), r.receitaInterna.toFixed(2),
+      r.receitaLal.toFixed(2), r.estorno.toFixed(2), r.churn.toFixed(2), r.liquido.toFixed(2),
     ]);
     rows.push([
       'TOTAL', totals.totalVendas.toString(), totals.receitaInterna.toFixed(2),
@@ -225,18 +295,11 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
       'LAL', 'Estorno', 'Comiss. Desconto',
     ];
     const rows = vendasVendedor.map(v => [
-      v.vendedor_nome || '',
-      v.data_instalacao || '',
-      v.protocolo_interno || '',
-      v.cpf_cnpj || '',
-      v.cliente_nome || '',
-      v.operadora_nome || '',
-      v.status_make || '',
-      v.status_pag || '',
-      v.receita_interna?.toString() || '',
-      v.receita_lal?.toString() || '',
-      v.lal_apelido || '',
-      v.receita_descontada?.toString() || '',
+      v.vendedor_nome || '', v.data_instalacao || '', v.protocolo_interno || '',
+      v.cpf_cnpj || '', v.cliente_nome || '', v.operadora_nome || '',
+      v.status_make || '', v.status_pag || '',
+      v.receita_interna?.toString() || '', v.receita_lal?.toString() || '',
+      v.lal_apelido || '', v.receita_descontada?.toString() || '',
       v.comissionamento_desconto || '',
     ]);
     const nomeArquivo = vendedorNome.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 30);
@@ -244,11 +307,9 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
     toast.success(`Detalhado de ${vendedorNome} exportado (${vendasVendedor.length} vendas)`);
   };
 
-
   const exportRelatorioComissionamento = useCallback(async () => {
     setIsExportingReport(true);
     try {
-      // 1. Get LAL apelidos for this comissionamento
       const { data: lalRows, error: lalErr } = await supabase
         .from('comissionamento_lal')
         .select('apelido')
@@ -256,22 +317,17 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
       if (lalErr) throw lalErr;
       const apelidos = lalRows?.map(r => r.apelido) || [];
 
-      // 2. Fetch all linha_operadora with these apelidos
       let linhasOperadora: any[] = [];
       if (apelidos.length > 0) {
         const batchSize = 30;
         for (let i = 0; i < apelidos.length; i += batchSize) {
           const batch = apelidos.slice(i, i + batchSize);
-          const { data, error } = await supabase
-            .from('linha_operadora')
-            .select('*')
-            .in('apelido', batch);
+          const { data, error } = await supabase.from('linha_operadora').select('*').in('apelido', batch);
           if (error) throw error;
           linhasOperadora = linhasOperadora.concat(data || []);
         }
       }
 
-      // 3. Fetch comissionamento_vendas with linha_operadora_id to know which lines matched
       let allComVendas: any[] = [];
       let offset = 0;
       while (true) {
@@ -287,25 +343,17 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
         offset += 1000;
       }
 
-      // Build indexes using comissionamento_vendas (the actual match source)
       const cvByLinhaId = new Map<string, any>();
       for (const cv of allComVendas) {
-        if (cv.linha_operadora_id) {
-          cvByLinhaId.set(cv.linha_operadora_id, cv);
-        }
+        if (cv.linha_operadora_id) cvByLinhaId.set(cv.linha_operadora_id, cv);
       }
 
       const vendaById = new Map<string, VendaRow>();
-      for (const v of vendas) {
-        vendaById.set(v.venda_interna_id, v);
-      }
+      for (const v of vendas) vendaById.set(v.venda_interna_id, v);
 
       const linhaById = new Map<string, any>();
-      for (const l of linhasOperadora) {
-        linhaById.set(l.id, l);
-      }
+      for (const l of linhasOperadora) linhaById.set(l.id, l);
 
-      // ===== FILE 1: Linha a Linha + Conciliação =====
       const h1 = [
         'Operadora', 'Protocolo Operadora', 'CPF/CNPJ', 'Cliente', 'Telefone',
         'Plano', 'Tipo Plano', 'Valor', 'Valor Make', 'Valor LQ',
@@ -333,7 +381,6 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
         ];
       });
 
-      // ===== FILE 2: Vendas Internas + Conciliação =====
       const h2 = [
         'Vendedor', 'Protocolo Interno', 'CPF/CNPJ', 'Cliente', 'Operadora',
         'Data Instalação', 'Status Make', 'Valor', 'Status Pag', 'Receita Interna',
@@ -343,7 +390,6 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
         'LAL Valor', 'LAL Data Status', 'LAL Status Operadora', 'LAL Quinzena',
       ];
       const rows2 = vendas.map(v => {
-        // Find the comissionamento_vendas row for this venda
         const cv = allComVendas.find((c: any) => c.venda_interna_id === v.venda_interna_id);
         const linha = cv?.linha_operadora_id ? linhaById.get(cv.linha_operadora_id) : null;
         const encontrado = !!linha;
@@ -364,7 +410,6 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
 
       const dateStr = format(new Date(), 'yyyy-MM-dd');
       downloadBlob(buildCsvBlob(h1, rows1), `relatorio_LAL_conciliacao_${dateStr}.csv`);
-      // Small delay so browser doesn't merge downloads
       await new Promise(r => setTimeout(r, 500));
       downloadBlob(buildCsvBlob(h2, rows2), `relatorio_vendas_internas_conciliacao_${dateStr}.csv`);
 
@@ -380,6 +425,42 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
   if (isLoading) {
     return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
   }
+
+  const renderGridCell = (cell: GridCell | undefined, cor: string) => {
+    if (!cell || cell.vendas === 0) return <td className="border border-border p-1.5 text-center text-xs text-muted-foreground">-</td>;
+    return (
+      <td className="border border-border p-1.5 text-xs">
+        <div className="space-y-0.5">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Vendas:</span>
+            <span className="font-medium">{cell.vendas}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Receita:</span>
+            <span className="font-medium">{formatCompact(cell.receita)}</span>
+          </div>
+          {cell.churn > 0 && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Churn:</span>
+              <span className="text-destructive font-medium">{formatCompact(cell.churn)}</span>
+            </div>
+          )}
+          {cell.estorno > 0 && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Estorno:</span>
+              <span className="text-destructive font-medium">{formatCompact(cell.estorno)}</span>
+            </div>
+          )}
+          <div className="flex justify-between border-t border-border/50 pt-0.5">
+            <span className="text-muted-foreground font-medium">Líquido:</span>
+            <span className={cn("font-bold", cell.liquido >= 0 ? 'text-success' : 'text-destructive')}>
+              {formatCompact(cell.liquido)}
+            </span>
+          </div>
+        </div>
+      </td>
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -417,6 +498,15 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
       <div className="flex gap-2 flex-wrap">
         <Button
           size="sm"
+          variant={activeView === 'grade' ? 'default' : 'outline'}
+          onClick={() => setActiveView('grade')}
+          className="gap-1.5"
+        >
+          <Grid3X3 className="h-4 w-4" />
+          Grade por Operadora
+        </Button>
+        <Button
+          size="sm"
           variant={activeView === 'resumo' ? 'default' : 'outline'}
           onClick={() => setActiveView('resumo')}
           className="gap-1.5"
@@ -438,28 +528,203 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
             <Download className="h-4 w-4" />
             Exportar CSV
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={exportResumoVendedor}
-            disabled={resumoPorVendedor.length === 0}
-            className="gap-1.5"
-          >
+          <Button size="sm" variant="outline" onClick={exportResumoVendedor} disabled={resumoPorVendedor.length === 0} className="gap-1.5">
             <Users className="h-4 w-4" />
             Resumo Vendedor
           </Button>
-          <Button
-            size="sm"
-            variant="default"
-            onClick={exportRelatorioComissionamento}
-            disabled={isExportingReport}
-            className="gap-1.5"
-          >
+          <Button size="sm" variant="default" onClick={exportRelatorioComissionamento} disabled={isExportingReport} className="gap-1.5">
             {isExportingReport ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
             Baixar Relatório
           </Button>
         </div>
       </div>
+
+      {/* Grade por Operadora */}
+      {activeView === 'grade' && operadoras.length > 0 && (
+        <div className="overflow-x-auto border rounded-lg">
+          <table className="w-full border-collapse text-xs">
+            <thead>
+              <tr>
+                <th className="border border-border p-2 text-left bg-muted font-medium sticky left-0 z-10 min-w-[140px]">
+                  Vendedor
+                </th>
+                {operadoras.map(op => (
+                  <th
+                    key={op.id}
+                    className="border border-border p-2 text-center font-medium min-w-[160px]"
+                    style={{
+                      backgroundColor: `${op.cor_hex}18`,
+                      borderBottomColor: op.cor_hex,
+                      borderBottomWidth: '3px',
+                    }}
+                  >
+                    <div className="flex items-center justify-center gap-1.5">
+                      <div className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: op.cor_hex }} />
+                      {op.nome}
+                    </div>
+                  </th>
+                ))}
+                <th className="border border-border p-2 text-center bg-muted font-bold min-w-[160px]">
+                  Total
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {vendedores.map(vend => {
+                const vendedorRow = gridData.get(vend.id);
+                const vendedorTotal: GridCell = { vendas: 0, receita: 0, churn: 0, estorno: 0, liquido: 0 };
+                if (vendedorRow) {
+                  for (const cell of vendedorRow.values()) {
+                    vendedorTotal.vendas += cell.vendas;
+                    vendedorTotal.receita += cell.receita;
+                    vendedorTotal.churn += cell.churn;
+                    vendedorTotal.estorno += cell.estorno;
+                    vendedorTotal.liquido += cell.liquido;
+                  }
+                }
+
+                return (
+                  <tr key={vend.id}>
+                    <td className="border border-border p-2 font-medium bg-muted sticky left-0 z-10 text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-5 w-5 shrink-0"
+                          onClick={() => exportVendedorDetalhado(vend.id, vend.nome)}
+                        >
+                          <FileDown className="h-3 w-3" />
+                        </Button>
+                        {vend.nome}
+                      </div>
+                    </td>
+                    {operadoras.map(op => {
+                      const cell = vendedorRow?.get(op.id);
+                      return (
+                        <td
+                          key={op.id}
+                          className="border border-border p-1.5"
+                          style={{ backgroundColor: cell && cell.vendas > 0 ? `${op.cor_hex}08` : undefined }}
+                        >
+                          {!cell || cell.vendas === 0 ? (
+                            <span className="text-muted-foreground text-center block">-</span>
+                          ) : (
+                            <div className="space-y-0.5 text-xs">
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Vnd:</span>
+                                <span className="font-medium">{cell.vendas}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Rec:</span>
+                                <span className="font-medium">{formatCompact(cell.receita)}</span>
+                              </div>
+                              {cell.churn > 0 && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Chr:</span>
+                                  <span className="text-destructive">{formatCompact(cell.churn)}</span>
+                                </div>
+                              )}
+                              {cell.estorno > 0 && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Est:</span>
+                                  <span className="text-destructive">{formatCompact(cell.estorno)}</span>
+                                </div>
+                              )}
+                              <div className="flex justify-between border-t pt-0.5" style={{ borderColor: `${op.cor_hex}40` }}>
+                                <span className="font-medium">Liq:</span>
+                                <span className={cn("font-bold", cell.liquido >= 0 ? 'text-success' : 'text-destructive')}>
+                                  {formatCompact(cell.liquido)}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </td>
+                      );
+                    })}
+                    <td className="border border-border p-1.5 bg-muted/50">
+                      <div className="space-y-0.5 text-xs">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Vnd:</span>
+                          <span className="font-bold">{vendedorTotal.vendas}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Rec:</span>
+                          <span className="font-bold">{formatCompact(vendedorTotal.receita)}</span>
+                        </div>
+                        <div className="flex justify-between border-t pt-0.5">
+                          <span className="font-bold">Liq:</span>
+                          <span className={cn("font-bold", vendedorTotal.liquido >= 0 ? 'text-success' : 'text-destructive')}>
+                            {formatCompact(vendedorTotal.liquido)}
+                          </span>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {/* Total row */}
+              <tr className="bg-muted font-bold">
+                <td className="border border-border p-2 font-bold sticky left-0 z-10 bg-muted text-xs">TOTAL</td>
+                {operadoras.map(op => {
+                  const t = operadoraTotals.get(op.id);
+                  return (
+                    <td
+                      key={op.id}
+                      className="border border-border p-1.5"
+                      style={{ backgroundColor: `${op.cor_hex}15` }}
+                    >
+                      {!t || t.vendas === 0 ? (
+                        <span className="text-muted-foreground text-center block">-</span>
+                      ) : (
+                        <div className="space-y-0.5 text-xs">
+                          <div className="flex justify-between">
+                            <span>Vnd:</span>
+                            <span className="font-bold">{t.vendas}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Rec:</span>
+                            <span className="font-bold">{formatCompact(t.receita)}</span>
+                          </div>
+                          <div className="flex justify-between border-t pt-0.5" style={{ borderColor: `${op.cor_hex}60` }}>
+                            <span className="font-bold">Liq:</span>
+                            <span className={cn("font-bold", t.liquido >= 0 ? 'text-success' : 'text-destructive')}>
+                              {formatCompact(t.liquido)}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </td>
+                  );
+                })}
+                <td className="border border-border p-1.5 bg-muted">
+                  <div className="space-y-0.5 text-xs">
+                    <div className="flex justify-between">
+                      <span>Vnd:</span>
+                      <span className="font-bold">{totals.totalVendas}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Rec:</span>
+                      <span className="font-bold">{formatCompact(totals.receitaLal)}</span>
+                    </div>
+                    <div className="flex justify-between border-t pt-0.5">
+                      <span className="font-bold">Liq:</span>
+                      <span className={cn("font-bold", totals.liquido >= 0 ? 'text-success' : 'text-destructive')}>
+                        {formatCompact(totals.liquido)}
+                      </span>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {activeView === 'grade' && operadoras.length === 0 && (
+        <div className="text-center py-8 text-muted-foreground text-sm">
+          Nenhuma operadora encontrada nas vendas deste comissionamento.
+        </div>
+      )}
 
       {/* Resumo por vendedor */}
       {activeView === 'resumo' && (
@@ -482,9 +747,7 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
                   <TableCell className="text-xs font-medium">
                     <div className="flex items-center gap-1.5">
                       <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 shrink-0"
+                        variant="ghost" size="icon" className="h-6 w-6 shrink-0"
                         onClick={() => exportVendedorDetalhado(r.vendedor_id, r.vendedor_nome)}
                         title={`Baixar detalhado de ${r.vendedor_nome}`}
                       >
