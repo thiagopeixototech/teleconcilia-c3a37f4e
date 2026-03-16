@@ -121,14 +121,32 @@ export default function Dashboard() {
       if (selectedUsuarioId) rpcParams._usuario_id = selectedUsuarioId;
       if (selectedSupervisorId) rpcParams._supervisor_id = selectedSupervisorId;
 
+      // Build estorno query with aligned filters
+      let estornoQuery = supabase
+        .from('estornos')
+        .select('valor_estornado, venda_id')
+        .gte('referencia_desconto', dataVendaInicio ? format(dataVendaInicio, 'yyyy-MM') : '1900-01')
+        .lte('referencia_desconto', dataVendaFim ? format(dataVendaFim, 'yyyy-MM') : '2099-12');
+
       const [statsResult, estornosResult] = await Promise.all([
         supabase.rpc('get_dashboard_stats', rpcParams as any),
-        supabase
-          .from('estornos')
-          .select('valor_estornado')
-          .gte('referencia_desconto', dataVendaInicio ? format(dataVendaInicio, 'yyyy-MM') : '1900-01')
-          .lte('referencia_desconto', dataVendaFim ? format(dataVendaFim, 'yyyy-MM') : '2099-12'),
+        estornoQuery,
       ]);
+
+      // If usuario or supervisor filter is active, filter estornos to match the same universe
+      let filteredEstornos = estornosResult.data || [];
+      if (selectedUsuarioId || selectedSupervisorId) {
+        // Get venda IDs from the filtered universe
+        let vendaIdsQuery = supabase.from('vendas_internas').select('id');
+        if (selectedUsuarioId) vendaIdsQuery = vendaIdsQuery.eq('usuario_id', selectedUsuarioId);
+        if (selectedSupervisorId) {
+          const subordinates = usuarios.filter(u => u.supervisor_id === selectedSupervisorId).map(u => u.id);
+          if (subordinates.length > 0) vendaIdsQuery = vendaIdsQuery.in('usuario_id', subordinates);
+        }
+        const { data: vendaIdsData } = await vendaIdsQuery;
+        const vendaIdSet = new Set((vendaIdsData || []).map((v: any) => v.id));
+        filteredEstornos = filteredEstornos.filter(e => e.venda_id && vendaIdSet.has(e.venda_id));
+      }
 
       if (statsResult.error) throw statsResult.error;
       const d = statsResult.data as any;
