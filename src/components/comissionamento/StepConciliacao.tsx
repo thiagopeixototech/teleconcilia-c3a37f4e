@@ -374,7 +374,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
     try {
       for (const v of group) {
         const status = groupSelections[v.id];
-        if (!status) continue; // skip unset
+        if (!status) continue;
 
         const updateData: any = { status_pag: status };
         if (!v.linha_operadora_id && v.matched_linha_id) {
@@ -388,6 +388,77 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       const count = Object.keys(groupSelections).length;
       toast.success(`${count} registros atualizados`);
       setDuplicateSelections(prev => { const next = { ...prev }; delete next[groupKey]; return next; });
+      loadData();
+    } catch (err: any) {
+      toast.error('Erro: ' + err.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleConfirmAllAtencaoGroups = async () => {
+    const groupKeys = Object.keys(duplicateSelections).filter(key => {
+      const sel = duplicateSelections[key];
+      return sel && Object.keys(sel).length > 0;
+    });
+
+    if (groupKeys.length === 0) {
+      toast.error('Nenhum grupo possui seleções para confirmar');
+      return;
+    }
+
+    setIsProcessing(true);
+    let totalUpdated = 0;
+    try {
+      for (const groupKey of groupKeys) {
+        const groupSelections = duplicateSelections[groupKey];
+        const group = atencaoGroups.get(groupKey);
+        if (!group) continue;
+
+        for (const v of group) {
+          const status = groupSelections[v.id];
+          if (!status) continue;
+
+          const updateData: any = { status_pag: status };
+          if (!v.linha_operadora_id && v.matched_linha_id) {
+            updateData.linha_operadora_id = v.matched_linha_id;
+            updateData.receita_lal = v.matched_valor_lq;
+            updateData.lal_apelido = v.matched_apelido;
+          }
+          await supabase.from('comissionamento_vendas').update(updateData).eq('id', v.id);
+          totalUpdated++;
+        }
+      }
+
+      toast.success(`${totalUpdated} registros atualizados em ${groupKeys.length} grupos`);
+      setDuplicateSelections({});
+      loadData();
+    } catch (err: any) {
+      toast.error('Erro: ' + err.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleRemoveVendaFromCommission = async (vendaId: string, groupKey: string) => {
+    setIsProcessing(true);
+    try {
+      const { error } = await supabase
+        .from('comissionamento_vendas')
+        .delete()
+        .eq('id', vendaId);
+      if (error) throw error;
+
+      toast.success('Venda removida da competência');
+      // Clean from selections
+      setDuplicateSelections(prev => {
+        const next = { ...prev };
+        if (next[groupKey]) {
+          delete next[groupKey][vendaId];
+          if (Object.keys(next[groupKey]).length === 0) delete next[groupKey];
+        }
+        return next;
+      });
       loadData();
     } catch (err: any) {
       toast.error('Erro: ' + err.message);
@@ -671,135 +742,195 @@ export function StepConciliacao({ comissionamentoId }: Props) {
 
       {/* Atenção Accordion View */}
       {matchFilter === 'atencao' && atencaoGroups.size > 0 ? (
-        <div className="border rounded-lg">
-          <Accordion type="multiple" className="w-full">
-            {Array.from(atencaoGroups.entries()).map(([groupKey, group]) => {
-              const first = group[0];
-              const lalValue = first.matched_valor_lq ?? first.receita_lal;
-              return (
-                <AccordionItem key={groupKey} value={groupKey} className="border-b last:border-b-0">
-                  <AccordionTrigger className="px-4 py-3 hover:no-underline hover:bg-accent/30">
-                    <div className="flex items-center gap-4 text-left w-full mr-4">
-                      <Badge className="bg-warning/20 text-warning text-xs shrink-0">
-                        {group.length} vendas
-                      </Badge>
-                      <span className="text-sm font-medium truncate max-w-[200px]">{first.cliente_nome || '-'}</span>
-                      <span className="text-xs font-mono text-muted-foreground">{first.cpf_cnpj || '-'}</span>
-                      <span className="text-xs text-muted-foreground ml-auto">LAL: {formatBRL(lalValue)}</span>
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="px-4 pb-4">
-                    <div className="space-y-2">
-                      {group.map(v => {
-                        const selectedStatus = duplicateSelections[groupKey]?.[v.id] || null;
-                        return (
-                          <div
-                            key={v.id}
-                            className={`p-3 rounded-md border transition-colors ${
-                              selectedStatus === 'OK'
-                                ? 'border-success bg-success/5'
-                                : selectedStatus === 'DESCONTADA'
-                                ? 'border-destructive bg-destructive/5'
-                                : 'border-border'
-                            }`}
-                          >
-                            <div className="space-y-2">
-                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs">
-                                <div>
-                                  <span className="text-muted-foreground">Vendedor:</span>{' '}
-                                  <span className="font-medium">{v.vendedor_nome || '-'}</span>
+        <div className="space-y-3">
+          {/* Bulk confirm all groups button */}
+          {Object.keys(duplicateSelections).length > 0 && (
+            <div className="flex items-center justify-between p-3 rounded-lg border border-primary/30 bg-primary/5">
+              <div className="text-sm">
+                <span className="font-medium">
+                  {Object.keys(duplicateSelections).filter(k => duplicateSelections[k] && Object.keys(duplicateSelections[k]).length > 0).length} grupo(s)
+                </span>
+                {' '}com seleções pendentes ({Object.values(duplicateSelections).reduce((sum, g) => sum + Object.keys(g || {}).length, 0)} registros)
+              </div>
+              <Button
+                size="sm"
+                onClick={handleConfirmAllAtencaoGroups}
+                disabled={isProcessing}
+                className="gap-1.5"
+              >
+                {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                Confirmar Todos os Grupos
+              </Button>
+            </div>
+          )}
+
+          <div className="border rounded-lg">
+            <Accordion type="multiple" className="w-full">
+              {Array.from(atencaoGroups.entries()).map(([groupKey, group]) => {
+                const first = group[0];
+                const lalValue = first.matched_valor_lq ?? first.receita_lal;
+                const groupSel = duplicateSelections[groupKey];
+                const hasSelections = groupSel && Object.keys(groupSel).length > 0;
+                return (
+                  <AccordionItem key={groupKey} value={groupKey} className="border-b last:border-b-0">
+                    <AccordionTrigger className="px-4 py-3 hover:no-underline hover:bg-accent/30">
+                      <div className="flex items-center gap-4 text-left w-full mr-4">
+                        <Badge className="bg-warning/20 text-warning text-xs shrink-0">
+                          {group.length} vendas
+                        </Badge>
+                        {hasSelections && (
+                          <Badge className="bg-primary/20 text-primary text-xs shrink-0">
+                            ✓ Marcado
+                          </Badge>
+                        )}
+                        <span className="text-sm font-medium truncate max-w-[200px]">{first.cliente_nome || '-'}</span>
+                        <span className="text-xs font-mono text-muted-foreground">{first.cpf_cnpj || '-'}</span>
+                        <span className="text-xs text-muted-foreground ml-auto">LAL: {formatBRL(lalValue)}</span>
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="px-4 pb-4">
+                      <div className="space-y-2">
+                        {group.map(v => {
+                          const selectedStatus = duplicateSelections[groupKey]?.[v.id] || null;
+                          return (
+                            <div
+                              key={v.id}
+                              className={`p-3 rounded-md border transition-colors ${
+                                selectedStatus === 'OK'
+                                  ? 'border-success bg-success/5'
+                                  : selectedStatus === 'DESCONTADA'
+                                  ? 'border-destructive bg-destructive/5'
+                                  : 'border-border'
+                              }`}
+                            >
+                              <div className="space-y-2">
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs">
+                                  <div>
+                                    <span className="text-muted-foreground">Vendedor:</span>{' '}
+                                    <span className="font-medium">{v.vendedor_nome || '-'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">ID Make:</span>{' '}
+                                    <span className="font-mono font-medium">{v.identificador_make || '-'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Data Venda:</span>{' '}
+                                    <span className="font-medium">{v.data_venda || '-'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Status Make:</span>{' '}
+                                    <span className="font-medium">{v.status_make || '-'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Plano:</span>{' '}
+                                    <span className="font-medium">{v.plano || '-'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Valor:</span>{' '}
+                                    <span className="font-medium">{formatBRL(v.valor_venda)}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Telefone:</span>{' '}
+                                    <span className="font-medium">{v.telefone || '-'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Operadora:</span>{' '}
+                                    <span className="font-medium">{v.operadora_nome || '-'}</span>
+                                  </div>
+                                  <div className="col-span-2">
+                                    <span className="text-muted-foreground">Endereço:</span>{' '}
+                                    <span className="font-medium">{[v.endereco, v.cep].filter(Boolean).join(' - ') || '-'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Protocolo:</span>{' '}
+                                    <span className="font-mono font-medium">{v.protocolo_interno || '-'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Pag atual:</span>{' '}
+                                    {statusPagBadge(v.status_pag)}
+                                  </div>
                                 </div>
-                                <div>
-                                  <span className="text-muted-foreground">ID Make:</span>{' '}
-                                  <span className="font-mono font-medium">{v.identificador_make || '-'}</span>
+                                <div className="flex items-center gap-1.5 pt-1">
+                                  <Button
+                                    size="sm"
+                                    variant={selectedStatus === 'OK' ? 'default' : 'outline'}
+                                    className={`h-7 text-xs gap-1 ${selectedStatus === 'OK' ? 'bg-success hover:bg-success/90 text-success-foreground' : ''}`}
+                                    onClick={() => setDuplicateSelections(prev => ({
+                                      ...prev,
+                                      [groupKey]: { ...(prev[groupKey] || {}), [v.id]: 'OK' }
+                                    }))}
+                                  >
+                                    <CheckCircle2 className="h-3 w-3" /> OK
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant={selectedStatus === 'DESCONTADA' ? 'destructive' : 'outline'}
+                                    className="h-7 text-xs gap-1"
+                                    onClick={() => setDuplicateSelections(prev => ({
+                                      ...prev,
+                                      [groupKey]: { ...(prev[groupKey] || {}), [v.id]: 'DESCONTADA' }
+                                    }))}
+                                  >
+                                    <XCircle className="h-3 w-3" /> DESC
+                                  </Button>
+                                  <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="h-7 text-xs gap-1 text-destructive hover:bg-destructive/10 ml-auto"
+                                        disabled={isProcessing}
+                                      >
+                                        <Trash2 className="h-3 w-3" /> Excluir
+                                      </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                      <AlertDialogHeader>
+                                        <AlertDialogTitle>Excluir venda da competência?</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                          A venda de <strong>{v.cliente_nome}</strong> (Vendedor: {v.vendedor_nome}) será removida deste comissionamento.
+                                          O registro original continuará no sistema.
+                                        </AlertDialogDescription>
+                                      </AlertDialogHeader>
+                                      <AlertDialogFooter>
+                                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                        <AlertDialogAction
+                                          onClick={() => handleRemoveVendaFromCommission(v.id, groupKey)}
+                                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                        >
+                                          Confirmar Exclusão
+                                        </AlertDialogAction>
+                                      </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                  </AlertDialog>
                                 </div>
-                                <div>
-                                  <span className="text-muted-foreground">Data Venda:</span>{' '}
-                                  <span className="font-medium">{v.data_venda || '-'}</span>
-                                </div>
-                                <div>
-                                  <span className="text-muted-foreground">Status Make:</span>{' '}
-                                  <span className="font-medium">{v.status_make || '-'}</span>
-                                </div>
-                                <div>
-                                  <span className="text-muted-foreground">Plano:</span>{' '}
-                                  <span className="font-medium">{v.plano || '-'}</span>
-                                </div>
-                                <div>
-                                  <span className="text-muted-foreground">Valor:</span>{' '}
-                                  <span className="font-medium">{formatBRL(v.valor_venda)}</span>
-                                </div>
-                                <div>
-                                  <span className="text-muted-foreground">Telefone:</span>{' '}
-                                  <span className="font-medium">{v.telefone || '-'}</span>
-                                </div>
-                                <div>
-                                  <span className="text-muted-foreground">Operadora:</span>{' '}
-                                  <span className="font-medium">{v.operadora_nome || '-'}</span>
-                                </div>
-                                <div className="col-span-2">
-                                  <span className="text-muted-foreground">Endereço:</span>{' '}
-                                  <span className="font-medium">{[v.endereco, v.cep].filter(Boolean).join(' - ') || '-'}</span>
-                                </div>
-                                <div>
-                                  <span className="text-muted-foreground">Protocolo:</span>{' '}
-                                  <span className="font-mono font-medium">{v.protocolo_interno || '-'}</span>
-                                </div>
-                                <div>
-                                  <span className="text-muted-foreground">Pag atual:</span>{' '}
-                                  {statusPagBadge(v.status_pag)}
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-1.5 pt-1">
-                                <Button
-                                  size="sm"
-                                  variant={selectedStatus === 'OK' ? 'default' : 'outline'}
-                                  className={`h-7 text-xs gap-1 ${selectedStatus === 'OK' ? 'bg-success hover:bg-success/90 text-success-foreground' : ''}`}
-                                  onClick={() => setDuplicateSelections(prev => ({
-                                    ...prev,
-                                    [groupKey]: { ...(prev[groupKey] || {}), [v.id]: 'OK' }
-                                  }))}
-                                >
-                                  <CheckCircle2 className="h-3 w-3" /> OK
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant={selectedStatus === 'DESCONTADA' ? 'destructive' : 'outline'}
-                                  className="h-7 text-xs gap-1"
-                                  onClick={() => setDuplicateSelections(prev => ({
-                                    ...prev,
-                                    [groupKey]: { ...(prev[groupKey] || {}), [v.id]: 'DESCONTADA' }
-                                  }))}
-                                >
-                                  <XCircle className="h-3 w-3" /> DESC
-                                </Button>
                               </div>
                             </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {duplicateSelections[groupKey] && Object.keys(duplicateSelections[groupKey]).length > 0 && (
-                      <div className="mt-3 flex items-center justify-end gap-2">
-                        <span className="text-xs text-muted-foreground mr-2">
-                          {Object.values(duplicateSelections[groupKey]).filter(s => s === 'OK').length} OK, {Object.values(duplicateSelections[groupKey]).filter(s => s === 'DESCONTADA').length} Descontadas
-                        </span>
-                        <Button
-                          size="sm"
-                          onClick={() => handleConfirmAtencaoGroup(groupKey)}
-                          disabled={isProcessing}
-                          className="gap-1.5"
-                        >
-                          {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                          Confirmar Grupo
-                        </Button>
+                          );
+                        })}
                       </div>
-                    )}
-                  </AccordionContent>
-                </AccordionItem>
-              );
-            })}
-          </Accordion>
+                      {hasSelections && (
+                        <div className="mt-3 flex items-center justify-end gap-2">
+                          <span className="text-xs text-muted-foreground mr-2">
+                            {Object.values(duplicateSelections[groupKey]).filter(s => s === 'OK').length} OK, {Object.values(duplicateSelections[groupKey]).filter(s => s === 'DESCONTADA').length} Descontadas
+                          </span>
+                          <Button
+                            size="sm"
+                            onClick={() => handleConfirmAtencaoGroup(groupKey)}
+                            disabled={isProcessing}
+                            className="gap-1.5"
+                          >
+                            {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                            Confirmar Grupo
+                          </Button>
+                        </div>
+                      )}
+                    </AccordionContent>
+                  </AccordionItem>
+                );
+              })}
+            </Accordion>
+          </div>
         </div>
       ) : (
         /* Standard Table View */
