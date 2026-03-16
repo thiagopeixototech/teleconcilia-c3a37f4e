@@ -67,6 +67,23 @@ interface OperadoraRow {
   receita_liquida: number;
 }
 
+interface OperadoraInfo {
+  id: string;
+  nome: string;
+  cor_hex: string;
+}
+
+interface GridCell {
+  vendas: number;
+  receita: number;
+  churn: number;
+  estorno: number;
+  liquido: number;
+}
+
+const formatCompact = (v: number) =>
+  v === 0 ? '-' : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(v);
+
 const formatBRL = (value: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
