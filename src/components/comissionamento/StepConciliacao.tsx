@@ -451,7 +451,6 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       if (error) throw error;
 
       toast.success('Venda removida da competência');
-      // Clean from selections
       setDuplicateSelections(prev => {
         const next = { ...prev };
         if (next[groupKey]) {
@@ -460,11 +459,63 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         }
         return next;
       });
+      setSelectedAtencaoIds(prev => {
+        const next = new Set(prev);
+        next.delete(vendaId);
+        return next;
+      });
       loadData();
     } catch (err: any) {
       toast.error('Erro: ' + err.message);
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const toggleAtencaoSelect = (id: string) => {
+    setSelectedAtencaoIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const bulkRemoveAtencaoSelected = async () => {
+    if (selectedAtencaoIds.size === 0) { toast.error('Selecione vendas primeiro'); return; }
+    setIsProcessing(true);
+    try {
+      const ids = Array.from(selectedAtencaoIds);
+      for (let i = 0; i < ids.length; i += 50) {
+        const batch = ids.slice(i, i + 50);
+        const { error } = await supabase
+          .from('comissionamento_vendas')
+          .delete()
+          .in('id', batch);
+        if (error) throw error;
+        setProgress({ current: Math.min(i + 50, ids.length), total: ids.length });
+      }
+      toast.success(`${ids.length} vendas removidas da competência`);
+      setSelectedAtencaoIds(new Set());
+      // Clean from duplicate selections
+      setDuplicateSelections(prev => {
+        const next = { ...prev };
+        for (const id of ids) {
+          for (const key of Object.keys(next)) {
+            if (next[key]?.[id]) {
+              delete next[key][id];
+              if (Object.keys(next[key]).length === 0) delete next[key];
+            }
+          }
+        }
+        return next;
+      });
+      loadData();
+    } catch (err: any) {
+      toast.error('Erro: ' + err.message);
+    } finally {
+      setIsProcessing(false);
+      setProgress(null);
     }
   };
 
