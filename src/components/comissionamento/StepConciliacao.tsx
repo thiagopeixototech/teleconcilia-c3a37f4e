@@ -149,6 +149,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           cep: vi?.cep,
           telefone: vi?.telefone,
           operadora_nome: vi?.operadoras?.nome,
+          operadora_id: vi?.operadora_id || null,
           matched_linha_id: row.linha_operadora_id || null,
           matched_valor_lq: row.receita_lal || null,
           matched_apelido: row.lal_apelido || null,
