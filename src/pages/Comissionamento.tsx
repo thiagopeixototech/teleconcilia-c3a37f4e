@@ -57,6 +57,16 @@ interface VendedorRow {
   receita_liquida: number;
 }
 
+interface OperadoraRow {
+  operadora_nome: string;
+  total_vendas: number;
+  receita_interna: number;
+  receita_lal: number;
+  estorno: number;
+  churn: number;
+  receita_liquida: number;
+}
+
 const formatBRL = (value: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
