@@ -77,6 +77,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectAll, setSelectAll] = useState(false);
   const [duplicateSelections, setDuplicateSelections] = useState<Record<string, Record<string, 'OK' | 'DESCONTADA'>>>({});
+  const [selectedAtencaoIds, setSelectedAtencaoIds] = useState<Set<string>>(new Set());
 
   // Collect unique status_make values for dynamic filter
   const uniqueStatusMake = useMemo(() => {
@@ -450,7 +451,6 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       if (error) throw error;
 
       toast.success('Venda removida da competência');
-      // Clean from selections
       setDuplicateSelections(prev => {
         const next = { ...prev };
         if (next[groupKey]) {
@@ -459,11 +459,63 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         }
         return next;
       });
+      setSelectedAtencaoIds(prev => {
+        const next = new Set(prev);
+        next.delete(vendaId);
+        return next;
+      });
       loadData();
     } catch (err: any) {
       toast.error('Erro: ' + err.message);
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const toggleAtencaoSelect = (id: string) => {
+    setSelectedAtencaoIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const bulkRemoveAtencaoSelected = async () => {
+    if (selectedAtencaoIds.size === 0) { toast.error('Selecione vendas primeiro'); return; }
+    setIsProcessing(true);
+    try {
+      const ids = Array.from(selectedAtencaoIds);
+      for (let i = 0; i < ids.length; i += 50) {
+        const batch = ids.slice(i, i + 50);
+        const { error } = await supabase
+          .from('comissionamento_vendas')
+          .delete()
+          .in('id', batch);
+        if (error) throw error;
+        setProgress({ current: Math.min(i + 50, ids.length), total: ids.length });
+      }
+      toast.success(`${ids.length} vendas removidas da competência`);
+      setSelectedAtencaoIds(new Set());
+      // Clean from duplicate selections
+      setDuplicateSelections(prev => {
+        const next = { ...prev };
+        for (const id of ids) {
+          for (const key of Object.keys(next)) {
+            if (next[key]?.[id]) {
+              delete next[key][id];
+              if (Object.keys(next[key]).length === 0) delete next[key];
+            }
+          }
+        }
+        return next;
+      });
+      loadData();
+    } catch (err: any) {
+      toast.error('Erro: ' + err.message);
+    } finally {
+      setIsProcessing(false);
+      setProgress(null);
     }
   };
 
@@ -743,26 +795,55 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       {/* Atenção Accordion View */}
       {matchFilter === 'atencao' && atencaoGroups.size > 0 ? (
         <div className="space-y-3">
-          {/* Bulk confirm all groups button */}
-          {Object.keys(duplicateSelections).length > 0 && (
-            <div className="flex items-center justify-between p-3 rounded-lg border border-primary/30 bg-primary/5">
-              <div className="text-sm">
-                <span className="font-medium">
-                  {Object.keys(duplicateSelections).filter(k => duplicateSelections[k] && Object.keys(duplicateSelections[k]).length > 0).length} grupo(s)
+          {/* Bulk actions bar for attention view */}
+          <div className="flex flex-wrap items-center gap-2 p-3 rounded-lg border bg-muted/30">
+            {selectedAtencaoIds.size > 0 ? (
+              <>
+                <span className="text-sm font-medium">{selectedAtencaoIds.size} selecionada(s)</span>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button size="sm" variant="outline" disabled={isProcessing} className="gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10">
+                      <Trash2 className="h-4 w-4" />
+                      Excluir Selecionadas
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Excluir {selectedAtencaoIds.size} vendas da competência?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        As vendas selecionadas serão removidas deste comissionamento. Os registros originais continuarão no sistema.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                      <AlertDialogAction onClick={bulkRemoveAtencaoSelected} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                        Confirmar Exclusão
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+                <Button size="sm" variant="ghost" onClick={() => setSelectedAtencaoIds(new Set())}>Limpar seleção</Button>
+              </>
+            ) : (
+              <span className="text-xs text-muted-foreground">Marque as vendas que deseja excluir e use o botão acima.</span>
+            )}
+            {Object.keys(duplicateSelections).length > 0 && (
+              <div className="ml-auto flex items-center gap-2">
+                <span className="text-sm">
+                  {Object.keys(duplicateSelections).filter(k => duplicateSelections[k] && Object.keys(duplicateSelections[k]).length > 0).length} grupo(s) com seleções
                 </span>
-                {' '}com seleções pendentes ({Object.values(duplicateSelections).reduce((sum, g) => sum + Object.keys(g || {}).length, 0)} registros)
+                <Button
+                  size="sm"
+                  onClick={handleConfirmAllAtencaoGroups}
+                  disabled={isProcessing}
+                  className="gap-1.5"
+                >
+                  {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                  Confirmar Todos os Grupos
+                </Button>
               </div>
-              <Button
-                size="sm"
-                onClick={handleConfirmAllAtencaoGroups}
-                disabled={isProcessing}
-                className="gap-1.5"
-              >
-                {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                Confirmar Todos os Grupos
-              </Button>
-            </div>
-          )}
+            )}
+          </div>
 
           <div className="border rounded-lg">
             <Accordion type="multiple" className="w-full">
@@ -804,7 +885,13 @@ export function StepConciliacao({ comissionamentoId }: Props) {
                               }`}
                             >
                               <div className="space-y-2">
-                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs">
+                                <div className="flex items-start gap-2">
+                                  <Checkbox
+                                    checked={selectedAtencaoIds.has(v.id)}
+                                    onCheckedChange={() => toggleAtencaoSelect(v.id)}
+                                    className="mt-0.5"
+                                  />
+                                  <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs">
                                   <div>
                                     <span className="text-muted-foreground">Vendedor:</span>{' '}
                                     <span className="font-medium">{v.vendedor_nome || '-'}</span>
@@ -849,6 +936,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
                                     <span className="text-muted-foreground">Pag atual:</span>{' '}
                                     {statusPagBadge(v.status_pag)}
                                   </div>
+                                </div>
                                 </div>
                                 <div className="flex items-center gap-1.5 pt-1">
                                   <Button
