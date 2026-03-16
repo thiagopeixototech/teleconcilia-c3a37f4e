@@ -102,7 +102,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
             id, venda_interna_id, status_pag, receita_interna, receita_lal, lal_apelido, linha_operadora_id,
             vendas_internas!comissionamento_vendas_venda_interna_id_fkey(
               cliente_nome, cpf_cnpj, protocolo_interno, identificador_make, status_make, valor, data_venda,
-              plano, endereco, cep, telefone,
+              plano, endereco, cep, telefone, operadora_id,
               usuarios!vendas_internas_usuario_id_fkey(nome),
               operadoras!vendas_internas_operadora_id_fkey(nome)
             )
