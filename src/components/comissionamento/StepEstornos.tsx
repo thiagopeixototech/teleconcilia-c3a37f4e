@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { normalizeCpfCnpj, normalizeCpfCnpjForMatch } from '@/lib/normalizeCpfCnpj';
+import { parseCurrency } from '@/lib/parseCurrency';
+import { parseCSV } from '@/lib/parseCSV';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -65,20 +67,6 @@ export function StepEstornos({ comissionamentoId, comissionamentoNome }: Props) 
     });
   }, []);
 
-  const parseCSV = (content: string) => {
-    const lines = content.split('\n').filter(l => l.trim());
-    if (lines.length < 2) return { headers: [] as string[], rows: [] as Record<string, string>[] };
-    const sep = lines[0].includes(';') ? ';' : ',';
-    const headers = lines[0].split(sep).map(h => h.trim().replace(/^"|"$/g, ''));
-    const rows = lines.slice(1).map(line => {
-      const vals = line.split(sep).map(v => v.trim().replace(/^"|"$/g, ''));
-      const row: Record<string, string> = {};
-      headers.forEach((h, i) => { row[h] = vals[i] || ''; });
-      return row;
-    });
-    return { headers, rows };
-  };
-
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -113,7 +101,7 @@ export function StepEstornos({ comissionamentoId, comissionamentoNome }: Props) 
       const { data: comVendas } = await supabase
         .from('comissionamento_vendas')
         .select(`
-          id, venda_interna_id,
+          id, venda_interna_id, receita_descontada,
           vendas_internas!comissionamento_vendas_venda_interna_id_fkey(
             identificador_make, protocolo_interno, cpf_cnpj, telefone
           )
@@ -135,13 +123,17 @@ export function StepEstornos({ comissionamentoId, comissionamentoNome }: Props) 
         }
       }
 
-      const updates: { comVendaId: string; receita_descontada: number }[] = [];
+      // FIX: Accumulate estornos per comVenda instead of overwriting
+      const accumulated = new Map<string, number>();
+      // Pre-load existing receita_descontada
+      for (const cv of (comVendas || [])) {
+        accumulated.set(cv.id, Number(cv.receita_descontada || 0));
+      }
 
       for (let i = 0; i < csvRows.length; i++) {
         const row = csvRows[i];
-        const valorStr = row[mapping.valor_estornado]?.replace(',', '.').replace(/[^\d.-]/g, '');
-        const valor = valorStr ? parseFloat(valorStr) : NaN;
-        if (isNaN(valor) || valor <= 0) {
+        const valor = parseCurrency(row[mapping.valor_estornado]);
+        if (valor === null || valor <= 0) {
           importResult.errors.push({ line: i + 2, reason: `Valor inválido: "${row[mapping.valor_estornado]}"` });
           continue;
         }
@@ -157,14 +149,23 @@ export function StepEstornos({ comissionamentoId, comissionamentoNome }: Props) 
         else if (cpf && tel && byCpfTel.has(`${cpf}_${tel}`)) comVendaId = byCpfTel.get(`${cpf}_${tel}`)!;
 
         if (comVendaId) {
-          updates.push({ comVendaId, receita_descontada: valor });
+          // Accumulate value
+          accumulated.set(comVendaId, (accumulated.get(comVendaId) || 0) + valor);
           importResult.matched++;
         } else {
           importResult.noMatch++;
         }
       }
 
-      // Apply updates
+      // Apply accumulated updates
+      const updates = Array.from(accumulated.entries())
+        .filter(([id]) => {
+          // Only update if value changed from original
+          const original = (comVendas || []).find(cv => cv.id === id);
+          return accumulated.get(id)! !== Number(original?.receita_descontada || 0);
+        })
+        .map(([id, total]) => ({ comVendaId: id, receita_descontada: total }));
+
       for (let i = 0; i < updates.length; i += 50) {
         const batch = updates.slice(i, i + 50);
         await Promise.all(

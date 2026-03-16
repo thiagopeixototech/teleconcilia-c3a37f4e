@@ -41,6 +41,7 @@ export interface Operadora {
   id: string;
   nome: string;
   ativa: boolean;
+  cor_hex: string;
   created_at: string;
   updated_at: string;
 }

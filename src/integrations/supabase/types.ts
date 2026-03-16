@@ -633,6 +633,7 @@ export type Database = {
       operadoras: {
         Row: {
           ativa: boolean
+          cor_hex: string
           created_at: string
           id: string
           nome: string
@@ -640,6 +641,7 @@ export type Database = {
         }
         Insert: {
           ativa?: boolean
+          cor_hex?: string
           created_at?: string
           id?: string
           nome: string
@@ -647,6 +649,7 @@ export type Database = {
         }
         Update: {
           ativa?: boolean
+          cor_hex?: string
           created_at?: string
           id?: string
           nome?: string

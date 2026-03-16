@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { normalizeCpfCnpj, normalizeCpfCnpjForMatch } from '@/lib/normalizeCpfCnpj';
+import { parseCurrency } from '@/lib/parseCurrency';
 import { parseDate } from '@/lib/parseDate';
 import { parseCSV as parseCSVLib } from '@/lib/parseCSV';
 import { supabase } from '@/integrations/supabase/client';
@@ -549,8 +550,7 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
             errorRows.push({ rowIndex: rowIndexMap.get(idMake) || 0, row, reason: 'operadora', idMake });
           } else {
             const cpf = map.cpf_cnpj ? normalizeCpfCnpj(row[map.cpf_cnpj] || '') : null;
-            const valorStr = map.valor ? row[map.valor]?.replace(',', '.').replace(/[^\d.-]/g, '') : null;
-            const valor = valorStr ? parseFloat(valorStr) : null;
+            const valor = parseCurrency(map.valor ? row[map.valor] : null);
             const dataInstalacao = map.data_instalacao ? parseDate(row[map.data_instalacao]?.trim() || '') : null;
 
             vendaRows.push({
@@ -749,8 +749,7 @@ export function StepVendasInternas({ comissionamentoId }: Props) {
         if (!operadoraId) { stillErrorRows.push(er); continue; }
 
         const cpf = map.cpf_cnpj ? normalizeCpfCnpj(row[map.cpf_cnpj] || '') : null;
-        const valorStr = map.valor ? row[map.valor]?.replace(',', '.').replace(/[^\d.-]/g, '') : null;
-        const valor = valorStr ? parseFloat(valorStr) : null;
+        const valor = parseCurrency(map.valor ? row[map.valor] : null);
         const dataInstalacao = map.data_instalacao ? parseDate(row[map.data_instalacao]?.trim() || '') : null;
 
         vendaRows.push({
