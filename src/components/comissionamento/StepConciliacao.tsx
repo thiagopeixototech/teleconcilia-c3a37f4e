@@ -795,26 +795,55 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       {/* Atenção Accordion View */}
       {matchFilter === 'atencao' && atencaoGroups.size > 0 ? (
         <div className="space-y-3">
-          {/* Bulk confirm all groups button */}
-          {Object.keys(duplicateSelections).length > 0 && (
-            <div className="flex items-center justify-between p-3 rounded-lg border border-primary/30 bg-primary/5">
-              <div className="text-sm">
-                <span className="font-medium">
-                  {Object.keys(duplicateSelections).filter(k => duplicateSelections[k] && Object.keys(duplicateSelections[k]).length > 0).length} grupo(s)
+          {/* Bulk actions bar for attention view */}
+          <div className="flex flex-wrap items-center gap-2 p-3 rounded-lg border bg-muted/30">
+            {selectedAtencaoIds.size > 0 ? (
+              <>
+                <span className="text-sm font-medium">{selectedAtencaoIds.size} selecionada(s)</span>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button size="sm" variant="outline" disabled={isProcessing} className="gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10">
+                      <Trash2 className="h-4 w-4" />
+                      Excluir Selecionadas
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Excluir {selectedAtencaoIds.size} vendas da competência?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        As vendas selecionadas serão removidas deste comissionamento. Os registros originais continuarão no sistema.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                      <AlertDialogAction onClick={bulkRemoveAtencaoSelected} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                        Confirmar Exclusão
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+                <Button size="sm" variant="ghost" onClick={() => setSelectedAtencaoIds(new Set())}>Limpar seleção</Button>
+              </>
+            ) : (
+              <span className="text-xs text-muted-foreground">Marque as vendas que deseja excluir e use o botão acima.</span>
+            )}
+            {Object.keys(duplicateSelections).length > 0 && (
+              <div className="ml-auto flex items-center gap-2">
+                <span className="text-sm">
+                  {Object.keys(duplicateSelections).filter(k => duplicateSelections[k] && Object.keys(duplicateSelections[k]).length > 0).length} grupo(s) com seleções
                 </span>
-                {' '}com seleções pendentes ({Object.values(duplicateSelections).reduce((sum, g) => sum + Object.keys(g || {}).length, 0)} registros)
+                <Button
+                  size="sm"
+                  onClick={handleConfirmAllAtencaoGroups}
+                  disabled={isProcessing}
+                  className="gap-1.5"
+                >
+                  {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                  Confirmar Todos os Grupos
+                </Button>
               </div>
-              <Button
-                size="sm"
-                onClick={handleConfirmAllAtencaoGroups}
-                disabled={isProcessing}
-                className="gap-1.5"
-              >
-                {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                Confirmar Todos os Grupos
-              </Button>
-            </div>
-          )}
+            )}
+          </div>
 
           <div className="border rounded-lg">
             <Accordion type="multiple" className="w-full">
