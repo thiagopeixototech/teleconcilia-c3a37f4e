@@ -828,6 +828,47 @@ export default function ComissionamentoPage() {
                   </CardContent>
                 </Card>
               )}
+
+              {/* Operadora Breakdown Table */}
+              {operadoraRows.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm">Detalhamento por Operadora</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="overflow-x-auto border rounded-lg">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="text-xs">Operadora</TableHead>
+                            <TableHead className="text-xs text-right">Vendas</TableHead>
+                            <TableHead className="text-xs text-right">Receita Interna</TableHead>
+                            <TableHead className="text-xs text-right">Receita LAL</TableHead>
+                            <TableHead className="text-xs text-right">Estorno</TableHead>
+                            <TableHead className="text-xs text-right">Churn</TableHead>
+                            <TableHead className="text-xs text-right">Receita Líquida</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {operadoraRows.map((or, i) => (
+                            <TableRow key={i}>
+                              <TableCell className="text-sm font-medium">{or.operadora_nome}</TableCell>
+                              <TableCell className="text-sm text-right">{or.total_vendas}</TableCell>
+                              <TableCell className="text-sm text-right">{formatBRL(or.receita_interna)}</TableCell>
+                              <TableCell className="text-sm text-right">{formatBRL(or.receita_lal)}</TableCell>
+                              <TableCell className="text-sm text-right text-destructive">{formatBRL(or.estorno)}</TableCell>
+                              <TableCell className="text-sm text-right text-destructive">{formatBRL(or.churn)}</TableCell>
+                              <TableCell className={cn("text-sm text-right font-bold", or.receita_liquida >= 0 ? 'text-success' : 'text-destructive')}>
+                                {formatBRL(or.receita_liquida)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </>
           ) : (
             <div className="text-center text-muted-foreground py-8">
