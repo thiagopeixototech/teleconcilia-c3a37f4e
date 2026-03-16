@@ -224,18 +224,32 @@ export function StepConciliacao({ comissionamentoId }: Props) {
 
       const candidates: MatchCandidate[] = [];
 
+      // Build a map from LAL apelido → operadora_id for filtering
+      const lalOperadoraMap = new Map<string, string>();
+      lalData.forEach((l: any) => lalOperadoraMap.set(l.apelido, l.operadora_id));
+
       vendasData.forEach((venda, index) => {
         if (venda.linha_operadora_id) return; // already linked in DB
 
         for (const lal of lalData) {
           const tipoMatch = lal.tipo_match;
+          const lalOperadoraId = lal.operadora_id;
+
+          // Only match vendas that belong to the same operadora as the LAL batch
+          if (venda.operadora_id && lalOperadoraId && venda.operadora_id !== lalOperadoraId) {
+            continue;
+          }
 
           if (tipoMatch === 'protocolo' && venda.protocolo_interno) {
             const key = venda.protocolo_interno.trim();
             const linhas = linhasByProtocolo.get(key);
             if (linhas && linhas.length > 0) {
-              candidates.push({ vendaIndex: index, matchKey: `proto:${key}`, matchType: 'protocolo', linhas, apelido: lal.apelido });
-              return; // first match wins per venda
+              // Filter linhas to same operadora's LAL batches
+              const linhasFiltradas = linhas.filter((l: any) => lalOperadoraMap.get(l.apelido) === lalOperadoraId);
+              if (linhasFiltradas.length > 0) {
+                candidates.push({ vendaIndex: index, matchKey: `proto:${key}`, matchType: 'protocolo', linhas: linhasFiltradas, apelido: lal.apelido });
+                return;
+              }
             }
           }
 
@@ -243,8 +257,11 @@ export function StepConciliacao({ comissionamentoId }: Props) {
             const key = normDoc(venda.cpf_cnpj);
             const linhas = linhasByCpf.get(key);
             if (linhas && linhas.length > 0) {
-              candidates.push({ vendaIndex: index, matchKey: `cpf:${key}`, matchType: 'cpf', linhas, apelido: lal.apelido });
-              return;
+              const linhasFiltradas = linhas.filter((l: any) => lalOperadoraMap.get(l.apelido) === lalOperadoraId);
+              if (linhasFiltradas.length > 0) {
+                candidates.push({ vendaIndex: index, matchKey: `cpf:${key}`, matchType: 'cpf', linhas: linhasFiltradas, apelido: lal.apelido });
+                return;
+              }
             }
           }
         }
