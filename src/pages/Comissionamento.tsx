@@ -904,42 +904,199 @@ export default function ComissionamentoPage() {
                 </Card>
               )}
 
-              {/* Operadora Breakdown Table */}
-              {operadoraRows.length > 0 && (
+              {/* Grade Vendedor × Operadora */}
+              {operadoraInfos.length > 0 && vendedoresList.length > 0 && (
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-sm">Detalhamento por Operadora</CardTitle>
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Grid3X3 className="h-4 w-4" />
+                      Grade por Operadora
+                    </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="overflow-x-auto border rounded-lg">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="text-xs">Operadora</TableHead>
-                            <TableHead className="text-xs text-right">Vendas</TableHead>
-                            <TableHead className="text-xs text-right">Receita Interna</TableHead>
-                            <TableHead className="text-xs text-right">Receita LAL</TableHead>
-                            <TableHead className="text-xs text-right">Estorno</TableHead>
-                            <TableHead className="text-xs text-right">Churn</TableHead>
-                            <TableHead className="text-xs text-right">Receita Líquida</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {operadoraRows.map((or, i) => (
-                            <TableRow key={i}>
-                              <TableCell className="text-sm font-medium">{or.operadora_nome}</TableCell>
-                              <TableCell className="text-sm text-right">{or.total_vendas}</TableCell>
-                              <TableCell className="text-sm text-right">{formatBRL(or.receita_interna)}</TableCell>
-                              <TableCell className="text-sm text-right">{formatBRL(or.receita_lal)}</TableCell>
-                              <TableCell className="text-sm text-right text-destructive">{formatBRL(or.estorno)}</TableCell>
-                              <TableCell className="text-sm text-right text-destructive">{formatBRL(or.churn)}</TableCell>
-                              <TableCell className={cn("text-sm text-right font-bold", or.receita_liquida >= 0 ? 'text-success' : 'text-destructive')}>
-                                {formatBRL(or.receita_liquida)}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
+                      <table className="w-full border-collapse text-xs">
+                        <thead>
+                          <tr>
+                            <th className="border border-border p-2 text-left bg-muted font-medium sticky left-0 z-10 min-w-[140px]">
+                              Vendedor
+                            </th>
+                            {operadoraInfos.map(op => (
+                              <th
+                                key={op.id}
+                                className="border border-border p-2 text-center font-medium min-w-[160px]"
+                                style={{
+                                  backgroundColor: `${op.cor_hex}18`,
+                                  borderBottomColor: op.cor_hex,
+                                  borderBottomWidth: '3px',
+                                }}
+                              >
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <div className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: op.cor_hex }} />
+                                  {op.nome}
+                                </div>
+                              </th>
+                            ))}
+                            <th className="border border-border p-2 text-center bg-muted font-bold min-w-[160px]">
+                              Total
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {vendedoresList.map(vend => {
+                            const vendedorGrid = gridData.get(vend.id);
+                            const vendedorTotal: GridCell = { vendas: 0, receita: 0, churn: 0, estorno: 0, liquido: 0 };
+                            if (vendedorGrid) {
+                              for (const cell of vendedorGrid.values()) {
+                                vendedorTotal.vendas += cell.vendas;
+                                vendedorTotal.receita += cell.receita;
+                                vendedorTotal.churn += cell.churn;
+                                vendedorTotal.estorno += cell.estorno;
+                                vendedorTotal.liquido += cell.liquido;
+                              }
+                            }
+                            return (
+                              <tr key={vend.id}>
+                                <td className="border border-border p-2 font-medium bg-muted sticky left-0 z-10 text-xs">
+                                  <div className="flex items-center gap-1.5">
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-5 w-5 shrink-0"
+                                      onClick={() => handleExportVendedorDetalhado(vend.nome)}
+                                    >
+                                      <FileDown className="h-3 w-3" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-5 w-5 shrink-0"
+                                      onClick={() => handleViewVendedorDetail(vend.nome)}
+                                    >
+                                      <Eye className="h-3 w-3" />
+                                    </Button>
+                                    {vend.nome}
+                                  </div>
+                                </td>
+                                {operadoraInfos.map(op => {
+                                  const cell = vendedorGrid?.get(op.id);
+                                  return (
+                                    <td
+                                      key={op.id}
+                                      className="border border-border p-1.5"
+                                      style={{ backgroundColor: cell && cell.vendas > 0 ? `${op.cor_hex}08` : undefined }}
+                                    >
+                                      {!cell || cell.vendas === 0 ? (
+                                        <span className="text-muted-foreground text-center block">-</span>
+                                      ) : (
+                                        <div className="space-y-0.5 text-xs">
+                                          <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Vnd:</span>
+                                            <span className="font-medium">{cell.vendas}</span>
+                                          </div>
+                                          <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Rec:</span>
+                                            <span className="font-medium">{formatCompact(cell.receita)}</span>
+                                          </div>
+                                          {cell.churn > 0 && (
+                                            <div className="flex justify-between">
+                                              <span className="text-muted-foreground">Chr:</span>
+                                              <span className="text-destructive">{formatCompact(cell.churn)}</span>
+                                            </div>
+                                          )}
+                                          {cell.estorno > 0 && (
+                                            <div className="flex justify-between">
+                                              <span className="text-muted-foreground">Est:</span>
+                                              <span className="text-destructive">{formatCompact(cell.estorno)}</span>
+                                            </div>
+                                          )}
+                                          <div className="flex justify-between border-t pt-0.5" style={{ borderColor: `${op.cor_hex}40` }}>
+                                            <span className="font-medium">Liq:</span>
+                                            <span className={cn("font-bold", cell.liquido >= 0 ? 'text-success' : 'text-destructive')}>
+                                              {formatCompact(cell.liquido)}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </td>
+                                  );
+                                })}
+                                <td className="border border-border p-1.5 bg-muted/50">
+                                  <div className="space-y-0.5 text-xs">
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">Vnd:</span>
+                                      <span className="font-bold">{vendedorTotal.vendas}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">Rec:</span>
+                                      <span className="font-bold">{formatCompact(vendedorTotal.receita)}</span>
+                                    </div>
+                                    <div className="flex justify-between border-t pt-0.5">
+                                      <span className="font-bold">Liq:</span>
+                                      <span className={cn("font-bold", vendedorTotal.liquido >= 0 ? 'text-success' : 'text-destructive')}>
+                                        {formatCompact(vendedorTotal.liquido)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          {/* Total row */}
+                          <tr className="bg-muted font-bold">
+                            <td className="border border-border p-2 font-bold sticky left-0 z-10 bg-muted text-xs">TOTAL</td>
+                            {operadoraInfos.map(op => {
+                              const t = operadoraTotals.get(op.id);
+                              return (
+                                <td
+                                  key={op.id}
+                                  className="border border-border p-1.5"
+                                  style={{ backgroundColor: `${op.cor_hex}15` }}
+                                >
+                                  {!t || t.vendas === 0 ? (
+                                    <span className="text-muted-foreground text-center block">-</span>
+                                  ) : (
+                                    <div className="space-y-0.5 text-xs">
+                                      <div className="flex justify-between">
+                                        <span>Vnd:</span>
+                                        <span className="font-bold">{t.vendas}</span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span>Rec:</span>
+                                        <span className="font-bold">{formatCompact(t.receita)}</span>
+                                      </div>
+                                      <div className="flex justify-between border-t pt-0.5" style={{ borderColor: `${op.cor_hex}60` }}>
+                                        <span className="font-bold">Liq:</span>
+                                        <span className={cn("font-bold", t.liquido >= 0 ? 'text-success' : 'text-destructive')}>
+                                          {formatCompact(t.liquido)}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  )}
+                                </td>
+                              );
+                            })}
+                            <td className="border border-border p-1.5 bg-muted">
+                              <div className="space-y-0.5 text-xs">
+                                <div className="flex justify-between">
+                                  <span>Vnd:</span>
+                                  <span className="font-bold">{stats.totalVendas}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span>Rec:</span>
+                                  <span className="font-bold">{formatCompact(stats.receitaConciliada)}</span>
+                                </div>
+                                <div className="flex justify-between border-t pt-0.5">
+                                  <span className="font-bold">Liq:</span>
+                                  <span className={cn("font-bold", stats.receitaLiquida >= 0 ? 'text-success' : 'text-destructive')}>
+                                    {formatCompact(stats.receitaLiquida)}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
                     </div>
                   </CardContent>
                 </Card>
