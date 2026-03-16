@@ -885,7 +885,13 @@ export function StepConciliacao({ comissionamentoId }: Props) {
                               }`}
                             >
                               <div className="space-y-2">
-                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs">
+                                <div className="flex items-start gap-2">
+                                  <Checkbox
+                                    checked={selectedAtencaoIds.has(v.id)}
+                                    onCheckedChange={() => toggleAtencaoSelect(v.id)}
+                                    className="mt-0.5"
+                                  />
+                                  <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs">
                                   <div>
                                     <span className="text-muted-foreground">Vendedor:</span>{' '}
                                     <span className="font-medium">{v.vendedor_nome || '-'}</span>
