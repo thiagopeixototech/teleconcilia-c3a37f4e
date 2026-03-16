@@ -255,6 +255,9 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       }
 
       // Phase 3: Apply matches and flag "atenção" (same CPF found in LAL, different identificador_make)
+      // Track which LAL line IDs have been claimed to prevent double-counting
+      const claimedLinhaIds = new Set<string>();
+
       const updated = vendasData.map((venda, index) => {
         if (venda.linha_operadora_id) return venda;
 
@@ -272,8 +275,21 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           isAtencao = idMakes.size > 1;
         }
 
-        const totalValorLq = candidate.linhas.reduce((sum: number, l: any) => sum + Number(l.valor_lq || 0), 0);
-        const primaryLinha = candidate.linhas[0];
+        // Only sum valor_lq from lines NOT yet claimed by another venda
+        const availableLinhas = candidate.linhas.filter((l: any) => !claimedLinhaIds.has(l.id));
+        if (availableLinhas.length === 0 && !isAtencao) {
+          // All lines already claimed — this venda gets no LAL revenue
+          return { ...venda, matched_linha_id: null, matched_valor_lq: null, matched_apelido: null, is_atencao: false, atencao_key: undefined };
+        }
+
+        const linhasToUse = isAtencao ? candidate.linhas : availableLinhas;
+        const totalValorLq = linhasToUse.reduce((sum: number, l: any) => sum + Number(l.valor_lq || 0), 0);
+        const primaryLinha = linhasToUse[0] || candidate.linhas[0];
+
+        // Claim the lines (only for non-attention, since attention requires manual decision)
+        if (!isAtencao) {
+          linhasToUse.forEach((l: any) => claimedLinhaIds.add(l.id));
+        }
 
         return {
           ...venda,

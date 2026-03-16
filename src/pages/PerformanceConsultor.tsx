@@ -207,22 +207,26 @@ export default function PerformanceConsultor() {
         }
       }
 
-      // Enrich with comissionamento
+      // Enrich with comissionamento - only take latest comissionamento per venda
       const comissaoMap: Record<string, { status_pag: string | null; comissionamento_desconto: string | null; receita_descontada: number | null; receita_interna: number | null }> = {};
       if (vendaIds.length > 0) {
         for (let i = 0; i < vendaIds.length; i += 500) {
           const batch = vendaIds.slice(i, i + 500);
           const { data: comData } = await supabase
             .from('comissionamento_vendas')
-            .select('venda_interna_id, status_pag, comissionamento_desconto, receita_descontada, receita_interna')
-            .in('venda_interna_id', batch);
-          comData?.forEach(c => {
-            comissaoMap[c.venda_interna_id] = {
-              status_pag: c.status_pag,
-              comissionamento_desconto: c.comissionamento_desconto,
-              receita_descontada: c.receita_descontada,
-              receita_interna: c.receita_interna,
-            };
+            .select('venda_interna_id, status_pag, comissionamento_desconto, receita_descontada, receita_interna, comissionamento_id, comissionamentos!comissionamento_vendas_comissionamento_id_fkey(competencia)')
+            .in('venda_interna_id', batch)
+            .order('created_at', { ascending: false });
+          // Keep only the latest entry per venda (first encountered due to desc order)
+          comData?.forEach((c: any) => {
+            if (!comissaoMap[c.venda_interna_id]) {
+              comissaoMap[c.venda_interna_id] = {
+                status_pag: c.status_pag,
+                comissionamento_desconto: c.comissionamento_desconto,
+                receita_descontada: c.receita_descontada,
+                receita_interna: c.receita_interna,
+              };
+            }
           });
         }
       }

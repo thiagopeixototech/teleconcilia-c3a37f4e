@@ -165,7 +165,7 @@ export default function Dashboard() {
         percentualConciliacao,
       });
 
-      const estTotal = (estornosResult.data || []).reduce((s, e) => s + Number(e.valor_estornado), 0);
+      const estTotal = filteredEstornos.reduce((s, e) => s + Number(e.valor_estornado), 0);
       setTotalEstornos(estTotal);
 
       setVendasPorStatus([
