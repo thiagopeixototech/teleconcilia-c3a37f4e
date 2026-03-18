@@ -640,6 +640,7 @@ export type Database = {
           created_at: string
           id: string
           nome: string
+          status_aceitos_instalado: string[] | null
           updated_at: string
         }
         Insert: {
@@ -648,6 +649,7 @@ export type Database = {
           created_at?: string
           id?: string
           nome: string
+          status_aceitos_instalado?: string[] | null
           updated_at?: string
         }
         Update: {
@@ -656,6 +658,7 @@ export type Database = {
           created_at?: string
           id?: string
           nome?: string
+          status_aceitos_instalado?: string[] | null
           updated_at?: string
         }
         Relationships: []
