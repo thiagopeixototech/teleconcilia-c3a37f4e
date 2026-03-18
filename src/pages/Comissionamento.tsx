@@ -114,6 +114,8 @@ export default function ComissionamentoPage() {
   const [statsLoading, setStatsLoading] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardMode, setWizardMode] = useState<'criar' | 'atualizar'>('criar');
+  const [opStatuses, setOpStatuses] = useState<Map<string, { status: string; observacao: string | null }>>(new Map());
+  const [savingOpStatus, setSavingOpStatus] = useState<string | null>(null);
 
   // Vendor detail dialog
   const [vendorDetailOpen, setVendorDetailOpen] = useState(false);
