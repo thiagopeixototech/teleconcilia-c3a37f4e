@@ -86,18 +86,19 @@ export default function OperadorasPage() {
     if (!isValidHex(corHex)) { toast.error('Cor inválida. Use formato #RRGGBB'); return; }
 
     setIsSaving(true);
+    const statusArray = statusAceitos.split(',').map(s => s.trim()).filter(Boolean);
     try {
       if (isEditing && selectedOperadora) {
         const { error } = await supabase
           .from('operadoras')
-          .update({ nome: nome.trim(), ativa, cor_hex: corHex })
+          .update({ nome: nome.trim(), ativa, cor_hex: corHex, status_aceitos_instalado: statusArray } as any)
           .eq('id', selectedOperadora.id);
         if (error) throw error;
         toast.success('Operadora atualizada com sucesso');
       } else {
         const { error } = await supabase
           .from('operadoras')
-          .insert({ nome: nome.trim(), ativa, cor_hex: corHex });
+          .insert({ nome: nome.trim(), ativa, cor_hex: corHex, status_aceitos_instalado: statusArray } as any);
         if (error) throw error;
         toast.success('Operadora criada com sucesso');
       }
