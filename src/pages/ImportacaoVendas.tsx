@@ -343,7 +343,7 @@ export default function ImportacaoVendas() {
     setIsProcessing(true);
     const totalRows = csvRows.length;
     setImportProgress({ current: 0, total: totalRows, percent: 0 });
-    const importResult: ImportResult = { total: totalRows, success: 0, updated: 0, errors: [] };
+    const importResult: ImportResult = { total: totalRows, success: 0, updated: 0, warnings: 0, errors: [] };
 
     try {
       // === Phase 1: Check existing IDs ===
