@@ -969,7 +969,14 @@ export default function ComissionamentoPage() {
                             <th className="border border-border p-2 text-left bg-muted font-medium sticky left-0 z-10 min-w-[140px]">
                               Vendedor
                             </th>
-                            {operadoraInfos.map(op => (
+                            {operadoraInfos.map(op => {
+                              const opStatus = opStatuses.get(op.id)?.status || 'pendente';
+                              const statusOpts = [
+                                { value: 'pendente', label: 'Pendente', color: 'bg-muted text-muted-foreground' },
+                                { value: 'em_andamento', label: 'Em andamento', color: 'bg-warning/20 text-warning' },
+                                { value: 'finalizado', label: 'Finalizado', color: 'bg-success/20 text-success' },
+                              ];
+                              return (
                               <th
                                 key={op.id}
                                 className="border border-border p-2 text-center font-medium min-w-[160px]"
@@ -979,12 +986,33 @@ export default function ComissionamentoPage() {
                                   borderBottomWidth: '3px',
                                 }}
                               >
-                                <div className="flex items-center justify-center gap-1.5">
-                                  <div className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: op.cor_hex }} />
-                                  {op.nome}
+                                <div className="flex flex-col items-center gap-1">
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    <div className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: op.cor_hex }} />
+                                    {op.nome}
+                                  </div>
+                                  <Select
+                                    value={opStatus}
+                                    onValueChange={(v) => handleToggleOpStatus(op.id, v)}
+                                    disabled={savingOpStatus === op.id}
+                                  >
+                                    <SelectTrigger className="h-6 text-[10px] w-[110px] px-1.5 py-0 border-0 bg-transparent">
+                                      <Badge className={cn('text-[9px] px-1.5 py-0', statusOpts.find(s => s.value === opStatus)?.color)}>
+                                        {statusOpts.find(s => s.value === opStatus)?.label}
+                                      </Badge>
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {statusOpts.map(s => (
+                                        <SelectItem key={s.value} value={s.value}>
+                                          <Badge className={cn('text-[10px]', s.color)}>{s.label}</Badge>
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
                                 </div>
                               </th>
-                            ))}
+                              );
+                            })}
                             <th className="border border-border p-2 text-center bg-muted font-bold min-w-[160px]">
                               Total
                             </th>
