@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { normalizeCpfCnpj, normalizeCpfCnpjForMatch } from '@/lib/normalizeCpfCnpj';
+import { normalizeProtocolo } from '@/lib/normalizeProtocolo';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -202,7 +203,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
 
       for (const linha of allLinhas) {
         if (linha.protocolo_operadora) {
-          const key = linha.protocolo_operadora.trim();
+          const key = normalizeProtocolo(linha.protocolo_operadora.trim()) || linha.protocolo_operadora.trim();
           if (!linhasByProtocolo.has(key)) linhasByProtocolo.set(key, []);
           linhasByProtocolo.get(key)!.push(linha);
         }
@@ -241,7 +242,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           }
 
           if (tipoMatch === 'protocolo' && venda.protocolo_interno) {
-            const key = venda.protocolo_interno.trim();
+            const key = normalizeProtocolo(venda.protocolo_interno.trim()) || venda.protocolo_interno.trim();
             const linhas = linhasByProtocolo.get(key);
             if (linhas && linhas.length > 0) {
               // Filter linhas to same operadora's LAL batches

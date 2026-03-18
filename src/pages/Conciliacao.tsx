@@ -1,4 +1,6 @@
 import { useState, useMemo, useCallback, useRef } from 'react';
+import { normalizeCpfCnpjForMatch } from '@/lib/normalizeCpfCnpj';
+import { normalizeProtocolo } from '@/lib/normalizeProtocolo';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { VendaInterna, LinhaOperadora, TipoMatch, StatusConciliacao } from '@/types/database';
@@ -231,8 +233,8 @@ export default function ConciliacaoPage() {
       const allTelefones = new Set<string>();
 
       for (const l of linhas) {
-        if (l.protocolo_operadora) allProtocolos.add(l.protocolo_operadora);
-        if (l.cpf_cnpj) allCpfs.add(normalizeDoc(l.cpf_cnpj));
+        if (l.protocolo_operadora) allProtocolos.add(normalizeProtocolo(l.protocolo_operadora) || l.protocolo_operadora);
+        if (l.cpf_cnpj) allCpfs.add(normalizeCpfCnpjForMatch(l.cpf_cnpj));
         if (l.telefone) allTelefones.add(normalizeTelefone(l.telefone));
       }
 
@@ -252,12 +254,12 @@ export default function ConciliacaoPage() {
 
       for (const v of vendas) {
         if (v.protocolo_interno) {
-          const key = v.protocolo_interno;
+          const key = normalizeProtocolo(v.protocolo_interno) || v.protocolo_interno;
           if (!vendaByProtocolo.has(key)) vendaByProtocolo.set(key, []);
           vendaByProtocolo.get(key)!.push(v);
         }
         if (v.cpf_cnpj) {
-          const key = normalizeDoc(v.cpf_cnpj);
+          const key = normalizeCpfCnpjForMatch(v.cpf_cnpj);
           if (!vendaByCpf.has(key)) vendaByCpf.set(key, []);
           vendaByCpf.get(key)!.push(v);
         }
@@ -324,7 +326,8 @@ export default function ConciliacaoPage() {
 
           if (hasProtocolo) {
             matchKeysUsed.push('protocolo');
-            const matches = vendaByProtocolo.get(linha.protocolo_operadora!) || [];
+            const normalizedProto = normalizeProtocolo(linha.protocolo_operadora!) || linha.protocolo_operadora!;
+            const matches = vendaByProtocolo.get(normalizedProto) || [];
             for (const v of matches) {
               candidates.push({ venda: v, tipoMatch: 'protocolo' });
             }
@@ -332,7 +335,7 @@ export default function ConciliacaoPage() {
 
           if (hasCpf && candidates.length === 0) {
             matchKeysUsed.push('cpf');
-            const cpfKey = normalizeDoc(linha.cpf_cnpj!);
+            const cpfKey = normalizeCpfCnpjForMatch(linha.cpf_cnpj!);
             const matches = vendaByCpf.get(cpfKey) || [];
             for (const v of matches) {
               if (!candidates.some(c => c.venda.id === v.id)) {
@@ -464,12 +467,10 @@ export default function ConciliacaoPage() {
         } else {
           // Update vendas status + valor in parallel
           const updatePromises = batch.map(async (m) => {
-            const valorLinha = m.linha.valor_lq ?? m.linha.valor ?? null;
             await supabase
               .from('vendas_internas')
               .update({
                 status_interno: statusFinal === 'divergente' ? 'aguardando' as const : 'confirmada' as const,
-                ...(statusFinal !== 'divergente' && valorLinha !== null ? { valor: valorLinha } : {}),
               })
               .eq('id', m.venda.id);
 
@@ -483,19 +484,6 @@ export default function ConciliacaoPage() {
               valor_novo: { linha_operadora_id: m.linha.id, tipo_match: m.tipoMatch },
               metadata: { arquivo: arquivoSelecionado, operadora: m.linha.operadora },
             });
-
-            if (valorLinha !== null && valorLinha !== m.venda.valor) {
-              auditEntries.push({
-                venda_id: m.venda.id,
-                user_id: user?.id,
-                user_nome: currentUser?.nome,
-                acao: 'ALTERAR_VALOR',
-                campo: 'valor',
-                valor_anterior: m.venda.valor,
-                valor_novo: valorLinha,
-                metadata: { motivo: 'Conciliação em lote (valor_lq)' },
-              });
-            }
           });
 
           await Promise.all(updatePromises);

@@ -173,6 +173,7 @@ export type Database = {
           arquivo_nome: string | null
           comissionamento_id: string
           created_at: string
+          hash_arquivo: string | null
           id: string
           mapeamento_id: string | null
           operadora_id: string
@@ -184,6 +185,7 @@ export type Database = {
           arquivo_nome?: string | null
           comissionamento_id: string
           created_at?: string
+          hash_arquivo?: string | null
           id?: string
           mapeamento_id?: string | null
           operadora_id: string
@@ -195,6 +197,7 @@ export type Database = {
           arquivo_nome?: string | null
           comissionamento_id?: string
           created_at?: string
+          hash_arquivo?: string | null
           id?: string
           mapeamento_id?: string | null
           operadora_id?: string

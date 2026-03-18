@@ -99,6 +99,13 @@ export function StepLinhaALinha({ comissionamentoId }: Props) {
 
   // normalizeCpfCnpj imported from lib
 
+  async function calcularHashArquivo(file: File): Promise<string> {
+    const buffer = await file.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
   const processarLal = async (lal: LalConfig) => {
     if (!lal.csvRows || !lal.mapeamentoId || !lal.apelido.trim()) {
       toast.error('Preencha todos os campos e selecione um arquivo');
@@ -112,6 +119,30 @@ export function StepLinhaALinha({ comissionamentoId }: Props) {
 
     setIsProcessing(true);
     try {
+      // CC-02: Verificar hash do arquivo para evitar dupla importação
+      if (lal.arquivo) {
+        const hash = await calcularHashArquivo(lal.arquivo);
+        const { data: existingHash } = await supabase
+          .from('comissionamento_lal')
+          .select('apelido, created_at')
+          .eq('hash_arquivo', hash)
+          .limit(1);
+
+        if (existingHash && existingHash.length > 0) {
+          const existing = existingHash[0];
+          const dataImport = new Date(existing.created_at).toLocaleDateString('pt-BR');
+          toast.error(
+            `⚠️ Este arquivo já foi importado anteriormente.\nLote: "${existing.apelido}" — importado em ${dataImport}\nSe deseja reimportar, exclua o lote original primeiro.`,
+            { duration: 8000 }
+          );
+          setIsProcessing(false);
+          return;
+        }
+
+        // Store hash for later insertion
+        (lal as any)._fileHash = hash;
+      }
+
       const map = mapeamento.mapeamento as unknown as Record<CampoSistema, string>;
 
       // Import each row individually (no grouping)
@@ -156,7 +187,8 @@ export function StepLinhaALinha({ comissionamentoId }: Props) {
         tipo_match: lal.tipoMatch,
         arquivo_nome: lal.arquivo?.name || null,
         qtd_registros: linhas.length,
-      });
+        hash_arquivo: (lal as any)._fileHash || null,
+      } as any);
 
       updateLal(lal.id, {
         imported: true,
