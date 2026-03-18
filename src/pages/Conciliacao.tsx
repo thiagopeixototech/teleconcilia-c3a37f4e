@@ -147,6 +147,7 @@ export default function ConciliacaoPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [displayLimit, setDisplayLimit] = useState(100);
   const [statusMakeFilter, setStatusMakeFilter] = useState<string>('all');
+  const [dedupStrategy, setDedupStrategy] = useState<'manual' | 'maior_valor' | 'primeiro' | 'ultimo'>('manual');
 
   // Manual match dialog
   const [isMatchOpen, setIsMatchOpen] = useState(false);
@@ -389,7 +390,31 @@ export default function ConciliacaoPage() {
               });
             }
           } else {
-            ambiguous.push({ linha, candidates });
+            // Multiple candidates — apply dedup strategy
+            if (dedupStrategy === 'manual') {
+              ambiguous.push({ linha, candidates });
+            } else {
+              // Sort candidates based on strategy
+              let chosen: typeof candidates[0];
+              if (dedupStrategy === 'maior_valor') {
+                chosen = candidates.reduce((best, c) =>
+                  (c.venda.valor || 0) > (best.venda.valor || 0) ? c : best
+                , candidates[0]);
+              } else if (dedupStrategy === 'primeiro') {
+                chosen = candidates[0];
+              } else {
+                // ultimo
+                chosen = candidates[candidates.length - 1];
+              }
+              const score = chosen.tipoMatch === 'protocolo' ? 100 : chosen.tipoMatch === 'cpf' ? 90 : 70;
+              found.push({
+                linha,
+                venda: chosen.venda,
+                tipoMatch: chosen.tipoMatch,
+                score,
+                statusMake: chosen.venda.status_make?.toUpperCase() || 'N/A',
+              });
+            }
           }
         }
 
@@ -414,7 +439,7 @@ export default function ConciliacaoPage() {
       setIsProcessing(false);
       setProgress(null);
     }
-  }, []);
+  }, [dedupStrategy]);
 
   async function fetchExistingConciliacoes(linhaIds: string[]) {
     const all: any[] = [];
@@ -695,6 +720,20 @@ export default function ConciliacaoPage() {
                     {arquivosDisponiveis.map((arq) => (
                       <SelectItem key={arq} value={arq}>{arq}</SelectItem>
                     ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="w-full sm:w-[220px]">
+                <Label className="text-sm font-medium mb-2 block">Múltiplos Matches</Label>
+                <Select value={dedupStrategy} onValueChange={(v) => setDedupStrategy(v as any)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="manual">Revisão Manual</SelectItem>
+                    <SelectItem value="maior_valor">Maior Valor</SelectItem>
+                    <SelectItem value="primeiro">Primeiro Encontrado</SelectItem>
+                    <SelectItem value="ultimo">Último Encontrado</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
