@@ -93,6 +93,7 @@ interface ImportResult {
   total: number;
   success: number;
   updated: number;
+  warnings: number;
   errors: { line: number; reason: string; data: Record<string, string> }[];
 }
 
