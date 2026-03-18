@@ -72,6 +72,7 @@ export default function OperadorasPage() {
     setNome(operadora.nome);
     setAtiva(operadora.ativa);
     setCorHex(operadora.cor_hex || '#CBD5E1');
+    setStatusAceitos((operadora.status_aceitos_instalado || ['Instalado','INSTALADO','instalado']).join(', '));
     setIsDialogOpen(true);
   };
 
