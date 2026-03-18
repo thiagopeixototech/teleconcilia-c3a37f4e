@@ -335,7 +335,7 @@ export default function ConciliacaoPage() {
 
           if (hasCpf && candidates.length === 0) {
             matchKeysUsed.push('cpf');
-            const cpfKey = normalizeDoc(linha.cpf_cnpj!);
+            const cpfKey = normalizeCpfCnpjForMatch(linha.cpf_cnpj!);
             const matches = vendaByCpf.get(cpfKey) || [];
             for (const v of matches) {
               if (!candidates.some(c => c.venda.id === v.id)) {
