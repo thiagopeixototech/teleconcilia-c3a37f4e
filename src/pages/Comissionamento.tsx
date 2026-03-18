@@ -333,6 +333,17 @@ export default function ComissionamentoPage() {
         Array.from(vendMap.entries()).map(([id, nome]) => ({ id, nome })).sort((a, b) => a.nome.localeCompare(b.nome))
       );
       setOperadoraTotals(opTotals);
+
+      // Load per-operator statuses
+      const { data: opStatusData } = await supabase
+        .from('comissionamento_status_operadora')
+        .select('operadora_id, status, observacao')
+        .eq('comissionamento_id', comId);
+      const opStatusMap = new Map<string, { status: string; observacao: string | null }>();
+      for (const row of (opStatusData || [])) {
+        opStatusMap.set(row.operadora_id, { status: row.status, observacao: row.observacao });
+      }
+      setOpStatuses(opStatusMap);
     } catch (err) {
       console.error(err);
       toast.error('Erro ao carregar estatísticas');
