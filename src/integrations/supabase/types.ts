@@ -228,6 +228,51 @@ export type Database = {
           },
         ]
       }
+      comissionamento_status_operadora: {
+        Row: {
+          comissionamento_id: string
+          created_at: string
+          id: string
+          observacao: string | null
+          operadora_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          comissionamento_id: string
+          created_at?: string
+          id?: string
+          observacao?: string | null
+          operadora_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          comissionamento_id?: string
+          created_at?: string
+          id?: string
+          observacao?: string | null
+          operadora_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comissionamento_status_operadora_comissionamento_id_fkey"
+            columns: ["comissionamento_id"]
+            isOneToOne: false
+            referencedRelation: "comissionamentos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comissionamento_status_operadora_operadora_id_fkey"
+            columns: ["operadora_id"]
+            isOneToOne: false
+            referencedRelation: "operadoras"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       comissionamento_vendas: {
         Row: {
           comissionamento_desconto: string | null
