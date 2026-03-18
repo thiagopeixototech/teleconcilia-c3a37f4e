@@ -254,7 +254,7 @@ export function AppSidebar() {
             "w-full text-sidebar-foreground hover:bg-sidebar-accent",
             collapsed ? "justify-center" : "justify-start gap-3"
           )}>
-          <a href="/DOCUMENTACAO.md" download="DOCUMENTACAO.md">
+          <a href="/DOCUMENTACAO.md" download="Verifika_Documentacao_Completa.md">
             <Download className="h-5 w-5" />
             {!collapsed && <span>Baixar Documentação</span>}
           </a>
