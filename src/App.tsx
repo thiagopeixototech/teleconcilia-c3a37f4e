@@ -13,7 +13,7 @@ import VendasInternas from "./pages/VendasInternas";
 import NovaVenda from "./pages/NovaVenda";
 import LinhaOperadora from "./pages/LinhaOperadora";
 import Conciliacao from "./pages/Conciliacao";
-import Divergencias from "./pages/Divergencias";
+
 import Empresas from "./pages/Empresas";
 import Usuarios from "./pages/Usuarios";
 import GestaoRoles from "./pages/GestaoRoles";
@@ -89,14 +89,7 @@ const App = () => (
               }
             />
             
-            <Route
-              path="/divergencias"
-              element={
-                <ProtectedRoute allowedRoles={['admin', 'supervisor']}>
-                  <Divergencias />
-                </ProtectedRoute>
-              }
-            />
+            
             
             <Route
               path="/empresas"
