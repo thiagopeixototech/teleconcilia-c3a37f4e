@@ -439,7 +439,7 @@ export default function ConciliacaoPage() {
       setIsProcessing(false);
       setProgress(null);
     }
-  }, []);
+  }, [dedupStrategy]);
 
   async function fetchExistingConciliacoes(linhaIds: string[]) {
     const all: any[] = [];
