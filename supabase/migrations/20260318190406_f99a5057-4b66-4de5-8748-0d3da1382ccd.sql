@@ -1,0 +1,1 @@
+ALTER TABLE public.comissionamento_lal ADD COLUMN hash_arquivo text;
