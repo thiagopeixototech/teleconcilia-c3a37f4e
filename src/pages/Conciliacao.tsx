@@ -233,8 +233,8 @@ export default function ConciliacaoPage() {
       const allTelefones = new Set<string>();
 
       for (const l of linhas) {
-        if (l.protocolo_operadora) allProtocolos.add(l.protocolo_operadora);
-        if (l.cpf_cnpj) allCpfs.add(normalizeDoc(l.cpf_cnpj));
+        if (l.protocolo_operadora) allProtocolos.add(normalizeProtocolo(l.protocolo_operadora) || l.protocolo_operadora);
+        if (l.cpf_cnpj) allCpfs.add(normalizeCpfCnpjForMatch(l.cpf_cnpj));
         if (l.telefone) allTelefones.add(normalizeTelefone(l.telefone));
       }
 
