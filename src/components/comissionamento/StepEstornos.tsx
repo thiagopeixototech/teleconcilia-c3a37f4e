@@ -157,10 +157,54 @@ export function StepEstornos({ comissionamentoId, comissionamentoNome }: Props) 
         }
       }
 
-      // Apply accumulated updates
+      // CC-06: Also insert into estornos table with comissionamento_id for traceability
+      const estornoRecords: any[] = [];
+      for (let i = 0; i < csvRows.length; i++) {
+        const row = csvRows[i];
+        const valor = parseCurrency(row[mapping.valor_estornado]);
+        if (valor === null || valor <= 0) continue;
+
+        const idMake = mapping.identificador_make ? row[mapping.identificador_make]?.trim() : null;
+        const proto = mapping.protocolo ? row[mapping.protocolo]?.trim() : null;
+        const cpf = mapping.cpf_cnpj ? row[mapping.cpf_cnpj]?.trim() : null;
+        const tel = mapping.telefone ? row[mapping.telefone]?.trim() : null;
+        const ref = row[mapping.referencia_desconto]?.trim() || comissionamentoNome;
+
+        // Find linked venda
+        let vendaId: string | null = null;
+        let comVendaId: string | null = null;
+        if (idMake && byMake.has(idMake)) comVendaId = byMake.get(idMake)!;
+        else if (proto && byProto.has(proto)) comVendaId = byProto.get(proto)!;
+        else if (cpf && tel && byCpfTel.has(`${normDoc(cpf)}_${normDoc(tel)}`)) comVendaId = byCpfTel.get(`${normDoc(cpf)}_${normDoc(tel)}`)!;
+
+        if (comVendaId) {
+          const cv = (comVendas || []).find(c => c.id === comVendaId);
+          vendaId = cv?.venda_interna_id || null;
+        }
+
+        estornoRecords.push({
+          valor_estornado: valor,
+          referencia_desconto: ref,
+          identificador_make: idMake || null,
+          protocolo: proto || null,
+          cpf_cnpj: cpf || null,
+          telefone: tel || null,
+          venda_id: vendaId,
+          comissionamento_id: comissionamentoId,
+          match_status: comVendaId ? 'MATCHED' : 'NO_MATCH',
+          created_by: user?.id,
+        });
+      }
+
+      // Insert estornos in batches
+      for (let i = 0; i < estornoRecords.length; i += 200) {
+        const batch = estornoRecords.slice(i, i + 200);
+        await supabase.from('estornos').insert(batch as any);
+      }
+
+      // Apply accumulated updates to comissionamento_vendas
       const updates = Array.from(accumulated.entries())
         .filter(([id]) => {
-          // Only update if value changed from original
           const original = (comVendas || []).find(cv => cv.id === id);
           return accumulated.get(id)! !== Number(original?.receita_descontada || 0);
         })
