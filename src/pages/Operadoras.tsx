@@ -286,6 +286,18 @@ export default function OperadorasPage() {
                 <Label htmlFor="ativa">Ativa</Label>
                 <Switch id="ativa" checked={ativa} onCheckedChange={setAtiva} />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="statusAceitos">Status aceitos como "Instalado"</Label>
+                <Input
+                  id="statusAceitos"
+                  value={statusAceitos}
+                  onChange={(e) => setStatusAceitos(e.target.value)}
+                  placeholder="Instalado, INSTALADO, Ativo"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Lista separada por vírgula com todas as grafias que representam "instalado" para esta operadora.
+                </p>
+              </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancelar</Button>
