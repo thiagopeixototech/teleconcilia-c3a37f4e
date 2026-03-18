@@ -47,7 +47,8 @@ import { cn } from '@/lib/utils';
 
 const mainNavItems = [
 { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard },
-{ title: 'Vendas Internas', url: '/vendas', icon: ShoppingCart }];
+{ title: 'Vendas Internas', url: '/vendas', icon: ShoppingCart },
+{ title: 'Detalhado', url: '/performance', icon: BarChart3 }];
 
 
 const cadastrosItems = [
