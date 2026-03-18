@@ -1,4 +1,6 @@
 import { useState, useMemo, useCallback, useRef } from 'react';
+import { normalizeCpfCnpjForMatch } from '@/lib/normalizeCpfCnpj';
+import { normalizeProtocolo } from '@/lib/normalizeProtocolo';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { VendaInterna, LinhaOperadora, TipoMatch, StatusConciliacao } from '@/types/database';
