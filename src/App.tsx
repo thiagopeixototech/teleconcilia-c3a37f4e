@@ -188,6 +188,33 @@ const App = () => (
                 </ProtectedRoute>
               }
             />
+
+            <Route
+              path="/revisao-matches"
+              element={
+                <ProtectedRoute allowedRoles={['admin', 'supervisor']}>
+                  <RevisaoMatches />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/contestacoes"
+              element={
+                <ProtectedRoute allowedRoles={['admin', 'supervisor']}>
+                  <Contestacoes />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/comissionamento/:id/saude"
+              element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <SaudeComissionamento />
+                </ProtectedRoute>
+              }
+            />
             
             <Route
               path="/limpar-dados"

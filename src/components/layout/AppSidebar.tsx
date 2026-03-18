@@ -61,6 +61,8 @@ const cadastrosItems = [
 const gestaoItems = [
 { title: 'Comissionamento', url: '/comissionamento', icon: Receipt },
 { title: 'Conciliação', url: '/conciliacao', icon: GitCompare },
+{ title: 'Revisão Matches', url: '/revisao-matches', icon: Search },
+{ title: 'Contestações', url: '/contestacoes', icon: FileWarning },
 { title: 'Divergências', url: '/divergencias', icon: AlertTriangle },
 { title: 'Detalhado', url: '/performance', icon: BarChart3 }];
 
