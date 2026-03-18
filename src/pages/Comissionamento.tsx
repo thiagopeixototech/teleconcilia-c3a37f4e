@@ -18,7 +18,7 @@ import {
 import {
   ShoppingCart, CheckCircle, TrendingDown, DollarSign,
   Plus, RefreshCw, Loader2, GitCompare, RotateCcw,
-  FileSpreadsheet, Receipt, Trash2, FileDown, Users, Eye, Search, Grid3X3,
+  FileSpreadsheet, Receipt, Trash2, FileDown, Users, Eye, Search, Grid3X3, Activity,
 } from 'lucide-react';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -763,6 +763,15 @@ export default function ComissionamentoPage() {
                     >
                       <Users className="h-4 w-4" />
                       Resumo Vendedor
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => window.location.href = `/comissionamento/${selectedId}/saude`}
+                    >
+                      <Activity className="h-4 w-4" />
+                      Saúde
                     </Button>
                     <AlertDialog>
                       <AlertDialogTrigger asChild>

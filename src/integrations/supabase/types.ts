@@ -392,6 +392,70 @@ export type Database = {
           },
         ]
       }
+      contestacoes: {
+        Row: {
+          comissionamento_id: string | null
+          created_at: string
+          created_by: string | null
+          data_envio: string | null
+          data_resposta: string | null
+          id: string
+          motivo_negativa: string | null
+          operadora_id: string | null
+          status: string
+          updated_at: string
+          venda_interna_id: string
+        }
+        Insert: {
+          comissionamento_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          data_envio?: string | null
+          data_resposta?: string | null
+          id?: string
+          motivo_negativa?: string | null
+          operadora_id?: string | null
+          status?: string
+          updated_at?: string
+          venda_interna_id: string
+        }
+        Update: {
+          comissionamento_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          data_envio?: string | null
+          data_resposta?: string | null
+          id?: string
+          motivo_negativa?: string | null
+          operadora_id?: string | null
+          status?: string
+          updated_at?: string
+          venda_interna_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contestacoes_comissionamento_id_fkey"
+            columns: ["comissionamento_id"]
+            isOneToOne: false
+            referencedRelation: "comissionamentos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contestacoes_operadora_id_fkey"
+            columns: ["operadora_id"]
+            isOneToOne: false
+            referencedRelation: "operadoras"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contestacoes_venda_interna_id_fkey"
+            columns: ["venda_interna_id"]
+            isOneToOne: false
+            referencedRelation: "vendas_internas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       empresas: {
         Row: {
           ativa: boolean

@@ -93,6 +93,7 @@ interface ImportResult {
   total: number;
   success: number;
   updated: number;
+  warnings: number;
   errors: { line: number; reason: string; data: Record<string, string> }[];
 }
 
@@ -342,7 +343,7 @@ export default function ImportacaoVendas() {
     setIsProcessing(true);
     const totalRows = csvRows.length;
     setImportProgress({ current: 0, total: totalRows, percent: 0 });
-    const importResult: ImportResult = { total: totalRows, success: 0, updated: 0, errors: [] };
+    const importResult: ImportResult = { total: totalRows, success: 0, updated: 0, warnings: 0, errors: [] };
 
     try {
       // === Phase 1: Check existing IDs ===
@@ -351,14 +352,20 @@ export default function ImportacaoVendas() {
         .filter(Boolean);
 
       const existingMap = new Map<string, string>();
+      const existingStatusMap = new Map<string, string>();
       const CHECK_BATCH = 200;
       for (let i = 0; i < idsToCheck.length; i += CHECK_BATCH) {
         const batch = idsToCheck.slice(i, i + CHECK_BATCH);
         const { data } = await supabase
           .from('vendas_internas')
-          .select('id, identificador_make')
+          .select('id, identificador_make, status_interno')
           .in('identificador_make', batch);
-        data?.forEach(d => { if (d.identificador_make) existingMap.set(d.identificador_make, d.id); });
+        data?.forEach(d => {
+          if (d.identificador_make) {
+            existingMap.set(d.identificador_make, d.id);
+            existingStatusMap.set(d.id, d.status_interno);
+          }
+        });
         const prepPercent = Math.round(((i + batch.length) / idsToCheck.length) * 10);
         setImportProgress({ current: 0, total: totalRows, percent: prepPercent });
         await new Promise(r => setTimeout(r, 10));
@@ -440,7 +447,14 @@ export default function ImportacaoVendas() {
 
         if (existingMap.has(identificador!)) {
           const existingId = existingMap.get(identificador!)!;
-          rowsToUpdate.push({ id: existingId, data: rowData });
+          const isConciliated = existingStatusMap.get(existingId) === 'confirmada';
+          if (isConciliated) {
+            const { valor, operadora_id, cpf_cnpj, protocolo_interno, ...safeData } = rowData;
+            rowsToUpdate.push({ id: existingId, data: safeData });
+            importResult.warnings = (importResult.warnings || 0) + 1;
+          } else {
+            rowsToUpdate.push({ id: existingId, data: rowData });
+          }
         } else {
           rowsToInsert.push({ ...rowData, status_interno: 'aguardando' });
         }
@@ -583,7 +597,7 @@ export default function ImportacaoVendas() {
   // Skip current file without importing
   const skipCurrentFile = () => {
     if (file) {
-      setFileResults(prev => [...prev, { fileName: file.name, result: { total: csvRows.length, success: 0, updated: 0, errors: [{ line: 0, reason: 'Arquivo pulado', data: {} }] } }]);
+      setFileResults(prev => [...prev, { fileName: file.name, result: { total: csvRows.length, success: 0, updated: 0, warnings: 0, errors: [{ line: 0, reason: 'Arquivo pulado', data: {} }] } }]);
     }
     const nextIndex = currentFileIndex + 1;
     if (nextIndex < allFiles.length) {

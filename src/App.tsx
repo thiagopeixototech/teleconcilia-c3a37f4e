@@ -25,6 +25,9 @@ import ImportacaoVendas from "./pages/ImportacaoVendas";
 import ImportacaoEstornos from "./pages/ImportacaoEstornos";
 import CadastroMassa from "./pages/CadastroMassa";
 import Comissionamento from "./pages/Comissionamento";
+import RevisaoMatches from "./pages/RevisaoMatches";
+import Contestacoes from "./pages/Contestacoes";
+import SaudeComissionamento from "./pages/SaudeComissionamento";
 import LimparDados from "./pages/LimparDados";
 import NotFound from "./pages/NotFound";
 
@@ -182,6 +185,33 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={['admin']}>
                   <Comissionamento />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/revisao-matches"
+              element={
+                <ProtectedRoute allowedRoles={['admin', 'supervisor']}>
+                  <RevisaoMatches />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/contestacoes"
+              element={
+                <ProtectedRoute allowedRoles={['admin', 'supervisor']}>
+                  <Contestacoes />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/comissionamento/:id/saude"
+              element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <SaudeComissionamento />
                 </ProtectedRoute>
               }
             />

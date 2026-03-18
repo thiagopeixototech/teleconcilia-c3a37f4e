@@ -18,7 +18,9 @@ import {
   PackageOpen,
   RotateCcw,
   Receipt,
-  Trash2 } from
+  Trash2,
+  Search,
+  FileWarning } from
 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/contexts/AuthContext';
@@ -61,6 +63,8 @@ const cadastrosItems = [
 const gestaoItems = [
 { title: 'Comissionamento', url: '/comissionamento', icon: Receipt },
 { title: 'Conciliação', url: '/conciliacao', icon: GitCompare },
+{ title: 'Revisão Matches', url: '/revisao-matches', icon: Search },
+{ title: 'Contestações', url: '/contestacoes', icon: FileWarning },
 { title: 'Divergências', url: '/divergencias', icon: AlertTriangle },
 { title: 'Detalhado', url: '/performance', icon: BarChart3 }];
 
