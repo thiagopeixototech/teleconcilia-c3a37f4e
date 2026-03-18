@@ -42,6 +42,7 @@ export interface Operadora {
   nome: string;
   ativa: boolean;
   cor_hex: string;
+  status_aceitos_instalado?: string[];
   created_at: string;
   updated_at: string;
 }

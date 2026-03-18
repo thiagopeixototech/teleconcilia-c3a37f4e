@@ -36,6 +36,7 @@ export default function OperadorasPage() {
   const [nome, setNome] = useState('');
   const [ativa, setAtiva] = useState(true);
   const [corHex, setCorHex] = useState('#CBD5E1');
+  const [statusAceitos, setStatusAceitos] = useState('Instalado, INSTALADO, instalado, Ativo, ativo');
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -61,6 +62,7 @@ export default function OperadorasPage() {
     setNome('');
     setAtiva(true);
     setCorHex('#CBD5E1');
+    setStatusAceitos('Instalado, INSTALADO, instalado, Ativo, ativo');
     setIsDialogOpen(true);
   };
 
@@ -70,6 +72,7 @@ export default function OperadorasPage() {
     setNome(operadora.nome);
     setAtiva(operadora.ativa);
     setCorHex(operadora.cor_hex || '#CBD5E1');
+    setStatusAceitos((operadora.status_aceitos_instalado || ['Instalado','INSTALADO','instalado']).join(', '));
     setIsDialogOpen(true);
   };
 
@@ -83,18 +86,19 @@ export default function OperadorasPage() {
     if (!isValidHex(corHex)) { toast.error('Cor inválida. Use formato #RRGGBB'); return; }
 
     setIsSaving(true);
+    const statusArray = statusAceitos.split(',').map(s => s.trim()).filter(Boolean);
     try {
       if (isEditing && selectedOperadora) {
         const { error } = await supabase
           .from('operadoras')
-          .update({ nome: nome.trim(), ativa, cor_hex: corHex })
+          .update({ nome: nome.trim(), ativa, cor_hex: corHex, status_aceitos_instalado: statusArray } as any)
           .eq('id', selectedOperadora.id);
         if (error) throw error;
         toast.success('Operadora atualizada com sucesso');
       } else {
         const { error } = await supabase
           .from('operadoras')
-          .insert({ nome: nome.trim(), ativa, cor_hex: corHex });
+          .insert({ nome: nome.trim(), ativa, cor_hex: corHex, status_aceitos_instalado: statusArray } as any);
         if (error) throw error;
         toast.success('Operadora criada com sucesso');
       }
@@ -281,6 +285,18 @@ export default function OperadorasPage() {
               <div className="flex items-center justify-between">
                 <Label htmlFor="ativa">Ativa</Label>
                 <Switch id="ativa" checked={ativa} onCheckedChange={setAtiva} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="statusAceitos">Status aceitos como "Instalado"</Label>
+                <Input
+                  id="statusAceitos"
+                  value={statusAceitos}
+                  onChange={(e) => setStatusAceitos(e.target.value)}
+                  placeholder="Instalado, INSTALADO, Ativo"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Lista separada por vírgula com todas as grafias que representam "instalado" para esta operadora.
+                </p>
               </div>
             </div>
             <DialogFooter>

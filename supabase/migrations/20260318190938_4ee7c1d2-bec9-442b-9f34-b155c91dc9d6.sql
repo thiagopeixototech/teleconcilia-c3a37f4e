@@ -1,0 +1,1 @@
+ALTER TABLE public.estornos ADD COLUMN comissionamento_id uuid REFERENCES public.comissionamentos(id) ON DELETE SET NULL;

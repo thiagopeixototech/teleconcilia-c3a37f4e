@@ -421,6 +421,7 @@ export type Database = {
       }
       estornos: {
         Row: {
+          comissionamento_id: string | null
           cpf_cnpj: string | null
           created_at: string
           created_by: string
@@ -435,6 +436,7 @@ export type Database = {
           venda_id: string | null
         }
         Insert: {
+          comissionamento_id?: string | null
           cpf_cnpj?: string | null
           created_at?: string
           created_by: string
@@ -449,6 +451,7 @@ export type Database = {
           venda_id?: string | null
         }
         Update: {
+          comissionamento_id?: string | null
           cpf_cnpj?: string | null
           created_at?: string
           created_by?: string
@@ -463,6 +466,13 @@ export type Database = {
           venda_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "estornos_comissionamento_id_fkey"
+            columns: ["comissionamento_id"]
+            isOneToOne: false
+            referencedRelation: "comissionamentos"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "estornos_venda_id_fkey"
             columns: ["venda_id"]
@@ -640,6 +650,7 @@ export type Database = {
           created_at: string
           id: string
           nome: string
+          status_aceitos_instalado: string[] | null
           updated_at: string
         }
         Insert: {
@@ -648,6 +659,7 @@ export type Database = {
           created_at?: string
           id?: string
           nome: string
+          status_aceitos_instalado?: string[] | null
           updated_at?: string
         }
         Update: {
@@ -656,6 +668,7 @@ export type Database = {
           created_at?: string
           id?: string
           nome?: string
+          status_aceitos_instalado?: string[] | null
           updated_at?: string
         }
         Relationships: []

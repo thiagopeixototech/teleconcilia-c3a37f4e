@@ -1,0 +1,1 @@
+ALTER TABLE public.operadoras ADD COLUMN status_aceitos_instalado text[] DEFAULT ARRAY['Instalado','INSTALADO','instalado','Ativo','ativo'];

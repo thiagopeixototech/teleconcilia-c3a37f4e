@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import {
-  Loader2, Download, DollarSign, Users, RotateCcw, TrendingDown, Receipt, FileDown, Grid3X3,
+  Loader2, Download, DollarSign, Users, RotateCcw, TrendingDown, Receipt, FileDown, Grid3X3, AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -238,6 +238,17 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
       { totalVendas: 0, receitaInterna: 0, receitaLal: 0, estorno: 0, churn: 0, liquido: 0 }
     );
   }, [resumoPorVendedor]);
+
+  // CC-05: Vendas sem match (receita_lal null ou 0 e sem lal_apelido)
+  const vendasSemMatch = useMemo(() => {
+    return vendas.filter(v => !v.receita_lal && !v.lal_apelido);
+  }, [vendas]);
+
+  const receitaNaoEncontrada = useMemo(() => {
+    return vendasSemMatch.reduce((sum, v) => sum + Number(v.receita_interna || 0), 0);
+  }, [vendasSemMatch]);
+
+  const [showSemMatch, setShowSemMatch] = useState(false);
 
   const [isExportingReport, setIsExportingReport] = useState(false);
 
@@ -493,6 +504,102 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
           </p>
         </Card>
       </div>
+
+      {/* CC-05: Receita não encontrada */}
+      {vendasSemMatch.length > 0 && (
+        <Card className="border-warning/50 bg-warning/5">
+          <CardContent className="p-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="space-y-1">
+                <div className="flex items-center gap-4 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Receita Confirmada: </span>
+                    <span className="font-bold text-success">{formatBRL(totals.receitaLal)}</span>
+                    <span className="text-xs text-muted-foreground ml-1">(vendas com match)</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Receita Não Encontrada: </span>
+                    <span className="font-bold text-warning">{formatBRL(receitaNaoEncontrada)}</span>
+                    <span className="text-xs text-muted-foreground ml-1">(vendas sem match no LAL)</span>
+                  </div>
+                </div>
+                <div className="text-sm">
+                  <span className="text-muted-foreground">Potencial Total: </span>
+                  <span className="font-bold">{formatBRL(totals.receitaLal + receitaNaoEncontrada)}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {vendasSemMatch.length} venda(s) sem match no Linha a Linha
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 shrink-0"
+                onClick={() => setShowSemMatch(!showSemMatch)}
+              >
+                <AlertTriangle className="h-4 w-4" />
+                {showSemMatch ? 'Ocultar lista' : 'Ver lista para contestação'}
+              </Button>
+            </div>
+
+            {showSemMatch && (
+              <div className="mt-4 space-y-2">
+                <div className="flex justify-end">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5"
+                    onClick={() => {
+                      const headers = ['Vendedor', 'Protocolo', 'CPF/CNPJ', 'Cliente', 'Operadora', 'Valor Interno', 'Status Make'];
+                      const rows = vendasSemMatch.map(v => [
+                        v.vendedor_nome || '', v.protocolo_interno || '', v.cpf_cnpj || '',
+                        v.cliente_nome || '', v.operadora_nome || '',
+                        v.receita_interna?.toString() || '', v.status_make || '',
+                      ]);
+                      downloadBlob(buildCsvBlob(headers, rows), `vendas_sem_match_${format(new Date(), 'yyyy-MM-dd')}.csv`);
+                      toast.success('Lista exportada');
+                    }}
+                  >
+                    <Download className="h-4 w-4" />
+                    Exportar CSV
+                  </Button>
+                </div>
+                <div className="overflow-x-auto max-h-64 border rounded-lg">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-xs">Vendedor</TableHead>
+                        <TableHead className="text-xs">Protocolo</TableHead>
+                        <TableHead className="text-xs">CPF/CNPJ</TableHead>
+                        <TableHead className="text-xs">Cliente</TableHead>
+                        <TableHead className="text-xs">Operadora</TableHead>
+                        <TableHead className="text-xs text-right">Valor</TableHead>
+                        <TableHead className="text-xs">Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {vendasSemMatch.slice(0, 100).map(v => (
+                        <TableRow key={v.id}>
+                          <TableCell className="text-xs">{v.vendedor_nome}</TableCell>
+                          <TableCell className="text-xs font-mono">{v.protocolo_interno || '-'}</TableCell>
+                          <TableCell className="text-xs">{v.cpf_cnpj || '-'}</TableCell>
+                          <TableCell className="text-xs">{v.cliente_nome}</TableCell>
+                          <TableCell className="text-xs">{v.operadora_nome}</TableCell>
+                          <TableCell className="text-xs text-right">{formatBRL(Number(v.receita_interna || 0))}</TableCell>
+                          <TableCell className="text-xs">{v.status_make || '-'}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                {vendasSemMatch.length > 100 && (
+                  <p className="text-xs text-muted-foreground text-center">Exibindo 100 de {vendasSemMatch.length}. Exporte o CSV para ver todos.</p>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Tab buttons */}
       <div className="flex gap-2 flex-wrap">
