@@ -238,11 +238,28 @@ export default function ConciliacaoPage() {
         if (l.telefone) allTelefones.add(normalizeTelefone(l.telefone));
       }
 
-      // 4. Fetch vendas that could match (instaladas + churn)
+      // 4. Fetch vendas that could match
+      // CC-07: Load operadoras to get configurable status list
+      const { data: opData } = await supabase.from('operadoras').select('id, status_aceitos_instalado');
+      const allAcceptedStatuses = new Set<string>();
+      for (const op of (opData || [])) {
+        const statuses = (op as any).status_aceitos_instalado || ['Instalado', 'INSTALADO', 'instalado'];
+        statuses.forEach((s: string) => allAcceptedStatuses.add(s));
+      }
+      // Also include churn statuses
+      allAcceptedStatuses.add('Churn');
+      allAcceptedStatuses.add('CHURN');
+      allAcceptedStatuses.add('churn');
+
+      // Build OR filter with all accepted statuses
+      const statusFilters = Array.from(allAcceptedStatuses).map(s => `status_make.eq.${s}`);
+      // Also keep ilike for partial matches (e.g. "Instalado - Ativo")
+      statusFilters.push('status_make.ilike.instalad%', 'status_make.ilike.churn%');
+      
       const vendas = await fetchAllRows<VendaInterna & { vendedor?: { nome: string } | null }>(
         () => supabase.from('vendas_internas'),
         '*, vendedor:usuarios!vendas_internas_usuario_id_fkey(nome)',
-        (q: any) => q.or('status_make.ilike.instalad%,status_make.ilike.churn%'),
+        (q: any) => q.or(statusFilters.join(',')),
       );
 
       setProgress({ current: 0, total: linhas.length, phase: 'Processando matches...' });
