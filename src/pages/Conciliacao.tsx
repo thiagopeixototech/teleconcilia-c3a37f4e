@@ -467,12 +467,10 @@ export default function ConciliacaoPage() {
         } else {
           // Update vendas status + valor in parallel
           const updatePromises = batch.map(async (m) => {
-            const valorLinha = m.linha.valor_lq ?? m.linha.valor ?? null;
             await supabase
               .from('vendas_internas')
               .update({
                 status_interno: statusFinal === 'divergente' ? 'aguardando' as const : 'confirmada' as const,
-                ...(statusFinal !== 'divergente' && valorLinha !== null ? { valor: valorLinha } : {}),
               })
               .eq('id', m.venda.id);
 
@@ -486,19 +484,6 @@ export default function ConciliacaoPage() {
               valor_novo: { linha_operadora_id: m.linha.id, tipo_match: m.tipoMatch },
               metadata: { arquivo: arquivoSelecionado, operadora: m.linha.operadora },
             });
-
-            if (valorLinha !== null && valorLinha !== m.venda.valor) {
-              auditEntries.push({
-                venda_id: m.venda.id,
-                user_id: user?.id,
-                user_nome: currentUser?.nome,
-                acao: 'ALTERAR_VALOR',
-                campo: 'valor',
-                valor_anterior: m.venda.valor,
-                valor_novo: valorLinha,
-                metadata: { motivo: 'Conciliação em lote (valor_lq)' },
-              });
-            }
           });
 
           await Promise.all(updatePromises);
