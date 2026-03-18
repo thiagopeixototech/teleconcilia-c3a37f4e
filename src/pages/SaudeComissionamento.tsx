@@ -60,10 +60,10 @@ export default function SaudeComissionamentoPage() {
       const receitaNaoEncontrada = vendasSemMatch.reduce((s, v) => s + Number(v.receita_descontada || 0), 0);
 
       // Load estornos NO_MATCH for this comissionamento
-      const { data: estornos } = await supabase
-        .from('estornos')
+      const { data: estornos } = await (supabase
+        .from('estornos') as any)
         .select('id, match_status')
-        .eq('comissionamento_id' as any, comId)
+        .eq('comissionamento_id', comId)
         .eq('match_status', 'NO_MATCH');
       const estornosNoMatch = estornos?.length || 0;
 
