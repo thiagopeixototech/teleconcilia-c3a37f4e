@@ -147,6 +147,7 @@ export default function ConciliacaoPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [displayLimit, setDisplayLimit] = useState(100);
   const [statusMakeFilter, setStatusMakeFilter] = useState<string>('all');
+  const [dedupStrategy, setDedupStrategy] = useState<'manual' | 'maior_valor' | 'primeiro' | 'ultimo'>('manual');
 
   // Manual match dialog
   const [isMatchOpen, setIsMatchOpen] = useState(false);
