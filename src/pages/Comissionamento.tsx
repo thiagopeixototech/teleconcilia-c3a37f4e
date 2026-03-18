@@ -18,7 +18,7 @@ import {
 import {
   ShoppingCart, CheckCircle, TrendingDown, DollarSign,
   Plus, RefreshCw, Loader2, GitCompare, RotateCcw,
-  FileSpreadsheet, Receipt, Trash2, FileDown, Users, Eye, Search, Grid3X3,
+  FileSpreadsheet, Receipt, Trash2, FileDown, Users, Eye, Search, Grid3X3, Activity,
 } from 'lucide-react';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
