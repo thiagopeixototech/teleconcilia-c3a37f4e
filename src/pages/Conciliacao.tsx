@@ -358,13 +358,19 @@ export default function ConciliacaoPage() {
           if (candidates.length === 0) {
             notFound.push({ linha, rowIndex, matchKeysUsed });
           } else if (candidates.length === 1) {
-            found.push({
-              linha,
-              venda: candidates[0].venda,
-              tipoMatch: candidates[0].tipoMatch,
-              score: candidates[0].tipoMatch === 'protocolo' ? 100 : candidates[0].tipoMatch === 'cpf' ? 90 : 70,
-              statusMake: candidates[0].venda.status_make?.toUpperCase() || 'N/A',
-            });
+            const score = candidates[0].tipoMatch === 'protocolo' ? 100 : candidates[0].tipoMatch === 'cpf' ? 90 : 70;
+            // CC-04: Matches por telefone (score < 90) vão para ambíguos com flag de revisão
+            if (score < 90) {
+              ambiguous.push({ linha, candidates, needsReview: true, reviewReason: `Match por ${tipoMatchLabels[candidates[0].tipoMatch]} (score ${score}) — requer confirmação manual` } as any);
+            } else {
+              found.push({
+                linha,
+                venda: candidates[0].venda,
+                tipoMatch: candidates[0].tipoMatch,
+                score,
+                statusMake: candidates[0].venda.status_make?.toUpperCase() || 'N/A',
+              });
+            }
           } else {
             ambiguous.push({ linha, candidates });
           }
