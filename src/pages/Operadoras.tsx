@@ -36,6 +36,7 @@ export default function OperadorasPage() {
   const [nome, setNome] = useState('');
   const [ativa, setAtiva] = useState(true);
   const [corHex, setCorHex] = useState('#CBD5E1');
+  const [statusAceitos, setStatusAceitos] = useState('Instalado, INSTALADO, instalado, Ativo, ativo');
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
