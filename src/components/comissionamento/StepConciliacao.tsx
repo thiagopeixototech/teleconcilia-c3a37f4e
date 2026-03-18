@@ -242,7 +242,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           }
 
           if (tipoMatch === 'protocolo' && venda.protocolo_interno) {
-            const key = venda.protocolo_interno.trim();
+            const key = normalizeProtocolo(venda.protocolo_interno.trim()) || venda.protocolo_interno.trim();
             const linhas = linhasByProtocolo.get(key);
             if (linhas && linhas.length > 0) {
               // Filter linhas to same operadora's LAL batches
