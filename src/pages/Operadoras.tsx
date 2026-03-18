@@ -62,6 +62,7 @@ export default function OperadorasPage() {
     setNome('');
     setAtiva(true);
     setCorHex('#CBD5E1');
+    setStatusAceitos('Instalado, INSTALADO, instalado, Ativo, ativo');
     setIsDialogOpen(true);
   };
 
