@@ -203,7 +203,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
 
       for (const linha of allLinhas) {
         if (linha.protocolo_operadora) {
-          const key = linha.protocolo_operadora.trim();
+          const key = normalizeProtocolo(linha.protocolo_operadora.trim()) || linha.protocolo_operadora.trim();
           if (!linhasByProtocolo.has(key)) linhasByProtocolo.set(key, []);
           linhasByProtocolo.get(key)!.push(linha);
         }
