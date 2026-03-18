@@ -89,14 +89,7 @@ const App = () => (
               }
             />
             
-            <Route
-              path="/divergencias"
-              element={
-                <ProtectedRoute allowedRoles={['admin', 'supervisor']}>
-                  <Divergencias />
-                </ProtectedRoute>
-              }
-            />
+            
             
             <Route
               path="/empresas"
