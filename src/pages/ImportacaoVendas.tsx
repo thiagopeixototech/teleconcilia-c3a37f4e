@@ -440,7 +440,17 @@ export default function ImportacaoVendas() {
 
         if (existingMap.has(identificador!)) {
           const existingId = existingMap.get(identificador!)!;
-          rowsToUpdate.push({ id: existingId, data: rowData });
+          // Protection: check if venda is conciliated — block critical field changes
+          const existingVenda = existingVendas?.find((v: any) => v.id === existingId);
+          const isConciliated = existingVenda?.status_interno === 'confirmada';
+          if (isConciliated) {
+            // Only allow non-critical fields to be updated
+            const { valor, operadora_id, cpf_cnpj, protocolo_interno, ...safeData } = rowData;
+            rowsToUpdate.push({ id: existingId, data: safeData });
+            importResult.warnings = (importResult.warnings || 0) + 1;
+          } else {
+            rowsToUpdate.push({ id: existingId, data: rowData });
+          }
         } else {
           rowsToInsert.push({ ...rowData, status_interno: 'aguardando' });
         }
