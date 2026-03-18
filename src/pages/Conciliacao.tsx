@@ -723,6 +723,20 @@ export default function ConciliacaoPage() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="w-full sm:w-[220px]">
+                <Label className="text-sm font-medium mb-2 block">Múltiplos Matches</Label>
+                <Select value={dedupStrategy} onValueChange={(v) => setDedupStrategy(v as any)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="manual">Revisão Manual</SelectItem>
+                    <SelectItem value="maior_valor">Maior Valor</SelectItem>
+                    <SelectItem value="primeiro">Primeiro Encontrado</SelectItem>
+                    <SelectItem value="ultimo">Último Encontrado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               {arquivoSelecionado && results && (
                 <Button
                   variant="outline"
