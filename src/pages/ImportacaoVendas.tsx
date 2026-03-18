@@ -597,7 +597,7 @@ export default function ImportacaoVendas() {
   // Skip current file without importing
   const skipCurrentFile = () => {
     if (file) {
-      setFileResults(prev => [...prev, { fileName: file.name, result: { total: csvRows.length, success: 0, updated: 0, errors: [{ line: 0, reason: 'Arquivo pulado', data: {} }] } }]);
+      setFileResults(prev => [...prev, { fileName: file.name, result: { total: csvRows.length, success: 0, updated: 0, warnings: 0, errors: [{ line: 0, reason: 'Arquivo pulado', data: {} }] } }]);
     }
     const nextIndex = currentFileIndex + 1;
     if (nextIndex < allFiles.length) {
