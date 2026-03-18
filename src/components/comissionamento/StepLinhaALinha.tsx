@@ -187,7 +187,8 @@ export function StepLinhaALinha({ comissionamentoId }: Props) {
         tipo_match: lal.tipoMatch,
         arquivo_nome: lal.arquivo?.name || null,
         qtd_registros: linhas.length,
-      });
+        hash_arquivo: (lal as any)._fileHash || null,
+      } as any);
 
       updateLal(lal.id, {
         imported: true,
