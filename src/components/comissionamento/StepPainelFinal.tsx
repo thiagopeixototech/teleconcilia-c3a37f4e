@@ -239,6 +239,17 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
     );
   }, [resumoPorVendedor]);
 
+  // CC-05: Vendas sem match (receita_lal null ou 0 e sem lal_apelido)
+  const vendasSemMatch = useMemo(() => {
+    return vendas.filter(v => !v.receita_lal && !v.lal_apelido);
+  }, [vendas]);
+
+  const receitaNaoEncontrada = useMemo(() => {
+    return vendasSemMatch.reduce((sum, v) => sum + Number(v.receita_interna || 0), 0);
+  }, [vendasSemMatch]);
+
+  const [showSemMatch, setShowSemMatch] = useState(false);
+
   const [isExportingReport, setIsExportingReport] = useState(false);
 
   const buildCsvBlob = (headers: string[], rows: string[][]) => {
