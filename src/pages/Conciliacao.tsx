@@ -390,7 +390,31 @@ export default function ConciliacaoPage() {
               });
             }
           } else {
-            ambiguous.push({ linha, candidates });
+            // Multiple candidates — apply dedup strategy
+            if (dedupStrategy === 'manual') {
+              ambiguous.push({ linha, candidates });
+            } else {
+              // Sort candidates based on strategy
+              let chosen: typeof candidates[0];
+              if (dedupStrategy === 'maior_valor') {
+                chosen = candidates.reduce((best, c) =>
+                  (c.venda.valor || 0) > (best.venda.valor || 0) ? c : best
+                , candidates[0]);
+              } else if (dedupStrategy === 'primeiro') {
+                chosen = candidates[0];
+              } else {
+                // ultimo
+                chosen = candidates[candidates.length - 1];
+              }
+              const score = chosen.tipoMatch === 'protocolo' ? 100 : chosen.tipoMatch === 'cpf' ? 90 : 70;
+              found.push({
+                linha,
+                venda: chosen.venda,
+                tipoMatch: chosen.tipoMatch,
+                score,
+                statusMake: chosen.venda.status_make?.toUpperCase() || 'N/A',
+              });
+            }
           }
         }
 
