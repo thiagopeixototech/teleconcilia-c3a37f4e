@@ -764,6 +764,15 @@ export default function ComissionamentoPage() {
                       <Users className="h-4 w-4" />
                       Resumo Vendedor
                     </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => window.location.href = `/comissionamento/${selectedId}/saude`}
+                    >
+                      <Activity className="h-4 w-4" />
+                      Saúde
+                    </Button>
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
                         <Button variant="outline" size="sm" className="gap-1.5 text-destructive hover:text-destructive">
