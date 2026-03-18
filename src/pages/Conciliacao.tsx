@@ -326,7 +326,8 @@ export default function ConciliacaoPage() {
 
           if (hasProtocolo) {
             matchKeysUsed.push('protocolo');
-            const matches = vendaByProtocolo.get(linha.protocolo_operadora!) || [];
+            const normalizedProto = normalizeProtocolo(linha.protocolo_operadora!) || linha.protocolo_operadora!;
+            const matches = vendaByProtocolo.get(normalizedProto) || [];
             for (const v of matches) {
               candidates.push({ venda: v, tipoMatch: 'protocolo' });
             }
