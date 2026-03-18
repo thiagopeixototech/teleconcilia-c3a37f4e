@@ -394,6 +394,32 @@ export default function ComissionamentoPage() {
     }
   };
 
+  const handleToggleOpStatus = useCallback(async (operadoraId: string, newStatus: string) => {
+    if (!selectedId) return;
+    setSavingOpStatus(operadoraId);
+    try {
+      const { error } = await supabase
+        .from('comissionamento_status_operadora')
+        .upsert({
+          comissionamento_id: selectedId,
+          operadora_id: operadoraId,
+          status: newStatus,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'comissionamento_id,operadora_id' });
+      if (error) throw error;
+      setOpStatuses(prev => {
+        const next = new Map(prev);
+        next.set(operadoraId, { status: newStatus, observacao: prev.get(operadoraId)?.observacao || null });
+        return next;
+      });
+      toast.success(`Status atualizado`);
+    } catch (err: any) {
+      toast.error('Erro ao salvar status: ' + err.message);
+    } finally {
+      setSavingOpStatus(null);
+    }
+  }, [selectedId]);
+
   const [isExportingReport, setIsExportingReport] = useState(false);
 
   const buildCsvBlob = (headers: string[], rows: string[][]) => {
