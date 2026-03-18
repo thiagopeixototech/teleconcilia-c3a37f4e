@@ -254,12 +254,12 @@ export default function ConciliacaoPage() {
 
       for (const v of vendas) {
         if (v.protocolo_interno) {
-          const key = v.protocolo_interno;
+          const key = normalizeProtocolo(v.protocolo_interno) || v.protocolo_interno;
           if (!vendaByProtocolo.has(key)) vendaByProtocolo.set(key, []);
           vendaByProtocolo.get(key)!.push(v);
         }
         if (v.cpf_cnpj) {
-          const key = normalizeDoc(v.cpf_cnpj);
+          const key = normalizeCpfCnpjForMatch(v.cpf_cnpj);
           if (!vendaByCpf.has(key)) vendaByCpf.set(key, []);
           vendaByCpf.get(key)!.push(v);
         }
