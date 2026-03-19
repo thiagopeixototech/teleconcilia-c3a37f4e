@@ -164,8 +164,6 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         };
       });
 
-      });
-
       setVendas(mapped);
       setLals(lalData);
 
