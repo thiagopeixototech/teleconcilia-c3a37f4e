@@ -380,10 +380,116 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       receita_atribuida: null,
       created_by: userId || null,
     }));
-    // Insert in batches, ignore duplicates
+
     for (let i = 0; i < vinculos.length; i += 50) {
       const batch = vinculos.slice(i, i + 50);
-      await supabase.from('lal_vinculos' as any).upsert(batch as any, { onConflict: 'lal_registro_id,comissionamento_venda_id' });
+      const { error } = await supabase
+        .from('lal_vinculos' as any)
+        .upsert(batch as any, { onConflict: 'lal_registro_id,comissionamento_venda_id' });
+
+      if (error) throw error;
+    }
+  };
+
+  const persistBulkStatusUpdates = async (items: ComVenda[], status: 'OK' | 'DESCONTADA') => {
+    const statusOnlyIds: string[] = [];
+    const summaryUpdates: ComVenda[] = [];
+    const needsLinkUpdate: ComVenda[] = [];
+    const allVinculos: { lal_registro_id: string; comissionamento_venda_id: string; tipo_vinculo: string; receita_atribuida: null; created_by: string | null }[] = [];
+
+    for (const v of items) {
+      const needsLinhaLink = !v.linha_operadora_id && !!v.matched_linha_id && v.matched_source_type === 'linha_operadora';
+      const needsSummaryUpdate = v.matched_valor_lq != null || !!v.matched_apelido;
+
+      if (needsLinhaLink) {
+        needsLinkUpdate.push(v);
+      } else if (needsSummaryUpdate) {
+        summaryUpdates.push(v);
+      } else {
+        statusOnlyIds.push(v.id);
+      }
+
+      if (v.matched_lal_registro_ids && v.matched_lal_registro_ids.length > 0) {
+        for (const regId of v.matched_lal_registro_ids) {
+          allVinculos.push({
+            lal_registro_id: regId,
+            comissionamento_venda_id: v.id,
+            tipo_vinculo: 'automatico',
+            receita_atribuida: null,
+            created_by: user?.id || null,
+          });
+        }
+      }
+    }
+
+    let processed = 0;
+    const total = items.length;
+
+    for (let i = 0; i < statusOnlyIds.length; i += 200) {
+      const batch = statusOnlyIds.slice(i, i + 200);
+      const { error } = await supabase
+        .from('comissionamento_vendas')
+        .update({ status_pag: status })
+        .in('id', batch);
+
+      if (error) throw error;
+
+      processed += batch.length;
+      setProgress({ current: processed, total });
+    }
+
+    for (let i = 0; i < summaryUpdates.length; i += 50) {
+      const batch = summaryUpdates.slice(i, i + 50);
+
+      await Promise.all(
+        batch.map(async (v) => {
+          const { error } = await supabase
+            .from('comissionamento_vendas')
+            .update({
+              status_pag: status,
+              receita_lal: v.matched_valor_lq ?? v.receita_lal ?? null,
+              lal_apelido: v.matched_apelido ?? v.lal_apelido ?? null,
+            } as any)
+            .eq('id', v.id);
+
+          if (error) throw error;
+        })
+      );
+
+      processed += batch.length;
+      setProgress({ current: processed, total });
+    }
+
+    for (let i = 0; i < needsLinkUpdate.length; i += 50) {
+      const batch = needsLinkUpdate.slice(i, i + 50);
+
+      await Promise.all(
+        batch.map(async (v) => {
+          const { error } = await supabase
+            .from('comissionamento_vendas')
+            .update({
+              status_pag: status,
+              linha_operadora_id: v.matched_linha_id,
+              receita_lal: v.matched_valor_lq ?? v.receita_lal ?? null,
+              lal_apelido: v.matched_apelido ?? v.lal_apelido ?? null,
+            } as any)
+            .eq('id', v.id);
+
+          if (error) throw error;
+        })
+      );
+
+      processed += batch.length;
+      setProgress({ current: processed, total });
+    }
+
+    for (let i = 0; i < allVinculos.length; i += 200) {
+      const batch = allVinculos.slice(i, i + 200);
+      const { error } = await supabase
+        .from('lal_vinculos' as any)
+        .upsert(batch as any, { onConflict: 'lal_registro_id,comissionamento_venda_id' });
+
+      if (error) throw error;
     }
   };
 
