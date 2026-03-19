@@ -125,25 +125,13 @@ export function ComissionamentoWizard({ mode, comissionamentoId, onClose }: Wiza
     }
     setIsCleaningUp(true);
     try {
-      // 1. Get apelidos of LAL before deleting (used to clean imported linha_operadora)
-      const { data: lalRows } = await supabase
-        .from('comissionamento_lal')
-        .select('apelido')
-        .eq('comissionamento_id', activeComId);
-
-      const apelidos = lalRows?.map(r => r.apelido) || [];
-
-      // 2. Delete only comissionamento-owned records
+      // 1. Delete comissionamento-owned records (cascade handles lal_registros and lal_vinculos)
       await supabase.from('comissionamento_vendas').delete().eq('comissionamento_id', activeComId);
+      await supabase.from('lal_importacoes' as any).delete().eq('comissionamento_id', activeComId);
       await supabase.from('comissionamento_lal').delete().eq('comissionamento_id', activeComId);
       await supabase.from('comissionamento_fontes').delete().eq('comissionamento_id', activeComId);
 
-      // 3. Delete linha_operadora imported for this comissionamento
-      if (apelidos.length > 0) {
-        await supabase.from('linha_operadora').delete().in('apelido', apelidos);
-      }
-
-      // 4. Delete the comissionamento itself (only if we created it in this session)
+      // 2. Delete the comissionamento itself (only if we created it in this session)
       if (mode === 'criar') {
         await supabase.from('comissionamentos').delete().eq('id', activeComId);
       }

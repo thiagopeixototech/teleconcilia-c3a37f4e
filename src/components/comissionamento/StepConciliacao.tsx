@@ -613,6 +613,10 @@ export function StepConciliacao({ comissionamentoId }: Props) {
             updateData.lal_apelido = v.matched_apelido;
           }
           await supabase.from('comissionamento_vendas').update(updateData).eq('id', id);
+          // Create lal_vinculos
+          if (v.matched_lal_registro_ids && v.matched_lal_registro_ids.length > 0) {
+            await createLalVinculos(id, v.matched_lal_registro_ids, user?.id);
+          }
           updated++;
         }
         setProgress({ current: Math.min(i + 50, ids.length), total: ids.length });
