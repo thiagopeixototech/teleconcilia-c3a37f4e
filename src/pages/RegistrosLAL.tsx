@@ -99,12 +99,12 @@ export default function RegistrosLAL() {
     }
   }
 
-  async function fetchAll(table: string, selectCols = '*') {
-    const rows: unknown[] = [];
+  async function fetchAllRows(table: 'lal_registros' | 'lal_vinculos', selectCols = '*') {
+    const rows: any[] = [];
     let from = 0;
     const batchSize = 1000;
     while (true) {
-      const { data, error } = await (supabase.from(table) as any).select(selectCols).range(from, from + batchSize - 1);
+      const { data, error } = await supabase.from(table).select(selectCols).range(from, from + batchSize - 1);
       if (error) { toast.error(`Erro ao buscar ${table}`); return rows; }
       if (!data || data.length === 0) break;
       rows.push(...data);
