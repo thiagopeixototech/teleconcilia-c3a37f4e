@@ -58,6 +58,7 @@ interface ComVenda {
   matched_linha_id?: string | null;
   matched_valor_lq?: number | null;
   matched_apelido?: string | null;
+  matched_source_type?: 'linha_operadora' | 'lal_registro' | null;
   matched_lal_registro_ids?: string[];
   is_atencao?: boolean;
   atencao_key?: string;
