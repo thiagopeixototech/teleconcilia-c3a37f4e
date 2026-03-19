@@ -957,6 +957,10 @@ export type Database = {
         Args: { _user_id: string; _usuario_id: string }
         Returns: boolean
       }
+      get_comissionamento_stats: {
+        Args: { _comissionamento_id: string }
+        Returns: Json
+      }
       get_dashboard_stats: {
         Args: {
           _data_fim: string
