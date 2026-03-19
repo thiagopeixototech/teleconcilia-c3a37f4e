@@ -985,8 +985,9 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
       {activeView === 'detalhes' && (
         <div className="overflow-x-auto border rounded-lg max-h-[400px]">
           <Table>
-            <TableHeader>
+             <TableHeader>
               <TableRow>
+                <TableHead className="text-xs w-8"></TableHead>
                 <TableHead className="text-xs">dt_atv</TableHead>
                 <TableHead className="text-xs">Protocolo</TableHead>
                 <TableHead className="text-xs">Operadora</TableHead>
@@ -1004,6 +1005,17 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
             <TableBody>
               {vendas.slice(0, 200).map(v => (
                 <TableRow key={v.id}>
+                  <TableCell className="p-1">
+                    {v.lal_apelido && (
+                      <Button
+                        variant="ghost" size="icon" className="h-6 w-6"
+                        onClick={() => openLalDetail(v.id, v.cliente_nome || 'Venda')}
+                        title="Ver registros LAL vinculados"
+                      >
+                        <Link2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </TableCell>
                   <TableCell className="text-xs">{v.data_instalacao || '-'}</TableCell>
                   <TableCell className="text-xs font-mono">{v.protocolo_interno || '-'}</TableCell>
                   <TableCell className="text-xs">{v.operadora_nome || '-'}</TableCell>
