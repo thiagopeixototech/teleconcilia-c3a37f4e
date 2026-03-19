@@ -29,6 +29,7 @@ import RevisaoMatches from "./pages/RevisaoMatches";
 import Contestacoes from "./pages/Contestacoes";
 import SaudeComissionamento from "./pages/SaudeComissionamento";
 import LimparDados from "./pages/LimparDados";
+import RegistrosLAL from "./pages/RegistrosLAL";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -209,6 +210,15 @@ const App = () => (
               }
             />
             
+            <Route
+              path="/registros-lal"
+              element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <RegistrosLAL />
+                </ProtectedRoute>
+              }
+            />
+
             <Route
               path="/limpar-dados"
               element={
