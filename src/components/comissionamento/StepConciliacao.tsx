@@ -637,7 +637,14 @@ export function StepConciliacao({ comissionamentoId }: Props) {
 
       for (let i = 0; i < statusOnlyIds.length; i += 200) {
         const batch = statusOnlyIds.slice(i, i + 200);
-        await supabase.from('comissionamento_vendas').update({ status_pag: status } as any).in('id', batch);
+        const batchVendas = batch.map(id => vendasById.get(id)).filter(Boolean) as ComVenda[];
+        const payload = batchVendas.map(v => ({
+          id: v.id,
+          status_pag: status,
+          receita_lal: v.matched_valor_lq ?? v.receita_lal ?? null,
+          lal_apelido: v.matched_apelido ?? v.lal_apelido ?? null,
+        }));
+        await supabase.from('comissionamento_vendas').upsert(payload as any, { onConflict: 'id' });
         processed += batch.length;
         setProgress({ current: processed, total });
       }
