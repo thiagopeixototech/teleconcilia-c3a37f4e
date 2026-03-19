@@ -121,12 +121,16 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         offset += batchSize;
       }
 
-      const [lalRes] = await Promise.all([
-        supabase
-          .from('comissionamento_lal')
-          .select('*')
-          .eq('comissionamento_id', comissionamentoId),
-      ]);
+      // Load LAL importacoes (new architecture)
+      const { data: lalImportacoes } = await supabase
+        .from('lal_importacoes' as any)
+        .select('*')
+        .eq('comissionamento_id', comissionamentoId);
+
+      // Fallback to comissionamento_lal if no lal_importacoes found
+      const lalData = (lalImportacoes && lalImportacoes.length > 0)
+        ? lalImportacoes
+        : (await supabase.from('comissionamento_lal').select('*').eq('comissionamento_id', comissionamentoId)).data || [];
 
       const mapped: ComVenda[] = allVendas.map((row: any) => {
         const vi = row.vendas_internas;
