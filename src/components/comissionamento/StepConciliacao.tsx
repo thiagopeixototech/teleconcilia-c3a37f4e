@@ -657,25 +657,63 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       const ids = Array.from(selectedIds);
       const vendasToUpdate = vendas.filter(v => ids.includes(v.id));
 
-      for (let i = 0; i < vendasToUpdate.length; i += 50) {
-        const batch = vendasToUpdate.slice(i, i + 50);
+      // Separate: vendas that only need status_pag vs vendas that also need link data
+      const statusOnlyIds: string[] = [];
+      const needsLinkUpdate: ComVenda[] = [];
+      const allVinculos: { lal_registro_id: string; comissionamento_venda_id: string; tipo_vinculo: string; receita_atribuida: null; created_by: string | null }[] = [];
+
+      for (const v of vendasToUpdate) {
+        if (!v.linha_operadora_id && v.matched_linha_id) {
+          needsLinkUpdate.push(v);
+        } else {
+          statusOnlyIds.push(v.id);
+        }
+        // Collect vinculos
+        if (v.matched_lal_registro_ids && v.matched_lal_registro_ids.length > 0) {
+          for (const regId of v.matched_lal_registro_ids) {
+            allVinculos.push({
+              lal_registro_id: regId,
+              comissionamento_venda_id: v.id,
+              tipo_vinculo: 'automatico',
+              receita_atribuida: null,
+              created_by: user?.id || null,
+            });
+          }
+        }
+      }
+
+      let processed = 0;
+      const total = vendasToUpdate.length;
+
+      // Batch 1: Update status-only vendas in chunks of 200 using .in()
+      for (let i = 0; i < statusOnlyIds.length; i += 200) {
+        const batch = statusOnlyIds.slice(i, i + 200);
+        await supabase.from('comissionamento_vendas').update({ status_pag: newStatus } as any).in('id', batch);
+        processed += batch.length;
+        setProgress({ current: processed, total });
+      }
+
+      // Batch 2: Update vendas that need link data (must be individual due to different values per row)
+      for (let i = 0; i < needsLinkUpdate.length; i += 50) {
+        const batch = needsLinkUpdate.slice(i, i + 50);
         await Promise.all(
-          batch.map(async v => {
-            const updateData: any = { status_pag: newStatus };
-            // If pre-matched but not yet saved to DB, save the link too
-            if (!v.linha_operadora_id && v.matched_linha_id) {
-              updateData.linha_operadora_id = v.matched_linha_id;
-              updateData.receita_lal = v.matched_valor_lq;
-              updateData.lal_apelido = v.matched_apelido;
-            }
-            await supabase.from('comissionamento_vendas').update(updateData).eq('id', v.id);
-            // Create lal_vinculos for traceability
-            if (v.matched_lal_registro_ids && v.matched_lal_registro_ids.length > 0) {
-              await createLalVinculos(v.id, v.matched_lal_registro_ids, user?.id);
-            }
-          })
+          batch.map(v =>
+            supabase.from('comissionamento_vendas').update({
+              status_pag: newStatus,
+              linha_operadora_id: v.matched_linha_id,
+              receita_lal: v.matched_valor_lq,
+              lal_apelido: v.matched_apelido,
+            } as any).eq('id', v.id)
+          )
         );
-        setProgress({ current: Math.min(i + 50, vendasToUpdate.length), total: vendasToUpdate.length });
+        processed += batch.length;
+        setProgress({ current: processed, total });
+      }
+
+      // Batch 3: Insert all vinculos in one go
+      for (let i = 0; i < allVinculos.length; i += 200) {
+        const batch = allVinculos.slice(i, i + 200);
+        await supabase.from('lal_vinculos' as any).upsert(batch as any, { onConflict: 'lal_registro_id,comissionamento_venda_id' });
       }
 
       toast.success(`${vendasToUpdate.length} vendas marcadas como ${newStatus}`);
