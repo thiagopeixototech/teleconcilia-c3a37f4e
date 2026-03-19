@@ -226,7 +226,10 @@ export function StepConciliacao({ comissionamentoId }: Props) {
               .eq('apelido', apelido)
               .range(offset, offset + 999);
             if (!data || data.length === 0) break;
-            allLinhas.push(...data);
+            allLinhas.push(...data.map((linha: any) => ({
+              ...linha,
+              _source_type: 'linha_operadora' as const,
+            })));
             if (data.length < 1000) break;
             offset += 1000;
           }
