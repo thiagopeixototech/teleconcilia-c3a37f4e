@@ -961,6 +961,10 @@ export type Database = {
         Args: { _comissionamento_id: string }
         Returns: Json
       }
+      get_comissionamento_vendedor_detail: {
+        Args: { _comissionamento_id: string; _vendedor_nome: string }
+        Returns: Json
+      }
       get_dashboard_stats: {
         Args: {
           _data_fim: string
