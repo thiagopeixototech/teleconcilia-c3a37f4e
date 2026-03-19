@@ -456,8 +456,11 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         if (!status) continue;
 
         const updateData: any = { status_pag: status };
-        if (!v.linha_operadora_id && v.matched_linha_id) {
+        if (!v.linha_operadora_id && v.matched_linha_id && v.matched_source_type === 'linha_operadora') {
           updateData.linha_operadora_id = v.matched_linha_id;
+          updateData.receita_lal = v.matched_valor_lq;
+          updateData.lal_apelido = v.matched_apelido;
+        } else if (v.matched_valor_lq != null) {
           updateData.receita_lal = v.matched_valor_lq;
           updateData.lal_apelido = v.matched_apelido;
         }
