@@ -10,7 +10,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import {
-  Loader2, Download, DollarSign, Users, RotateCcw, TrendingDown, Receipt, FileDown, Grid3X3, AlertTriangle, Eye, Link2,
+  Loader2, Download, DollarSign, Users, RotateCcw, TrendingDown, Receipt, FileDown, Grid3X3, AlertTriangle, Eye, Link2, ArrowUpDown, ArrowUp, ArrowDown,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
