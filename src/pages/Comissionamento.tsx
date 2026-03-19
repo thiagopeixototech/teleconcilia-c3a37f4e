@@ -535,43 +535,19 @@ export default function ComissionamentoPage() {
   const handleExportVendedorDetalhado = useCallback(async (vendedorNome: string) => {
     if (!selectedId) return;
     try {
-      // Fetch all comissionamento_vendas for this comissionamento, filtered by vendedor
-      let allRows: any[] = [];
-      let offset = 0;
-      while (true) {
-        const { data, error } = await supabase
-          .from('comissionamento_vendas')
-          .select(`
-            status_pag, receita_interna, receita_lal, receita_descontada,
-            lal_apelido, comissionamento_desconto,
-            vendas_internas!comissionamento_vendas_venda_interna_id_fkey(
-              cliente_nome, cpf_cnpj, protocolo_interno, status_make, data_instalacao, plano, valor,
-              identificador_make, telefone,
-              usuarios!vendas_internas_usuario_id_fkey(nome),
-              operadoras!vendas_internas_operadora_id_fkey(nome)
-            )
-          `)
-          .eq('comissionamento_id', selectedId)
-          .range(offset, offset + 999);
-        if (error) throw error;
-        if (!data || data.length === 0) break;
-        allRows = allRows.concat(data);
-        if (data.length < 1000) break;
-        offset += 1000;
-      }
-
-      // Filter by vendedor name
-      const vendorRows = allRows.filter((r: any) => {
-        const nome = r.vendas_internas?.usuarios?.nome || 'Não identificado';
-        return nome === vendedorNome;
-      });
+      const { data: vendorRows, error } = await supabase
+        .rpc('get_comissionamento_vendedor_detail', {
+          _comissionamento_id: selectedId,
+          _vendedor_nome: vendedorNome,
+        });
+      if (error) throw error;
 
       const headers = [
         'Vendedor', 'dt_atv', 'Protocolo', 'ID Make', 'CPF', 'Cliente', 'Telefone',
         'Operadora', 'Plano', 'Status Make', 'Status Pag',
         'Receita Interna', 'Receita LAL', 'LAL', 'Estorno', 'Comiss. Desconto',
       ];
-      const rows = vendorRows.map((cv: any) => {
+      const rows = ((vendorRows as any[]) || []).map((cv: any) => {
         const vi = cv.vendas_internas;
         return [
           vi?.usuarios?.nome || '', vi?.data_instalacao || '',
@@ -588,7 +564,7 @@ export default function ComissionamentoPage() {
       const nomeArquivo = vendedorNome.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 30);
       const dateStr = format(new Date(), 'yyyy-MM-dd');
       downloadBlob(buildCsvBlob(headers, rows), `detalhado_${nomeArquivo}_${dateStr}.csv`);
-      toast.success(`Detalhado de ${vendedorNome} exportado (${vendorRows.length} vendas)`);
+      toast.success(`Detalhado de ${vendedorNome} exportado (${rows.length} vendas)`);
     } catch (err: any) {
       toast.error('Erro ao exportar: ' + err.message);
     }
