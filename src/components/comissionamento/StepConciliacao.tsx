@@ -208,6 +208,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
               valor_lq: r.receita,
               apelido: lalData.find((l: any) => l.id === r.importacao_id)?.apelido || '',
               _importacao_id: r.importacao_id,
+              _source_type: 'lal_registro' as const,
             })));
             if ((data as any[]).length < 1000) break;
             offset += 1000;
