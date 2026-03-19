@@ -253,6 +253,45 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
 
   const [showSemMatch, setShowSemMatch] = useState(false);
 
+  // Sorting for Detalhes tab
+  type SortField = 'receita_lal' | 'estorno' | 'churn' | null;
+  type SortDir = 'asc' | 'desc';
+  const [sortField, setSortField] = useState<SortField>(null);
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      if (sortDir === 'desc') setSortDir('asc');
+      else { setSortField(null); setSortDir('desc'); }
+    } else {
+      setSortField(field);
+      setSortDir('desc');
+    }
+  };
+
+  const sortedVendas = useMemo(() => {
+    if (!sortField) return vendas;
+    return [...vendas].sort((a, b) => {
+      let va = 0, vb = 0;
+      if (sortField === 'receita_lal') {
+        va = Number(a.receita_lal || 0);
+        vb = Number(b.receita_lal || 0);
+      } else if (sortField === 'estorno') {
+        va = Number(a.receita_descontada || 0);
+        vb = Number(b.receita_descontada || 0);
+      } else if (sortField === 'churn') {
+        va = (a.status_make || '').toLowerCase().startsWith('churn') ? Number(a.receita_interna || 0) : 0;
+        vb = (b.status_make || '').toLowerCase().startsWith('churn') ? Number(b.receita_interna || 0) : 0;
+      }
+      return sortDir === 'desc' ? vb - va : va - vb;
+    });
+  }, [vendas, sortField, sortDir]);
+
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field) return <ArrowUpDown className="h-3 w-3 ml-1 opacity-40" />;
+    return sortDir === 'desc' ? <ArrowDown className="h-3 w-3 ml-1" /> : <ArrowUp className="h-3 w-3 ml-1" />;
+  };
+
   const [isExportingReport, setIsExportingReport] = useState(false);
 
   const buildCsvBlob = (headers: string[], rows: string[][]) => {
