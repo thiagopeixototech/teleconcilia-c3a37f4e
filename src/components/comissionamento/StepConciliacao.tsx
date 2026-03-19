@@ -356,6 +356,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           matched_linha_id: primaryLinha.id,
           matched_valor_lq: totalValorLq,
           matched_apelido: candidate.apelido,
+          matched_source_type: primaryLinha._source_type || null,
           matched_lal_registro_ids: linhasToUse.map((l: any) => l.id),
           is_atencao: isAtencao,
           atencao_key: isAtencao ? candidate.matchKey : undefined,
