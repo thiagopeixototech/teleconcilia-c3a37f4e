@@ -364,6 +364,23 @@ export function StepConciliacao({ comissionamentoId }: Props) {
     }
   };
 
+  // Helper: create lal_vinculos for matched LAL records
+  const createLalVinculos = async (comVendaId: string, lalRegistroIds: string[], userId?: string) => {
+    if (!lalRegistroIds || lalRegistroIds.length === 0) return;
+    const vinculos = lalRegistroIds.map(regId => ({
+      lal_registro_id: regId,
+      comissionamento_venda_id: comVendaId,
+      tipo_vinculo: 'automatico',
+      receita_atribuida: null,
+      created_by: userId || null,
+    }));
+    // Insert in batches, ignore duplicates
+    for (let i = 0; i < vinculos.length; i += 50) {
+      const batch = vinculos.slice(i, i + 50);
+      await supabase.from('lal_vinculos' as any).upsert(batch as any, { onConflict: 'lal_registro_id,comissionamento_venda_id' });
+    }
+  };
+
   useEffect(() => { loadData(); }, [loadData]);
 
   const filteredVendas = useMemo(() => {
