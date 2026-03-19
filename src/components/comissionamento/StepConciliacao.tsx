@@ -767,9 +767,20 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       }
 
       toast.success(`${vendasToUpdate.length} vendas marcadas como ${newStatus}`);
+      setVendas(prev => prev.map(v => {
+        if (!ids.includes(v.id)) return v;
+        const sourceIsLinhaOperadora = v.matched_source_type === 'linha_operadora';
+        return {
+          ...v,
+          status_pag: newStatus,
+          receita_lal: v.matched_valor_lq ?? v.receita_lal ?? null,
+          lal_apelido: v.matched_apelido ?? v.lal_apelido ?? null,
+          linha_operadora_id: (!v.linha_operadora_id && sourceIsLinhaOperadora && v.matched_linha_id) ? v.matched_linha_id : v.linha_operadora_id,
+        };
+      }));
       setSelectedIds(new Set());
       setSelectAll(false);
-      loadData();
+      await loadData();
     } catch (err: any) {
       toast.error('Erro: ' + err.message);
     } finally {
