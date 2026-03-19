@@ -339,7 +339,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         const availableLinhas = candidate.linhas.filter((l: any) => !claimedLinhaIds.has(l.id));
         if (availableLinhas.length === 0 && !isAtencao) {
           // All lines already claimed — this venda gets no LAL revenue
-          return { ...venda, matched_linha_id: null, matched_valor_lq: null, matched_apelido: null, is_atencao: false, atencao_key: undefined };
+          return { ...venda, matched_linha_id: null, matched_valor_lq: null, matched_apelido: null, matched_source_type: null, is_atencao: false, atencao_key: undefined };
         }
 
         const linhasToUse = isAtencao ? candidate.linhas : availableLinhas;
