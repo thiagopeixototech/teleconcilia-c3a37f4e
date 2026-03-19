@@ -78,10 +78,10 @@ export default function RegistrosLAL() {
     setLoading(true);
     try {
       const [regRes, impRes, opRes, vincRes] = await Promise.all([
-        fetchAll('lal_registros'),
+        fetchAllRows('lal_registros'),
         supabase.from('lal_importacoes').select('id, apelido, operadora_id, arquivo_nome, qtd_registros, tipo_match, status, created_at').order('created_at', { ascending: false }),
         supabase.from('operadoras').select('id, nome').eq('ativa', true),
-        fetchAll('lal_vinculos', 'lal_registro_id'),
+        fetchAllRows('lal_vinculos', 'lal_registro_id'),
       ]);
 
       if (regRes) setRegistros(regRes as LalRegistro[]);
