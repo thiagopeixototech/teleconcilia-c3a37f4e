@@ -1045,6 +1045,63 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
       {vendas.length > 200 && activeView === 'detalhes' && (
         <p className="text-xs text-muted-foreground text-center">Mostrando 200 de {vendas.length}. Exporte o CSV para o completo.</p>
       )}
+
+      {/* LAL Detail Dialog */}
+      <Dialog open={lalDetailDialog.open} onOpenChange={(open) => setLalDetailDialog(prev => ({ ...prev, open }))}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-sm">
+              <Link2 className="h-4 w-4" />
+              Registros LAL vinculados — {lalDetailDialog.clienteNome}
+            </DialogTitle>
+          </DialogHeader>
+          {lalDetailLoading ? (
+            <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin" /></div>
+          ) : lalDetailDialog.registros.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-6">Nenhum registro LAL vinculado a esta venda.</p>
+          ) : (
+            <div className="space-y-3">
+              <div className="text-sm font-medium">
+                {lalDetailDialog.registros.length} registro(s) — Total: {formatBRL(lalDetailDialog.registros.reduce((s: number, r: any) => s + Number(r.receita || 0), 0))}
+              </div>
+              <div className="overflow-x-auto border rounded-lg">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">ID</TableHead>
+                      <TableHead className="text-xs">CPF/CNPJ</TableHead>
+                      <TableHead className="text-xs">N. Solicitação</TableHead>
+                      <TableHead className="text-xs">Cliente</TableHead>
+                      <TableHead className="text-xs">Plano</TableHead>
+                      <TableHead className="text-xs text-right">Receita</TableHead>
+                      <TableHead className="text-xs">Data Ativação</TableHead>
+                      <TableHead className="text-xs">Tipo Vínculo</TableHead>
+                      <TableHead className="text-xs">Linha CSV</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {lalDetailDialog.registros.map((r: any) => (
+                      <TableRow key={r.id}>
+                        <TableCell className="text-xs font-mono">{r.id?.substring(0, 8)}</TableCell>
+                        <TableCell className="text-xs">{r.cpf_cnpj || '-'}</TableCell>
+                        <TableCell className="text-xs font-mono">{r.n_solicitacao || '-'}</TableCell>
+                        <TableCell className="text-xs">{r.cliente_nome || '-'}</TableCell>
+                        <TableCell className="text-xs">{r.plano || '-'}</TableCell>
+                        <TableCell className="text-xs text-right font-medium">{formatBRL(Number(r.receita || 0))}</TableCell>
+                        <TableCell className="text-xs">{r.data_ativacao || '-'}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-xs">{r.tipo_vinculo}</Badge>
+                        </TableCell>
+                        <TableCell className="text-xs">{r.linha_csv || '-'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
