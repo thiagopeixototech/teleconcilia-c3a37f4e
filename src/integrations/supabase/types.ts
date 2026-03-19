@@ -591,6 +591,210 @@ export type Database = {
           },
         ]
       }
+      lal_audit_log: {
+        Row: {
+          acao: string
+          created_at: string
+          detalhes: Json | null
+          id: string
+          importacao_id: string | null
+          registro_id: string | null
+          user_id: string | null
+          vinculo_id: string | null
+        }
+        Insert: {
+          acao: string
+          created_at?: string
+          detalhes?: Json | null
+          id?: string
+          importacao_id?: string | null
+          registro_id?: string | null
+          user_id?: string | null
+          vinculo_id?: string | null
+        }
+        Update: {
+          acao?: string
+          created_at?: string
+          detalhes?: Json | null
+          id?: string
+          importacao_id?: string | null
+          registro_id?: string | null
+          user_id?: string | null
+          vinculo_id?: string | null
+        }
+        Relationships: []
+      }
+      lal_importacoes: {
+        Row: {
+          apelido: string
+          arquivo_nome: string | null
+          comissionamento_id: string | null
+          created_at: string
+          created_by: string
+          hash_arquivo: string | null
+          id: string
+          mapeamento_id: string | null
+          operadora_id: string
+          qtd_registros: number | null
+          status: string
+          tipo_match: string
+        }
+        Insert: {
+          apelido: string
+          arquivo_nome?: string | null
+          comissionamento_id?: string | null
+          created_at?: string
+          created_by: string
+          hash_arquivo?: string | null
+          id?: string
+          mapeamento_id?: string | null
+          operadora_id: string
+          qtd_registros?: number | null
+          status?: string
+          tipo_match?: string
+        }
+        Update: {
+          apelido?: string
+          arquivo_nome?: string | null
+          comissionamento_id?: string | null
+          created_at?: string
+          created_by?: string
+          hash_arquivo?: string | null
+          id?: string
+          mapeamento_id?: string | null
+          operadora_id?: string
+          qtd_registros?: number | null
+          status?: string
+          tipo_match?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lal_importacoes_comissionamento_id_fkey"
+            columns: ["comissionamento_id"]
+            isOneToOne: false
+            referencedRelation: "comissionamentos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lal_importacoes_mapeamento_id_fkey"
+            columns: ["mapeamento_id"]
+            isOneToOne: false
+            referencedRelation: "mapeamento_colunas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lal_importacoes_operadora_id_fkey"
+            columns: ["operadora_id"]
+            isOneToOne: false
+            referencedRelation: "operadoras"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lal_registros: {
+        Row: {
+          cliente_nome: string | null
+          cpf_cnpj: string | null
+          created_at: string
+          dados_extras: Json | null
+          data_ativacao: string | null
+          id: string
+          importacao_id: string
+          linha_csv: number | null
+          n_solicitacao: string | null
+          operadora: string
+          plano: string | null
+          receita: number | null
+          status: string
+          telefone: string | null
+        }
+        Insert: {
+          cliente_nome?: string | null
+          cpf_cnpj?: string | null
+          created_at?: string
+          dados_extras?: Json | null
+          data_ativacao?: string | null
+          id?: string
+          importacao_id: string
+          linha_csv?: number | null
+          n_solicitacao?: string | null
+          operadora: string
+          plano?: string | null
+          receita?: number | null
+          status?: string
+          telefone?: string | null
+        }
+        Update: {
+          cliente_nome?: string | null
+          cpf_cnpj?: string | null
+          created_at?: string
+          dados_extras?: Json | null
+          data_ativacao?: string | null
+          id?: string
+          importacao_id?: string
+          linha_csv?: number | null
+          n_solicitacao?: string | null
+          operadora?: string
+          plano?: string | null
+          receita?: number | null
+          status?: string
+          telefone?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lal_registros_importacao_id_fkey"
+            columns: ["importacao_id"]
+            isOneToOne: false
+            referencedRelation: "lal_importacoes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lal_vinculos: {
+        Row: {
+          comissionamento_venda_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          lal_registro_id: string
+          receita_atribuida: number | null
+          tipo_vinculo: string
+        }
+        Insert: {
+          comissionamento_venda_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          lal_registro_id: string
+          receita_atribuida?: number | null
+          tipo_vinculo?: string
+        }
+        Update: {
+          comissionamento_venda_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          lal_registro_id?: string
+          receita_atribuida?: number | null
+          tipo_vinculo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lal_vinculos_comissionamento_venda_id_fkey"
+            columns: ["comissionamento_venda_id"]
+            isOneToOne: false
+            referencedRelation: "comissionamento_vendas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lal_vinculos_lal_registro_id_fkey"
+            columns: ["lal_registro_id"]
+            isOneToOne: false
+            referencedRelation: "lal_registros"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       linha_operadora: {
         Row: {
           apelido: string | null
