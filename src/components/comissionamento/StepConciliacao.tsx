@@ -717,58 +717,9 @@ export function StepConciliacao({ comissionamentoId }: Props) {
     setIsProcessing(true);
     try {
       const ids = Array.from(selectedAtencaoIds);
-      const vendasById = new Map(vendas.map(v => [v.id, v]));
+      const vendasToUpdate = vendas.filter(v => ids.includes(v.id));
 
-      const statusOnlyIds: string[] = [];
-      const needsLinkUpdate: ComVenda[] = [];
-      const allVinculos: any[] = [];
-
-      for (const id of ids) {
-        const v = vendasById.get(id);
-        if (!v) continue;
-        if (!v.linha_operadora_id && v.matched_linha_id && v.matched_source_type === 'linha_operadora') {
-          needsLinkUpdate.push(v);
-        } else {
-          statusOnlyIds.push(id);
-        }
-        if (v.matched_lal_registro_ids && v.matched_lal_registro_ids.length > 0) {
-          for (const regId of v.matched_lal_registro_ids) {
-            allVinculos.push({ lal_registro_id: regId, comissionamento_venda_id: id, tipo_vinculo: 'automatico', receita_atribuida: null, created_by: user?.id || null });
-          }
-        }
-      }
-
-      let processed = 0;
-      const total = ids.length;
-
-      for (let i = 0; i < statusOnlyIds.length; i += 200) {
-        const batch = statusOnlyIds.slice(i, i + 200);
-        const batchVendas = batch.map(id => vendasById.get(id)).filter(Boolean) as ComVenda[];
-        const payload = batchVendas.map(v => ({
-          id: v.id,
-          status_pag: status,
-          receita_lal: v.matched_valor_lq ?? v.receita_lal ?? null,
-          lal_apelido: v.matched_apelido ?? v.lal_apelido ?? null,
-        }));
-        await supabase.from('comissionamento_vendas').upsert(payload as any, { onConflict: 'id' });
-        processed += batch.length;
-        setProgress({ current: processed, total });
-      }
-
-      for (let i = 0; i < needsLinkUpdate.length; i += 50) {
-        const batch = needsLinkUpdate.slice(i, i + 50);
-        await Promise.all(batch.map(v =>
-          supabase.from('comissionamento_vendas').update({
-            status_pag: status, linha_operadora_id: v.matched_linha_id, receita_lal: v.matched_valor_lq, lal_apelido: v.matched_apelido,
-          } as any).eq('id', v.id)
-        ));
-        processed += batch.length;
-        setProgress({ current: processed, total });
-      }
-
-      for (let i = 0; i < allVinculos.length; i += 200) {
-        await supabase.from('lal_vinculos' as any).upsert(allVinculos.slice(i, i + 200) as any, { onConflict: 'lal_registro_id,comissionamento_venda_id' });
-      }
+      await persistBulkStatusUpdates(vendasToUpdate, status);
 
       toast.success(`${ids.length} vendas marcadas como ${status}`);
       setVendas(prev => prev.map(v => {
