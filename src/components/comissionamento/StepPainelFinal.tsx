@@ -7,7 +7,10 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import {
-  Loader2, Download, DollarSign, Users, RotateCcw, TrendingDown, Receipt, FileDown, Grid3X3, AlertTriangle,
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Loader2, Download, DollarSign, Users, RotateCcw, TrendingDown, Receipt, FileDown, Grid3X3, AlertTriangle, Eye, Link2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -318,24 +321,103 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
     toast.success(`Detalhado de ${vendedorNome} exportado (${vendasVendedor.length} vendas)`);
   };
 
+  // --- LAL Registros Detail Dialog ---
+  const [lalDetailDialog, setLalDetailDialog] = useState<{ open: boolean; comVendaId: string; clienteNome: string; registros: any[] }>({
+    open: false, comVendaId: '', clienteNome: '', registros: [],
+  });
+  const [lalDetailLoading, setLalDetailLoading] = useState(false);
+
+  const openLalDetail = async (comVendaId: string, clienteNome: string) => {
+    setLalDetailLoading(true);
+    setLalDetailDialog({ open: true, comVendaId, clienteNome, registros: [] });
+    try {
+      const { data: vinculos } = await supabase
+        .from('lal_vinculos' as any)
+        .select('lal_registro_id, receita_atribuida, tipo_vinculo')
+        .eq('comissionamento_venda_id', comVendaId);
+
+      if (!vinculos || vinculos.length === 0) {
+        setLalDetailDialog(prev => ({ ...prev, registros: [] }));
+        return;
+      }
+
+      const regIds = (vinculos as any[]).map((v: any) => v.lal_registro_id);
+      const { data: registros } = await supabase
+        .from('lal_registros' as any)
+        .select('id, cpf_cnpj, n_solicitacao, receita, plano, operadora, cliente_nome, telefone, data_ativacao, linha_csv')
+        .in('id', regIds);
+
+      const vinculoMap = new Map((vinculos as any[]).map((v: any) => [v.lal_registro_id, v]));
+      const enriched = (registros as any[] || []).map((r: any) => ({
+        ...r,
+        tipo_vinculo: vinculoMap.get(r.id)?.tipo_vinculo || 'automatico',
+        receita_atribuida: vinculoMap.get(r.id)?.receita_atribuida,
+      }));
+
+      setLalDetailDialog(prev => ({ ...prev, registros: enriched }));
+    } catch (err: any) {
+      toast.error('Erro ao carregar registros LAL: ' + err.message);
+    } finally {
+      setLalDetailLoading(false);
+    }
+  };
+
   const exportRelatorioComissionamento = useCallback(async () => {
     setIsExportingReport(true);
     try {
-      const { data: lalRows, error: lalErr } = await supabase
-        .from('comissionamento_lal')
-        .select('apelido')
+      // Try new architecture first (lal_importacoes → lal_registros)
+      const { data: lalImps } = await supabase
+        .from('lal_importacoes' as any)
+        .select('id, apelido')
         .eq('comissionamento_id', comissionamentoId);
-      if (lalErr) throw lalErr;
-      const apelidos = lalRows?.map(r => r.apelido) || [];
 
-      let linhasOperadora: any[] = [];
-      if (apelidos.length > 0) {
-        const batchSize = 30;
-        for (let i = 0; i < apelidos.length; i += batchSize) {
-          const batch = apelidos.slice(i, i + batchSize);
-          const { data, error } = await supabase.from('linha_operadora').select('*').in('apelido', batch);
-          if (error) throw error;
-          linhasOperadora = linhasOperadora.concat(data || []);
+      let lalRegistros: any[] = [];
+      const useNewArch = lalImps && lalImps.length > 0;
+
+      if (useNewArch) {
+        const impIds = (lalImps as any[]).map((l: any) => l.id);
+        const apelidoMap = new Map((lalImps as any[]).map((l: any) => [l.id, l.apelido]));
+        for (const impId of impIds) {
+          let offset = 0;
+          while (true) {
+            const { data } = await supabase
+              .from('lal_registros' as any)
+              .select('*')
+              .eq('importacao_id', impId)
+              .range(offset, offset + 999);
+            if (!data || data.length === 0) break;
+            lalRegistros.push(...(data as any[]).map((r: any) => ({ ...r, apelido: apelidoMap.get(r.importacao_id) || '' })));
+            if ((data as any[]).length < 1000) break;
+            offset += 1000;
+          }
+        }
+      } else {
+        // Fallback to old arch
+        const { data: lalRows } = await supabase
+          .from('comissionamento_lal')
+          .select('apelido')
+          .eq('comissionamento_id', comissionamentoId);
+        const apelidos = lalRows?.map(r => r.apelido) || [];
+        for (let i = 0; i < apelidos.length; i += 30) {
+          const batch = apelidos.slice(i, i + 30);
+          const { data } = await supabase.from('linha_operadora').select('*').in('apelido', batch);
+          lalRegistros = lalRegistros.concat(data || []);
+        }
+      }
+
+      // Get vinculos for enrichment
+      let allVinculos: any[] = [];
+      if (useNewArch) {
+        let offset = 0;
+        while (true) {
+          const { data } = await supabase
+            .from('lal_vinculos' as any)
+            .select('lal_registro_id, comissionamento_venda_id')
+            .range(offset, offset + 999);
+          if (!data || data.length === 0) break;
+          allVinculos.push(...(data as any[]));
+          if ((data as any[]).length < 1000) break;
+          offset += 1000;
         }
       }
 
@@ -344,7 +426,7 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
       while (true) {
         const { data, error } = await supabase
           .from('comissionamento_vendas')
-          .select('venda_interna_id, linha_operadora_id, status_pag')
+          .select('venda_interna_id, linha_operadora_id, status_pag, id')
           .eq('comissionamento_id', comissionamentoId)
           .range(offset, offset + 999);
         if (error) throw error;
@@ -354,77 +436,87 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
         offset += 1000;
       }
 
+      const vendaById = new Map<string, VendaRow>();
+      for (const v of vendas) vendaById.set(v.venda_interna_id, v);
+
+      // Build vinculo lookup: lal_registro_id → comissionamento_venda_id
+      const vinculoByRegId = new Map<string, string>();
+      for (const vc of allVinculos) vinculoByRegId.set(vc.lal_registro_id, vc.comissionamento_venda_id);
+
+      // Also build old-style lookup
       const cvByLinhaId = new Map<string, any>();
       for (const cv of allComVendas) {
         if (cv.linha_operadora_id) cvByLinhaId.set(cv.linha_operadora_id, cv);
       }
+      const cvById = new Map<string, any>();
+      for (const cv of allComVendas) cvById.set(cv.id, cv);
 
-      const vendaById = new Map<string, VendaRow>();
-      for (const v of vendas) vendaById.set(v.venda_interna_id, v);
+      const dateStr = format(new Date(), 'yyyy-MM-dd');
 
-      const linhaById = new Map<string, any>();
-      for (const l of linhasOperadora) linhaById.set(l.id, l);
-
-      const h1 = [
-        'Operadora', 'Protocolo Operadora', 'CPF/CNPJ', 'Cliente', 'Telefone',
-        'Plano', 'Tipo Plano', 'Valor', 'Valor Make', 'Valor LQ',
-        'Data Status', 'Status Operadora', 'Quinzena Ref', 'Apelido Lote', 'Arquivo Origem',
-        'Status Conciliação', 'Status Pag',
-        'Venda ID', 'Vendedor', 'Protocolo Interno', 'Data Venda', 'Data Instalação',
-        'Status Make', 'Empresa/Operadora', 'Valor Venda Interna',
-      ];
-      const rows1 = linhasOperadora.map(l => {
-        const cv = cvByLinhaId.get(l.id);
-        const venda = cv ? vendaById.get(cv.venda_interna_id) : null;
-        const encontrado = !!cv;
-        return [
-          l.operadora || '', l.protocolo_operadora || '', l.cpf_cnpj || '',
-          l.cliente_nome || '', l.telefone || '', l.plano || '', l.tipo_plano || '',
-          l.valor?.toString() || '', l.valor_make?.toString() || '', l.valor_lq?.toString() || '',
-          l.data_status || '', l.status_operadora || '', l.quinzena_ref || '',
-          l.apelido || '', l.arquivo_origem || '',
-          encontrado ? 'Encontrado' : 'Não encontrado',
-          cv?.status_pag || '',
-          venda?.venda_interna_id || '', venda?.vendedor_nome || '',
-          venda?.protocolo_interno || '', '', venda?.data_instalacao || '',
-          venda?.status_make || '', venda?.operadora_nome || '',
-          venda?.receita_interna?.toString() || '',
+      // CSV 1: LAL registros (vinculados + não vinculados)
+      if (useNewArch) {
+        const h1 = [
+          'ID Registro', 'Operadora', 'N. Solicitação', 'CPF/CNPJ', 'Cliente', 'Telefone',
+          'Plano', 'Receita', 'Data Ativação', 'Apelido Lote', 'Linha CSV',
+          'Status Vínculo', 'Venda Vinculada (Vendedor)', 'Venda Vinculada (Cliente)',
         ];
-      });
+        const rows1 = lalRegistros.map((r: any) => {
+          const comVendaId = vinculoByRegId.get(r.id);
+          const cv = comVendaId ? cvById.get(comVendaId) : null;
+          const venda = cv ? vendaById.get(cv.venda_interna_id) : null;
+          return [
+            r.id?.substring(0, 8) || '', r.operadora || '', r.n_solicitacao || '',
+            r.cpf_cnpj || '', r.cliente_nome || '', r.telefone || '',
+            r.plano || '', r.receita?.toString() || '', r.data_ativacao || '',
+            r.apelido || '', r.linha_csv?.toString() || '',
+            comVendaId ? 'Vinculado' : 'Não vinculado',
+            venda?.vendedor_nome || '', venda?.cliente_nome || '',
+          ];
+        });
+        downloadBlob(buildCsvBlob(h1, rows1), `relatorio_LAL_registros_${dateStr}.csv`);
+      } else {
+        const h1 = [
+          'Operadora', 'Protocolo Operadora', 'CPF/CNPJ', 'Cliente', 'Telefone',
+          'Plano', 'Tipo Plano', 'Valor', 'Valor Make', 'Valor LQ',
+          'Data Status', 'Status Operadora', 'Quinzena Ref', 'Apelido Lote', 'Arquivo Origem',
+          'Status Conciliação', 'Status Pag', 'Vendedor',
+        ];
+        const rows1 = lalRegistros.map((l: any) => {
+          const cv = cvByLinhaId.get(l.id);
+          const venda = cv ? vendaById.get(cv.venda_interna_id) : null;
+          return [
+            l.operadora || '', l.protocolo_operadora || '', l.cpf_cnpj || '',
+            l.cliente_nome || '', l.telefone || '', l.plano || '', l.tipo_plano || '',
+            l.valor?.toString() || '', l.valor_make?.toString() || '', l.valor_lq?.toString() || '',
+            l.data_status || '', l.status_operadora || '', l.quinzena_ref || '',
+            l.apelido || '', l.arquivo_origem || '',
+            cv ? 'Encontrado' : 'Não encontrado', cv?.status_pag || '',
+            venda?.vendedor_nome || '',
+          ];
+        });
+        downloadBlob(buildCsvBlob(h1, rows1), `relatorio_LAL_conciliacao_${dateStr}.csv`);
+      }
 
+      await new Promise(r => setTimeout(r, 500));
+
+      // CSV 2: Vendas internas
       const h2 = [
         'Vendedor', 'Protocolo Interno', 'CPF/CNPJ', 'Cliente', 'Operadora',
         'Data Instalação', 'Status Make', 'Valor', 'Status Pag', 'Receita Interna',
-        'Receita LAL', 'LAL Apelido', 'Estorno', 'Comiss. Desconto',
-        'Status Conciliação',
-        'LAL Protocolo Operadora', 'LAL CPF/CNPJ', 'LAL Cliente', 'LAL Plano',
-        'LAL Valor', 'LAL Data Status', 'LAL Status Operadora', 'LAL Quinzena',
+        'Receita LAL', 'LAL Apelido', 'Estorno', 'Comiss. Desconto', 'Status Conciliação',
       ];
-      const rows2 = vendas.map(v => {
-        const cv = allComVendas.find((c: any) => c.venda_interna_id === v.venda_interna_id);
-        const linha = cv?.linha_operadora_id ? linhaById.get(cv.linha_operadora_id) : null;
-        const encontrado = !!linha;
-        return [
-          v.vendedor_nome || '', v.protocolo_interno || '', v.cpf_cnpj || '',
-          v.cliente_nome || '', v.operadora_nome || '', v.data_instalacao || '',
-          v.status_make || '', v.receita_interna?.toString() || '',
-          v.status_pag || '', v.receita_interna?.toString() || '',
-          v.receita_lal?.toString() || '', v.lal_apelido || '',
-          v.receita_descontada?.toString() || '', v.comissionamento_desconto || '',
-          encontrado ? 'Encontrado' : 'Não encontrado no Linha a Linha',
-          linha?.protocolo_operadora || '', linha?.cpf_cnpj || '',
-          linha?.cliente_nome || '', linha?.plano || '',
-          linha?.valor?.toString() || '', linha?.data_status || '',
-          linha?.status_operadora || '', linha?.quinzena_ref || '',
-        ];
-      });
-
-      const dateStr = format(new Date(), 'yyyy-MM-dd');
-      downloadBlob(buildCsvBlob(h1, rows1), `relatorio_LAL_conciliacao_${dateStr}.csv`);
-      await new Promise(r => setTimeout(r, 500));
+      const rows2 = vendas.map(v => [
+        v.vendedor_nome || '', v.protocolo_interno || '', v.cpf_cnpj || '',
+        v.cliente_nome || '', v.operadora_nome || '', v.data_instalacao || '',
+        v.status_make || '', v.receita_interna?.toString() || '',
+        v.status_pag || '', v.receita_interna?.toString() || '',
+        v.receita_lal?.toString() || '', v.lal_apelido || '',
+        v.receita_descontada?.toString() || '', v.comissionamento_desconto || '',
+        v.lal_apelido ? 'Encontrado' : 'Não encontrado no Linha a Linha',
+      ]);
       downloadBlob(buildCsvBlob(h2, rows2), `relatorio_vendas_internas_conciliacao_${dateStr}.csv`);
 
-      toast.success(`Relatório gerado: ${rows1.length} linhas LAL + ${rows2.length} vendas internas`);
+      toast.success(`Relatório gerado: ${lalRegistros.length} registros LAL + ${vendas.length} vendas internas`);
     } catch (err: any) {
       console.error(err);
       toast.error('Erro ao gerar relatório: ' + err.message);
@@ -893,8 +985,9 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
       {activeView === 'detalhes' && (
         <div className="overflow-x-auto border rounded-lg max-h-[400px]">
           <Table>
-            <TableHeader>
+             <TableHeader>
               <TableRow>
+                <TableHead className="text-xs w-8"></TableHead>
                 <TableHead className="text-xs">dt_atv</TableHead>
                 <TableHead className="text-xs">Protocolo</TableHead>
                 <TableHead className="text-xs">Operadora</TableHead>
@@ -912,6 +1005,17 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
             <TableBody>
               {vendas.slice(0, 200).map(v => (
                 <TableRow key={v.id}>
+                  <TableCell className="p-1">
+                    {v.lal_apelido && (
+                      <Button
+                        variant="ghost" size="icon" className="h-6 w-6"
+                        onClick={() => openLalDetail(v.id, v.cliente_nome || 'Venda')}
+                        title="Ver registros LAL vinculados"
+                      >
+                        <Link2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </TableCell>
                   <TableCell className="text-xs">{v.data_instalacao || '-'}</TableCell>
                   <TableCell className="text-xs font-mono">{v.protocolo_interno || '-'}</TableCell>
                   <TableCell className="text-xs">{v.operadora_nome || '-'}</TableCell>
@@ -941,6 +1045,63 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
       {vendas.length > 200 && activeView === 'detalhes' && (
         <p className="text-xs text-muted-foreground text-center">Mostrando 200 de {vendas.length}. Exporte o CSV para o completo.</p>
       )}
+
+      {/* LAL Detail Dialog */}
+      <Dialog open={lalDetailDialog.open} onOpenChange={(open) => setLalDetailDialog(prev => ({ ...prev, open }))}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-sm">
+              <Link2 className="h-4 w-4" />
+              Registros LAL vinculados — {lalDetailDialog.clienteNome}
+            </DialogTitle>
+          </DialogHeader>
+          {lalDetailLoading ? (
+            <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin" /></div>
+          ) : lalDetailDialog.registros.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-6">Nenhum registro LAL vinculado a esta venda.</p>
+          ) : (
+            <div className="space-y-3">
+              <div className="text-sm font-medium">
+                {lalDetailDialog.registros.length} registro(s) — Total: {formatBRL(lalDetailDialog.registros.reduce((s: number, r: any) => s + Number(r.receita || 0), 0))}
+              </div>
+              <div className="overflow-x-auto border rounded-lg">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">ID</TableHead>
+                      <TableHead className="text-xs">CPF/CNPJ</TableHead>
+                      <TableHead className="text-xs">N. Solicitação</TableHead>
+                      <TableHead className="text-xs">Cliente</TableHead>
+                      <TableHead className="text-xs">Plano</TableHead>
+                      <TableHead className="text-xs text-right">Receita</TableHead>
+                      <TableHead className="text-xs">Data Ativação</TableHead>
+                      <TableHead className="text-xs">Tipo Vínculo</TableHead>
+                      <TableHead className="text-xs">Linha CSV</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {lalDetailDialog.registros.map((r: any) => (
+                      <TableRow key={r.id}>
+                        <TableCell className="text-xs font-mono">{r.id?.substring(0, 8)}</TableCell>
+                        <TableCell className="text-xs">{r.cpf_cnpj || '-'}</TableCell>
+                        <TableCell className="text-xs font-mono">{r.n_solicitacao || '-'}</TableCell>
+                        <TableCell className="text-xs">{r.cliente_nome || '-'}</TableCell>
+                        <TableCell className="text-xs">{r.plano || '-'}</TableCell>
+                        <TableCell className="text-xs text-right font-medium">{formatBRL(Number(r.receita || 0))}</TableCell>
+                        <TableCell className="text-xs">{r.data_ativacao || '-'}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-xs">{r.tipo_vinculo}</Badge>
+                        </TableCell>
+                        <TableCell className="text-xs">{r.linha_csv || '-'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
