@@ -652,7 +652,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       for (let i = 0; i < vendasToUpdate.length; i += 50) {
         const batch = vendasToUpdate.slice(i, i + 50);
         await Promise.all(
-          batch.map(v => {
+          batch.map(async v => {
             const updateData: any = { status_pag: newStatus };
             // If pre-matched but not yet saved to DB, save the link too
             if (!v.linha_operadora_id && v.matched_linha_id) {
@@ -660,7 +660,11 @@ export function StepConciliacao({ comissionamentoId }: Props) {
               updateData.receita_lal = v.matched_valor_lq;
               updateData.lal_apelido = v.matched_apelido;
             }
-            return supabase.from('comissionamento_vendas').update(updateData).eq('id', v.id);
+            await supabase.from('comissionamento_vendas').update(updateData).eq('id', v.id);
+            // Create lal_vinculos for traceability
+            if (v.matched_lal_registro_ids && v.matched_lal_registro_ids.length > 0) {
+              await createLalVinculos(v.id, v.matched_lal_registro_ids, user?.id);
+            }
           })
         );
         setProgress({ current: Math.min(i + 50, vendasToUpdate.length), total: vendasToUpdate.length });
