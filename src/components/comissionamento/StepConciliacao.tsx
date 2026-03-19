@@ -600,28 +600,52 @@ export function StepConciliacao({ comissionamentoId }: Props) {
     try {
       const ids = Array.from(selectedAtencaoIds);
       const vendasById = new Map(vendas.map(v => [v.id, v]));
-      let updated = 0;
-      for (let i = 0; i < ids.length; i += 50) {
-        const batch = ids.slice(i, i + 50);
-        for (const id of batch) {
-          const v = vendasById.get(id);
-          if (!v) continue;
-          const updateData: any = { status_pag: status };
-          if (!v.linha_operadora_id && v.matched_linha_id) {
-            updateData.linha_operadora_id = v.matched_linha_id;
-            updateData.receita_lal = v.matched_valor_lq;
-            updateData.lal_apelido = v.matched_apelido;
-          }
-          await supabase.from('comissionamento_vendas').update(updateData).eq('id', id);
-          // Create lal_vinculos
-          if (v.matched_lal_registro_ids && v.matched_lal_registro_ids.length > 0) {
-            await createLalVinculos(id, v.matched_lal_registro_ids, user?.id);
-          }
-          updated++;
+
+      const statusOnlyIds: string[] = [];
+      const needsLinkUpdate: ComVenda[] = [];
+      const allVinculos: any[] = [];
+
+      for (const id of ids) {
+        const v = vendasById.get(id);
+        if (!v) continue;
+        if (!v.linha_operadora_id && v.matched_linha_id) {
+          needsLinkUpdate.push(v);
+        } else {
+          statusOnlyIds.push(id);
         }
-        setProgress({ current: Math.min(i + 50, ids.length), total: ids.length });
+        if (v.matched_lal_registro_ids && v.matched_lal_registro_ids.length > 0) {
+          for (const regId of v.matched_lal_registro_ids) {
+            allVinculos.push({ lal_registro_id: regId, comissionamento_venda_id: id, tipo_vinculo: 'automatico', receita_atribuida: null, created_by: user?.id || null });
+          }
+        }
       }
-      toast.success(`${updated} vendas marcadas como ${status}`);
+
+      let processed = 0;
+      const total = ids.length;
+
+      for (let i = 0; i < statusOnlyIds.length; i += 200) {
+        const batch = statusOnlyIds.slice(i, i + 200);
+        await supabase.from('comissionamento_vendas').update({ status_pag: status } as any).in('id', batch);
+        processed += batch.length;
+        setProgress({ current: processed, total });
+      }
+
+      for (let i = 0; i < needsLinkUpdate.length; i += 50) {
+        const batch = needsLinkUpdate.slice(i, i + 50);
+        await Promise.all(batch.map(v =>
+          supabase.from('comissionamento_vendas').update({
+            status_pag: status, linha_operadora_id: v.matched_linha_id, receita_lal: v.matched_valor_lq, lal_apelido: v.matched_apelido,
+          } as any).eq('id', v.id)
+        ));
+        processed += batch.length;
+        setProgress({ current: processed, total });
+      }
+
+      for (let i = 0; i < allVinculos.length; i += 200) {
+        await supabase.from('lal_vinculos' as any).upsert(allVinculos.slice(i, i + 200) as any, { onConflict: 'lal_registro_id,comissionamento_venda_id' });
+      }
+
+      toast.success(`${ids.length} vendas marcadas como ${status}`);
       setSelectedAtencaoIds(new Set());
       loadData();
     } catch (err: any) {
