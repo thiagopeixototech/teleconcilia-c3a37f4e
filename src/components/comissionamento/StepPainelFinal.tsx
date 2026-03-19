@@ -10,7 +10,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import {
-  Loader2, Download, DollarSign, Users, RotateCcw, TrendingDown, Receipt, FileDown, Grid3X3, AlertTriangle, Eye, Link2,
+  Loader2, Download, DollarSign, Users, RotateCcw, TrendingDown, Receipt, FileDown, Grid3X3, AlertTriangle, Eye, Link2, ArrowUpDown, ArrowUp, ArrowDown,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -252,6 +252,45 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
   }, [vendasSemMatch]);
 
   const [showSemMatch, setShowSemMatch] = useState(false);
+
+  // Sorting for Detalhes tab
+  type SortField = 'receita_lal' | 'estorno' | 'churn' | null;
+  type SortDir = 'asc' | 'desc';
+  const [sortField, setSortField] = useState<SortField>(null);
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      if (sortDir === 'desc') setSortDir('asc');
+      else { setSortField(null); setSortDir('desc'); }
+    } else {
+      setSortField(field);
+      setSortDir('desc');
+    }
+  };
+
+  const sortedVendas = useMemo(() => {
+    if (!sortField) return vendas;
+    return [...vendas].sort((a, b) => {
+      let va = 0, vb = 0;
+      if (sortField === 'receita_lal') {
+        va = Number(a.receita_lal || 0);
+        vb = Number(b.receita_lal || 0);
+      } else if (sortField === 'estorno') {
+        va = Number(a.receita_descontada || 0);
+        vb = Number(b.receita_descontada || 0);
+      } else if (sortField === 'churn') {
+        va = (a.status_make || '').toLowerCase().startsWith('churn') ? Number(a.receita_interna || 0) : 0;
+        vb = (b.status_make || '').toLowerCase().startsWith('churn') ? Number(b.receita_interna || 0) : 0;
+      }
+      return sortDir === 'desc' ? vb - va : va - vb;
+    });
+  }, [vendas, sortField, sortDir]);
+
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field) return <ArrowUpDown className="h-3 w-3 ml-1 opacity-40" />;
+    return sortDir === 'desc' ? <ArrowDown className="h-3 w-3 ml-1" /> : <ArrowUp className="h-3 w-3 ml-1" />;
+  };
 
   const [isExportingReport, setIsExportingReport] = useState(false);
 
@@ -995,15 +1034,25 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
                 <TableHead className="text-xs">Cliente</TableHead>
                 <TableHead className="text-xs">Vendedor</TableHead>
                 <TableHead className="text-xs">Rec. Int.</TableHead>
-                <TableHead className="text-xs">Rec. LAL</TableHead>
+                <TableHead className="text-xs cursor-pointer select-none" onClick={() => toggleSort('receita_lal')}>
+                  <div className="flex items-center">Rec. LAL<SortIcon field="receita_lal" /></div>
+                </TableHead>
                 <TableHead className="text-xs">Status</TableHead>
                 <TableHead className="text-xs">Status Pag</TableHead>
                 <TableHead className="text-xs">LAL</TableHead>
-                <TableHead className="text-xs">Estorno</TableHead>
+                <TableHead className="text-xs cursor-pointer select-none" onClick={() => toggleSort('estorno')}>
+                  <div className="flex items-center">Estorno<SortIcon field="estorno" /></div>
+                </TableHead>
+                <TableHead className="text-xs cursor-pointer select-none" onClick={() => toggleSort('churn')}>
+                  <div className="flex items-center">Churn<SortIcon field="churn" /></div>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {vendas.slice(0, 200).map(v => (
+              {sortedVendas.slice(0, 200).map(v => {
+                const isChurn = (v.status_make || '').toLowerCase().startsWith('churn');
+                const churnValue = isChurn ? Number(v.receita_interna || 0) : 0;
+                return (
                 <TableRow key={v.id}>
                   <TableCell className="p-1">
                     {v.lal_apelido && (
@@ -1035,8 +1084,10 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
                   </TableCell>
                   <TableCell className="text-xs max-w-[80px] truncate">{v.lal_apelido || '-'}</TableCell>
                   <TableCell className="text-xs text-destructive">{v.receita_descontada ? formatBRL(Number(v.receita_descontada)) : '-'}</TableCell>
+                  <TableCell className="text-xs text-destructive">{churnValue > 0 ? formatBRL(churnValue) : '-'}</TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
             </TableBody>
           </Table>
         </div>
