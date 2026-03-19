@@ -8,15 +8,19 @@ import { toast } from "sonner";
 import { Trash2, AlertTriangle, Loader2 } from "lucide-react";
 
 const TABLES = [
+  { key: "lal_vinculos", label: "LAL Vínculos", order: 0 },
   { key: "comissionamento_vendas", label: "Comissionamento Vendas", order: 1 },
-  { key: "comissionamento_lal", label: "Comissionamento LAL", order: 2 },
+  { key: "lal_registros", label: "LAL Registros", order: 1.5 },
+  { key: "lal_importacoes", label: "LAL Importações", order: 1.6 },
+  { key: "lal_audit_log", label: "LAL Audit Log", order: 1.7 },
+  { key: "comissionamento_lal", label: "Comissionamento LAL (legado)", order: 2 },
   { key: "comissionamento_fontes", label: "Comissionamento Fontes", order: 3 },
   { key: "comissionamentos", label: "Comissionamentos", order: 4 },
   { key: "conciliacoes", label: "Conciliações", order: 5 },
   { key: "estornos", label: "Estornos", order: 6 },
   { key: "audit_log_vendas", label: "Audit Log Vendas", order: 7 },
   { key: "audit_log", label: "Audit Log", order: 8 },
-  { key: "linha_operadora", label: "Linha Operadora (LAL)", order: 9 },
+  { key: "linha_operadora", label: "Linha Operadora (legado)", order: 9 },
   { key: "vendas_internas", label: "Vendas Internas", order: 10 },
 ] as const;
 

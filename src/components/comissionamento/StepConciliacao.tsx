@@ -58,6 +58,7 @@ interface ComVenda {
   matched_linha_id?: string | null;
   matched_valor_lq?: number | null;
   matched_apelido?: string | null;
+  matched_lal_registro_ids?: string[];
   is_atencao?: boolean;
   atencao_key?: string;
 }
@@ -120,12 +121,16 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         offset += batchSize;
       }
 
-      const [lalRes] = await Promise.all([
-        supabase
-          .from('comissionamento_lal')
-          .select('*')
-          .eq('comissionamento_id', comissionamentoId),
-      ]);
+      // Load LAL importacoes (new architecture)
+      const { data: lalImportacoes } = await supabase
+        .from('lal_importacoes' as any)
+        .select('*')
+        .eq('comissionamento_id', comissionamentoId);
+
+      // Fallback to comissionamento_lal if no lal_importacoes found
+      const lalData = (lalImportacoes && lalImportacoes.length > 0)
+        ? lalImportacoes
+        : (await supabase.from('comissionamento_lal').select('*').eq('comissionamento_id', comissionamentoId)).data || [];
 
       const mapped: ComVenda[] = allVendas.map((row: any) => {
         const vi = row.vendas_internas;
@@ -159,7 +164,6 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         };
       });
 
-      const lalData = lalRes.data || [];
       setVendas(mapped);
       setLals(lalData);
 
@@ -176,24 +180,54 @@ export function StepConciliacao({ comissionamentoId }: Props) {
 
   const runPreMatch = async (vendasData: ComVenda[], lalData: any[]) => {
     try {
-      const lalApelidos = lalData.map((l: any) => l.apelido);
-      const lalMatchMap = new Map<string, string>();
-      lalData.forEach((l: any) => lalMatchMap.set(l.apelido, l.tipo_match));
+      // Determine if we have lal_importacoes (new arch) or comissionamento_lal (old arch)
+      const isNewArch = lalData.some((l: any) => l.created_by != null); // lal_importacoes has created_by
 
-      // Fetch all linhas for all LALs
       const allLinhas: any[] = [];
-      for (const apelido of lalApelidos) {
-        let offset = 0;
-        while (true) {
-          const { data } = await supabase
-            .from('linha_operadora')
-            .select('id, protocolo_operadora, cpf_cnpj, telefone, valor_lq, apelido')
-            .eq('apelido', apelido)
-            .range(offset, offset + 999);
-          if (!data || data.length === 0) break;
-          allLinhas.push(...data);
-          if (data.length < 1000) break;
-          offset += 1000;
+
+      if (isNewArch) {
+        // NEW ARCHITECTURE: Fetch from lal_registros via importacao IDs
+        const importacaoIds = lalData.map((l: any) => l.id);
+        for (const impId of importacaoIds) {
+          let offset = 0;
+          while (true) {
+            const { data } = await supabase
+              .from('lal_registros' as any)
+              .select('id, n_solicitacao, cpf_cnpj, telefone, receita, importacao_id, status')
+              .eq('importacao_id', impId)
+              .eq('status', 'ativo')
+              .range(offset, offset + 999);
+            if (!data || data.length === 0) break;
+            // Map lal_registros fields to a common shape
+            allLinhas.push(...(data as any[]).map((r: any) => ({
+              id: r.id,
+              protocolo_operadora: r.n_solicitacao,
+              cpf_cnpj: r.cpf_cnpj,
+              telefone: r.telefone,
+              valor_lq: r.receita,
+              apelido: lalData.find((l: any) => l.id === r.importacao_id)?.apelido || '',
+              _importacao_id: r.importacao_id,
+            })));
+            if ((data as any[]).length < 1000) break;
+            offset += 1000;
+          }
+        }
+      } else {
+        // OLD ARCHITECTURE: Fetch from linha_operadora by apelido
+        const lalApelidos = lalData.map((l: any) => l.apelido);
+        for (const apelido of lalApelidos) {
+          let offset = 0;
+          while (true) {
+            const { data } = await supabase
+              .from('linha_operadora')
+              .select('id, protocolo_operadora, cpf_cnpj, telefone, valor_lq, apelido')
+              .eq('apelido', apelido)
+              .range(offset, offset + 999);
+            if (!data || data.length === 0) break;
+            allLinhas.push(...data);
+            if (data.length < 1000) break;
+            offset += 1000;
+          }
         }
       }
 
@@ -317,6 +351,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           matched_linha_id: primaryLinha.id,
           matched_valor_lq: totalValorLq,
           matched_apelido: candidate.apelido,
+          matched_lal_registro_ids: linhasToUse.map((l: any) => l.id),
           is_atencao: isAtencao,
           atencao_key: isAtencao ? candidate.matchKey : undefined,
         };
@@ -326,6 +361,23 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       setMatchRan(true);
     } catch (err: any) {
       console.error('Pre-match error:', err);
+    }
+  };
+
+  // Helper: create lal_vinculos for matched LAL records
+  const createLalVinculos = async (comVendaId: string, lalRegistroIds: string[], userId?: string) => {
+    if (!lalRegistroIds || lalRegistroIds.length === 0) return;
+    const vinculos = lalRegistroIds.map(regId => ({
+      lal_registro_id: regId,
+      comissionamento_venda_id: comVendaId,
+      tipo_vinculo: 'automatico',
+      receita_atribuida: null,
+      created_by: userId || null,
+    }));
+    // Insert in batches, ignore duplicates
+    for (let i = 0; i < vinculos.length; i += 50) {
+      const batch = vinculos.slice(i, i + 50);
+      await supabase.from('lal_vinculos' as any).upsert(batch as any, { onConflict: 'lal_registro_id,comissionamento_venda_id' });
     }
   };
 
@@ -404,6 +456,10 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           updateData.lal_apelido = v.matched_apelido;
         }
         await supabase.from('comissionamento_vendas').update(updateData).eq('id', v.id);
+        // Create lal_vinculos
+        if (v.matched_lal_registro_ids && v.matched_lal_registro_ids.length > 0) {
+          await createLalVinculos(v.id, v.matched_lal_registro_ids, user?.id);
+        }
       }
 
       const count = Object.keys(groupSelections).length;
@@ -557,6 +613,10 @@ export function StepConciliacao({ comissionamentoId }: Props) {
             updateData.lal_apelido = v.matched_apelido;
           }
           await supabase.from('comissionamento_vendas').update(updateData).eq('id', id);
+          // Create lal_vinculos
+          if (v.matched_lal_registro_ids && v.matched_lal_registro_ids.length > 0) {
+            await createLalVinculos(id, v.matched_lal_registro_ids, user?.id);
+          }
           updated++;
         }
         setProgress({ current: Math.min(i + 50, ids.length), total: ids.length });
@@ -600,7 +660,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       for (let i = 0; i < vendasToUpdate.length; i += 50) {
         const batch = vendasToUpdate.slice(i, i + 50);
         await Promise.all(
-          batch.map(v => {
+          batch.map(async v => {
             const updateData: any = { status_pag: newStatus };
             // If pre-matched but not yet saved to DB, save the link too
             if (!v.linha_operadora_id && v.matched_linha_id) {
@@ -608,7 +668,11 @@ export function StepConciliacao({ comissionamentoId }: Props) {
               updateData.receita_lal = v.matched_valor_lq;
               updateData.lal_apelido = v.matched_apelido;
             }
-            return supabase.from('comissionamento_vendas').update(updateData).eq('id', v.id);
+            await supabase.from('comissionamento_vendas').update(updateData).eq('id', v.id);
+            // Create lal_vinculos for traceability
+            if (v.matched_lal_registro_ids && v.matched_lal_registro_ids.length > 0) {
+              await createLalVinculos(v.id, v.matched_lal_registro_ids, user?.id);
+            }
           })
         );
         setProgress({ current: Math.min(i + 50, vendasToUpdate.length), total: vendasToUpdate.length });
