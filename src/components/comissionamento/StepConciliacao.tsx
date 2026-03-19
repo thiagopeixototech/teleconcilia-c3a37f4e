@@ -231,6 +231,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
             offset += 1000;
           }
         }
+      }
 
       const normDoc = normalizeCpfCnpjForMatch;
       const linhasByProtocolo = new Map<string, any[]>();
