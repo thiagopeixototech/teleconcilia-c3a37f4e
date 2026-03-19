@@ -211,6 +211,15 @@ const App = () => (
             />
             
             <Route
+              path="/registros-lal"
+              element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <RegistrosLAL />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
               path="/limpar-dados"
               element={
                 <ProtectedRoute allowedRoles={['admin']}>
