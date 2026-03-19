@@ -1034,15 +1034,25 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
                 <TableHead className="text-xs">Cliente</TableHead>
                 <TableHead className="text-xs">Vendedor</TableHead>
                 <TableHead className="text-xs">Rec. Int.</TableHead>
-                <TableHead className="text-xs">Rec. LAL</TableHead>
+                <TableHead className="text-xs cursor-pointer select-none" onClick={() => toggleSort('receita_lal')}>
+                  <div className="flex items-center">Rec. LAL<SortIcon field="receita_lal" /></div>
+                </TableHead>
                 <TableHead className="text-xs">Status</TableHead>
                 <TableHead className="text-xs">Status Pag</TableHead>
                 <TableHead className="text-xs">LAL</TableHead>
-                <TableHead className="text-xs">Estorno</TableHead>
+                <TableHead className="text-xs cursor-pointer select-none" onClick={() => toggleSort('estorno')}>
+                  <div className="flex items-center">Estorno<SortIcon field="estorno" /></div>
+                </TableHead>
+                <TableHead className="text-xs cursor-pointer select-none" onClick={() => toggleSort('churn')}>
+                  <div className="flex items-center">Churn<SortIcon field="churn" /></div>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {vendas.slice(0, 200).map(v => (
+              {sortedVendas.slice(0, 200).map(v => {
+                const isChurn = (v.status_make || '').toLowerCase().startsWith('churn');
+                const churnValue = isChurn ? Number(v.receita_interna || 0) : 0;
+                return (
                 <TableRow key={v.id}>
                   <TableCell className="p-1">
                     {v.lal_apelido && (
@@ -1074,8 +1084,10 @@ export function StepPainelFinal({ comissionamentoId }: Props) {
                   </TableCell>
                   <TableCell className="text-xs max-w-[80px] truncate">{v.lal_apelido || '-'}</TableCell>
                   <TableCell className="text-xs text-destructive">{v.receita_descontada ? formatBRL(Number(v.receita_descontada)) : '-'}</TableCell>
+                  <TableCell className="text-xs text-destructive">{churnValue > 0 ? formatBRL(churnValue) : '-'}</TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
             </TableBody>
           </Table>
         </div>
