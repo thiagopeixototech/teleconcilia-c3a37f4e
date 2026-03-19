@@ -620,7 +620,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       for (const id of ids) {
         const v = vendasById.get(id);
         if (!v) continue;
-        if (!v.linha_operadora_id && v.matched_linha_id) {
+        if (!v.linha_operadora_id && v.matched_linha_id && v.matched_source_type === 'linha_operadora') {
           needsLinkUpdate.push(v);
         } else {
           statusOnlyIds.push(id);
