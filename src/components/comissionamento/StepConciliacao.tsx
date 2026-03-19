@@ -323,7 +323,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
 
         const candidate = candidates.find(c => c.vendaIndex === index);
         if (!candidate) {
-          return { ...venda, matched_linha_id: null, matched_valor_lq: null, matched_apelido: null, is_atencao: false, atencao_key: undefined };
+          return { ...venda, matched_linha_id: null, matched_valor_lq: null, matched_apelido: null, matched_source_type: null, is_atencao: false, atencao_key: undefined };
         }
 
         const group = groupedByKey.get(candidate.matchKey)!;
