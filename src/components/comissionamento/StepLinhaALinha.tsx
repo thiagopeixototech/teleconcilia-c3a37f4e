@@ -4,6 +4,7 @@ import { parseCurrency } from '@/lib/parseCurrency';
 import { parseDate } from '@/lib/parseDate';
 import { parseCSV } from '@/lib/parseCSV';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 import { MapeamentoColunas, CampoSistema } from '@/types/database';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,7 +35,7 @@ interface LalConfig {
   csvRows?: Record<string, string>[];
   csvHeaders?: string[];
   imported: boolean;
-  importResult?: { total: number; agrupados: number; combos: number };
+  importResult?: { total: number; registros: number };
 }
 
 interface Props {
@@ -42,6 +43,7 @@ interface Props {
 }
 
 export function StepLinhaALinha({ comissionamentoId }: Props) {
+  const { user } = useAuth();
   const [lals, setLals] = useState<LalConfig[]>([]);
   const [operadoras, setOperadoras] = useState<Operadora[]>([]);
   const [mapeamentos, setMapeamentos] = useState<MapeamentoColunas[]>([]);
@@ -54,11 +56,11 @@ export function StepLinhaALinha({ comissionamentoId }: Props) {
       const [opRes, mapRes, lalRes] = await Promise.all([
         supabase.from('operadoras').select('id, nome').eq('ativa', true).order('nome'),
         supabase.from('mapeamento_colunas').select('*').order('nome'),
-        supabase.from('comissionamento_lal').select('*').eq('comissionamento_id', comissionamentoId),
+        supabase.from('lal_importacoes' as any).select('*').eq('comissionamento_id', comissionamentoId),
       ]);
       if (opRes.data) setOperadoras(opRes.data);
       if (mapRes.data) setMapeamentos(mapRes.data as MapeamentoColunas[]);
-      if (lalRes.data) setExistingLals(lalRes.data);
+      if (lalRes.data) setExistingLals(lalRes.data as any[]);
     };
     load();
   }, [comissionamentoId]);
@@ -82,8 +84,6 @@ export function StepLinhaALinha({ comissionamentoId }: Props) {
     setLals(prev => prev.filter(l => l.id !== id));
   };
 
-  // Uses robust RFC 4180 parseCSV from lib
-
   const handleFile = async (lalId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -94,10 +94,7 @@ export function StepLinhaALinha({ comissionamentoId }: Props) {
     toast.success(`${rows.length} linhas encontradas`);
   };
 
-  // Auto-select mapeamento when operadora changes
   const getMapeamentosForOperadora = (opId: string) => mapeamentos.filter(m => m.operadora_id === opId);
-
-  // normalizeCpfCnpj imported from lib
 
   async function calcularHashArquivo(file: File): Promise<string> {
     const buffer = await file.arrayBuffer();
@@ -119,17 +116,19 @@ export function StepLinhaALinha({ comissionamentoId }: Props) {
 
     setIsProcessing(true);
     try {
-      // CC-02: Verificar hash do arquivo para evitar dupla importação
+      let fileHash: string | null = null;
+
+      // Verificar hash do arquivo para evitar dupla importação
       if (lal.arquivo) {
-        const hash = await calcularHashArquivo(lal.arquivo);
+        fileHash = await calcularHashArquivo(lal.arquivo);
         const { data: existingHash } = await supabase
-          .from('comissionamento_lal')
+          .from('lal_importacoes' as any)
           .select('apelido, created_at')
-          .eq('hash_arquivo', hash)
+          .eq('hash_arquivo', fileHash)
           .limit(1);
 
         if (existingHash && existingHash.length > 0) {
-          const existing = existingHash[0];
+          const existing = existingHash[0] as any;
           const dataImport = new Date(existing.created_at).toLocaleDateString('pt-BR');
           toast.error(
             `⚠️ Este arquivo já foi importado anteriormente.\nLote: "${existing.apelido}" — importado em ${dataImport}\nSe deseja reimportar, exclua o lote original primeiro.`,
@@ -138,47 +137,63 @@ export function StepLinhaALinha({ comissionamentoId }: Props) {
           setIsProcessing(false);
           return;
         }
-
-        // Store hash for later insertion
-        (lal as any)._fileHash = hash;
       }
 
       const map = mapeamento.mapeamento as unknown as Record<CampoSistema, string>;
 
-      // Import each row individually (no grouping)
-      const linhas = lal.csvRows!.map(row => {
+      // 1. Criar registro de importação (lote)
+      const { data: importacao, error: importError } = await supabase
+        .from('lal_importacoes' as any)
+        .insert({
+          comissionamento_id: comissionamentoId,
+          operadora_id: lal.operadoraId,
+          mapeamento_id: lal.mapeamentoId,
+          apelido: lal.apelido.trim(),
+          arquivo_nome: lal.arquivo?.name || null,
+          hash_arquivo: fileHash,
+          tipo_match: lal.tipoMatch,
+          qtd_registros: lal.csvRows.length,
+          status: 'ativo',
+          created_by: user!.id,
+        } as any)
+        .select('id')
+        .single();
+
+      if (importError) throw importError;
+      const importacaoId = (importacao as any).id;
+
+      // 2. Preparar registros individuais
+      const registros = lal.csvRows.map((row, idx) => {
         const cpf = row[map.cpf_cnpj] || null;
         const protocolo = row[map.protocolo_operadora] || null;
         const valorStr = map.valor && row[map.valor] ? row[map.valor] : '';
-        const valor = parseCurrency(valorStr);
+        const receita = parseCurrency(valorStr);
         const plano = map.plano ? row[map.plano] : null;
+        const dataAtivacao = map.data_status ? parseDate(row[map.data_status]) : null;
 
         return {
-          operadora: operadora.nome,
-          protocolo_operadora: protocolo,
+          importacao_id: importacaoId,
           cpf_cnpj: cpf,
+          n_solicitacao: protocolo,
+          receita: receita,
+          data_ativacao: dataAtivacao,
+          plano: plano || null,
+          operadora: operadora.nome,
           cliente_nome: map.cliente_nome ? row[map.cliente_nome] : null,
           telefone: map.telefone ? row[map.telefone] : null,
-          plano: plano || null,
-          valor: valor,
-          valor_lq: valor,
-          tipo_plano: plano || null,
-          data_status: map.data_status ? parseDate(row[map.data_status]) : null,
-          status_operadora: ((map.status_operadora ? row[map.status_operadora] : 'pendente') || 'pendente') as 'aprovado' | 'instalado' | 'cancelado' | 'pendente',
-          quinzena_ref: map.quinzena_ref ? row[map.quinzena_ref] : null,
-          arquivo_origem: lal.arquivo?.name || null,
-          apelido: lal.apelido.trim(),
+          status: 'ativo',
+          linha_csv: idx + 1,
         };
       });
 
-      // Insert linhas
-      for (let i = 0; i < linhas.length; i += 500) {
-        const batch = linhas.slice(i, i + 500);
-        const { error } = await supabase.from('linha_operadora').insert(batch);
+      // 3. Inserir registros em lotes
+      for (let i = 0; i < registros.length; i += 500) {
+        const batch = registros.slice(i, i + 500);
+        const { error } = await supabase.from('lal_registros' as any).insert(batch as any);
         if (error) throw error;
       }
 
-      // Register LAL in comissionamento_lal
+      // 4. Manter backward compat com comissionamento_lal
       await supabase.from('comissionamento_lal').insert({
         comissionamento_id: comissionamentoId,
         apelido: lal.apelido.trim(),
@@ -186,15 +201,15 @@ export function StepLinhaALinha({ comissionamentoId }: Props) {
         mapeamento_id: lal.mapeamentoId,
         tipo_match: lal.tipoMatch,
         arquivo_nome: lal.arquivo?.name || null,
-        qtd_registros: linhas.length,
-        hash_arquivo: (lal as any)._fileHash || null,
+        qtd_registros: registros.length,
+        hash_arquivo: fileHash,
       } as any);
 
       updateLal(lal.id, {
         imported: true,
-        importResult: { total: lal.csvRows!.length, agrupados: linhas.length, combos: 0 },
+        importResult: { total: lal.csvRows.length, registros: registros.length },
       });
-      toast.success(`${linhas.length} registros importados`);
+      toast.success(`${registros.length} registros LAL persistidos no banco`);
     } catch (err: any) {
       toast.error('Erro: ' + err.message);
     } finally {
@@ -208,7 +223,7 @@ export function StepLinhaALinha({ comissionamentoId }: Props) {
         <Alert>
           <CheckCircle2 className="h-4 w-4" />
           <AlertDescription>
-            {existingLals.length} LAL(s) já importados: {existingLals.map(l => l.apelido).join(', ')}
+            {existingLals.length} LAL(s) já importados: {existingLals.map((l: any) => l.apelido).join(', ')}
           </AlertDescription>
         </Alert>
       )}
@@ -240,8 +255,7 @@ export function StepLinhaALinha({ comissionamentoId }: Props) {
               {lal.imported && lal.importResult && (
                 <div className="flex gap-4 text-sm">
                   <span>Linhas CSV: <strong>{lal.importResult.total}</strong></span>
-                  <span>Registros: <strong>{lal.importResult.agrupados}</strong></span>
-                  <span>COMBOs: <strong>{lal.importResult.combos}</strong></span>
+                  <span>Registros persistidos: <strong>{lal.importResult.registros}</strong></span>
                 </div>
               )}
 
