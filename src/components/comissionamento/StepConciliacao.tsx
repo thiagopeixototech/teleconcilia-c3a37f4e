@@ -58,6 +58,7 @@ interface ComVenda {
   matched_linha_id?: string | null;
   matched_valor_lq?: number | null;
   matched_apelido?: string | null;
+  matched_source_type?: 'linha_operadora' | 'lal_registro' | null;
   matched_lal_registro_ids?: string[];
   is_atencao?: boolean;
   atencao_key?: string;
@@ -207,6 +208,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
               valor_lq: r.receita,
               apelido: lalData.find((l: any) => l.id === r.importacao_id)?.apelido || '',
               _importacao_id: r.importacao_id,
+              _source_type: 'lal_registro' as const,
             })));
             if ((data as any[]).length < 1000) break;
             offset += 1000;
@@ -224,7 +226,10 @@ export function StepConciliacao({ comissionamentoId }: Props) {
               .eq('apelido', apelido)
               .range(offset, offset + 999);
             if (!data || data.length === 0) break;
-            allLinhas.push(...data);
+            allLinhas.push(...data.map((linha: any) => ({
+              ...linha,
+              _source_type: 'linha_operadora' as const,
+            })));
             if (data.length < 1000) break;
             offset += 1000;
           }
@@ -318,7 +323,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
 
         const candidate = candidates.find(c => c.vendaIndex === index);
         if (!candidate) {
-          return { ...venda, matched_linha_id: null, matched_valor_lq: null, matched_apelido: null, is_atencao: false, atencao_key: undefined };
+          return { ...venda, matched_linha_id: null, matched_valor_lq: null, matched_apelido: null, matched_source_type: null, is_atencao: false, atencao_key: undefined };
         }
 
         const group = groupedByKey.get(candidate.matchKey)!;
@@ -334,7 +339,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         const availableLinhas = candidate.linhas.filter((l: any) => !claimedLinhaIds.has(l.id));
         if (availableLinhas.length === 0 && !isAtencao) {
           // All lines already claimed — this venda gets no LAL revenue
-          return { ...venda, matched_linha_id: null, matched_valor_lq: null, matched_apelido: null, is_atencao: false, atencao_key: undefined };
+          return { ...venda, matched_linha_id: null, matched_valor_lq: null, matched_apelido: null, matched_source_type: null, is_atencao: false, atencao_key: undefined };
         }
 
         const linhasToUse = isAtencao ? candidate.linhas : availableLinhas;
@@ -351,6 +356,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           matched_linha_id: primaryLinha.id,
           matched_valor_lq: totalValorLq,
           matched_apelido: candidate.apelido,
+          matched_source_type: primaryLinha._source_type || null,
           matched_lal_registro_ids: linhasToUse.map((l: any) => l.id),
           is_atencao: isAtencao,
           atencao_key: isAtencao ? candidate.matchKey : undefined,
@@ -450,8 +456,11 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         if (!status) continue;
 
         const updateData: any = { status_pag: status };
-        if (!v.linha_operadora_id && v.matched_linha_id) {
+        if (!v.linha_operadora_id && v.matched_linha_id && v.matched_source_type === 'linha_operadora') {
           updateData.linha_operadora_id = v.matched_linha_id;
+          updateData.receita_lal = v.matched_valor_lq;
+          updateData.lal_apelido = v.matched_apelido;
+        } else if (v.matched_valor_lq != null) {
           updateData.receita_lal = v.matched_valor_lq;
           updateData.lal_apelido = v.matched_apelido;
         }
@@ -497,8 +506,11 @@ export function StepConciliacao({ comissionamentoId }: Props) {
           if (!status) continue;
 
           const updateData: any = { status_pag: status };
-          if (!v.linha_operadora_id && v.matched_linha_id) {
+          if (!v.linha_operadora_id && v.matched_linha_id && v.matched_source_type === 'linha_operadora') {
             updateData.linha_operadora_id = v.matched_linha_id;
+            updateData.receita_lal = v.matched_valor_lq;
+            updateData.lal_apelido = v.matched_apelido;
+          } else if (v.matched_valor_lq != null) {
             updateData.receita_lal = v.matched_valor_lq;
             updateData.lal_apelido = v.matched_apelido;
           }
@@ -608,7 +620,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       for (const id of ids) {
         const v = vendasById.get(id);
         if (!v) continue;
-        if (!v.linha_operadora_id && v.matched_linha_id) {
+        if (!v.linha_operadora_id && v.matched_linha_id && v.matched_source_type === 'linha_operadora') {
           needsLinkUpdate.push(v);
         } else {
           statusOnlyIds.push(id);
@@ -625,7 +637,14 @@ export function StepConciliacao({ comissionamentoId }: Props) {
 
       for (let i = 0; i < statusOnlyIds.length; i += 200) {
         const batch = statusOnlyIds.slice(i, i + 200);
-        await supabase.from('comissionamento_vendas').update({ status_pag: status } as any).in('id', batch);
+        const batchVendas = batch.map(id => vendasById.get(id)).filter(Boolean) as ComVenda[];
+        const payload = batchVendas.map(v => ({
+          id: v.id,
+          status_pag: status,
+          receita_lal: v.matched_valor_lq ?? v.receita_lal ?? null,
+          lal_apelido: v.matched_apelido ?? v.lal_apelido ?? null,
+        }));
+        await supabase.from('comissionamento_vendas').upsert(payload as any, { onConflict: 'id' });
         processed += batch.length;
         setProgress({ current: processed, total });
       }
@@ -646,8 +665,19 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       }
 
       toast.success(`${ids.length} vendas marcadas como ${status}`);
+      setVendas(prev => prev.map(v => {
+        if (!ids.includes(v.id)) return v;
+        const sourceIsLinhaOperadora = v.matched_source_type === 'linha_operadora';
+        return {
+          ...v,
+          status_pag: status,
+          receita_lal: v.matched_valor_lq ?? v.receita_lal ?? null,
+          lal_apelido: v.matched_apelido ?? v.lal_apelido ?? null,
+          linha_operadora_id: (!v.linha_operadora_id && sourceIsLinhaOperadora && v.matched_linha_id) ? v.matched_linha_id : v.linha_operadora_id,
+        };
+      }));
       setSelectedAtencaoIds(new Set());
-      loadData();
+      await loadData();
     } catch (err: any) {
       toast.error('Erro: ' + err.message);
     } finally {
@@ -687,7 +717,7 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       const allVinculos: { lal_registro_id: string; comissionamento_venda_id: string; tipo_vinculo: string; receita_atribuida: null; created_by: string | null }[] = [];
 
       for (const v of vendasToUpdate) {
-        if (!v.linha_operadora_id && v.matched_linha_id) {
+        if (!v.linha_operadora_id && v.matched_linha_id && v.matched_source_type === 'linha_operadora') {
           needsLinkUpdate.push(v);
         } else {
           statusOnlyIds.push(v.id);
@@ -712,7 +742,14 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       // Batch 1: Update status-only vendas in chunks of 200 using .in()
       for (let i = 0; i < statusOnlyIds.length; i += 200) {
         const batch = statusOnlyIds.slice(i, i + 200);
-        await supabase.from('comissionamento_vendas').update({ status_pag: newStatus } as any).in('id', batch);
+        const batchVendas = vendasToUpdate.filter(v => batch.includes(v.id));
+        const payload = batchVendas.map(v => ({
+          id: v.id,
+          status_pag: newStatus,
+          receita_lal: v.matched_valor_lq ?? v.receita_lal ?? null,
+          lal_apelido: v.matched_apelido ?? v.lal_apelido ?? null,
+        }));
+        await supabase.from('comissionamento_vendas').upsert(payload as any, { onConflict: 'id' });
         processed += batch.length;
         setProgress({ current: processed, total });
       }
@@ -741,9 +778,20 @@ export function StepConciliacao({ comissionamentoId }: Props) {
       }
 
       toast.success(`${vendasToUpdate.length} vendas marcadas como ${newStatus}`);
+      setVendas(prev => prev.map(v => {
+        if (!ids.includes(v.id)) return v;
+        const sourceIsLinhaOperadora = v.matched_source_type === 'linha_operadora';
+        return {
+          ...v,
+          status_pag: newStatus,
+          receita_lal: v.matched_valor_lq ?? v.receita_lal ?? null,
+          lal_apelido: v.matched_apelido ?? v.lal_apelido ?? null,
+          linha_operadora_id: (!v.linha_operadora_id && sourceIsLinhaOperadora && v.matched_linha_id) ? v.matched_linha_id : v.linha_operadora_id,
+        };
+      }));
       setSelectedIds(new Set());
       setSelectAll(false);
-      loadData();
+      await loadData();
     } catch (err: any) {
       toast.error('Erro: ' + err.message);
     } finally {
