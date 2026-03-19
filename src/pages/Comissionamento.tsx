@@ -149,147 +149,85 @@ export default function ComissionamentoPage() {
     if (!comId) return;
     setStatsLoading(true);
     try {
-      // Fetch ALL comissionamento_vendas using recursive batching
-      const allRows: any[] = [];
-      let offset = 0;
-      const batchSize = 1000;
-      while (true) {
-        const { data, error } = await supabase
-          .from('comissionamento_vendas')
-          .select(`
-            status_pag,
-            receita_interna,
-            receita_lal,
-            receita_descontada,
-            venda_interna_id,
-            vendas_internas!comissionamento_vendas_venda_interna_id_fkey(
-              status_make,
-              valor,
-              usuario_id,
-              usuarios!vendas_internas_usuario_id_fkey(id, nome),
-              operadoras!vendas_internas_operadora_id_fkey(id, nome, cor_hex)
-            )
-          `)
-          .eq('comissionamento_id', comId)
-          .range(offset, offset + batchSize - 1);
+      // Use server-side RPC for aggregation instead of fetching 12k+ rows
+      const { data: rpcResult, error: rpcError } = await supabase
+        .rpc('get_comissionamento_stats', { _comissionamento_id: comId });
 
-        if (error) throw error;
-        if (!data || data.length === 0) break;
-        allRows.push(...data);
-        if (data.length < batchSize) break;
-        offset += batchSize;
-      }
+      if (rpcError) throw rpcError;
 
-      const rows = allRows;
-      const totalVendas = rows.length;
-      let vendasInstaladas = 0;
-      let vendasConciliadas = 0;
-      let receitaInterna = 0;
-      let receitaConciliada = 0;
-      let totalEstornos = 0;
-      let churn = 0;
+      const result = rpcResult as any;
+      const summary = result.summary;
+      const receitaConciliada = Number(summary.receitaConciliada || 0);
+      const totalEstornos = Number(summary.totalEstornos || 0);
+      const churn = Number(summary.churn || 0);
 
-      // Vendedor & Operadora aggregation
-      const vendedorMap = new Map<string, VendedorRow>();
-      const operadoraMap = new Map<string, OperadoraRow>();
-      const opInfoMap = new Map<string, OperadoraInfo>();
-      const vendMap = new Map<string, string>(); // vendedor_id -> vendedor_nome
+      setStats({
+        totalVendas: Number(summary.totalVendas || 0),
+        vendasInstaladas: Number(summary.vendasInstaladas || 0),
+        vendasConciliadas: Number(summary.vendasConciliadas || 0),
+        receitaInterna: Number(summary.receitaInterna || 0),
+        receitaConciliada,
+        totalEstornos,
+        churn,
+        receitaLiquida: receitaConciliada - totalEstornos - churn,
+      });
+
+      // Vendedor rows
+      setVendedorRows(
+        (result.vendedores || []).map((v: any) => ({
+          vendedor_nome: v.vendedor_nome || 'Não identificado',
+          receita_interna: Number(v.receita_interna || 0),
+          receita_lal: Number(v.receita_lal || 0),
+          estorno: Number(v.estorno || 0),
+          churn: Number(v.churn || 0),
+          receita_liquida: Number(v.receita_liquida || 0),
+        }))
+      );
+
+      // Operadora rows
+      setOperadoraRows(
+        (result.operadoras || []).map((o: any) => ({
+          operadora_nome: o.operadora_nome || 'Sem operadora',
+          total_vendas: Number(o.total_vendas || 0),
+          receita_interna: Number(o.receita_interna || 0),
+          receita_lal: Number(o.receita_lal || 0),
+          estorno: Number(o.estorno || 0),
+          churn: Number(o.churn || 0),
+          receita_liquida: Number(o.receita_liquida || 0),
+        }))
+      );
+
+      // Operadora infos
+      setOperadoraInfos(
+        (result.operadora_infos || []).map((o: any) => ({
+          id: o.id,
+          nome: o.nome,
+          cor_hex: o.cor_hex,
+        }))
+      );
+
+      // Build grid and vendedores list from grid data
       const grid = new Map<string, Map<string, GridCell>>();
+      const vendMap = new Map<string, string>();
       const emptyCell = (): GridCell => ({ vendas: 0, receita: 0, churn: 0, estorno: 0, liquido: 0 });
 
-      for (const row of rows) {
-        const vi = row.vendas_internas as any;
-        const statusMake = (vi?.status_make || '').toLowerCase();
-        const isInstalada = statusMake.startsWith('instalad');
-        const isChurn = statusMake.startsWith('churn');
-        const vendedorNome = vi?.usuarios?.nome || 'Não identificado';
-        const vendedorId = vi?.usuarios?.id || vi?.usuario_id || 'desconhecido';
-        const operadoraNome = vi?.operadoras?.nome || 'Sem operadora';
-        const operadoraId = vi?.operadoras?.id || 'sem_operadora';
-        const operadoraCor = vi?.operadoras?.cor_hex || '#CBD5E1';
+      for (const g of (result.grid || [])) {
+        const vendedorId = g.vendedor_id || 'desconhecido';
+        const vendedorNome = g.vendedor_nome || 'Não identificado';
+        const operadoraId = g.operadora_id || 'sem_operadora';
 
-        if (isInstalada) vendasInstaladas++;
-        const churnVal = isChurn ? Number(row.receita_interna || vi?.valor || 0) : 0;
-        if (isChurn) churn += churnVal;
-
-        receitaInterna += Number(row.receita_interna || 0);
-
-        let lalVal = 0;
-        if (row.status_pag === 'OK') {
-          vendasConciliadas++;
-          lalVal = Number(row.receita_lal || row.receita_interna || 0);
-          receitaConciliada += lalVal;
-        }
-
-        const estornoVal = Number(row.receita_descontada || 0);
-        totalEstornos += estornoVal;
-
-        // Aggregate per vendedor
-        if (!vendedorMap.has(vendedorNome)) {
-          vendedorMap.set(vendedorNome, {
-            vendedor_nome: vendedorNome,
-            receita_interna: 0,
-            receita_lal: 0,
-            estorno: 0,
-            churn: 0,
-            receita_liquida: 0,
-          });
-        }
-        const vr = vendedorMap.get(vendedorNome)!;
-        vr.receita_interna += Number(row.receita_interna || 0);
-        vr.receita_lal += lalVal;
-        vr.estorno += estornoVal;
-        vr.churn += churnVal;
-
-        // Aggregate per operadora
-        if (!operadoraMap.has(operadoraNome)) {
-          operadoraMap.set(operadoraNome, {
-            operadora_nome: operadoraNome,
-            total_vendas: 0,
-            receita_interna: 0,
-            receita_lal: 0,
-            estorno: 0,
-            churn: 0,
-            receita_liquida: 0,
-          });
-        }
-        const or2 = operadoraMap.get(operadoraNome)!;
-        or2.total_vendas++;
-        or2.receita_interna += Number(row.receita_interna || 0);
-        or2.receita_lal += lalVal;
-        or2.estorno += estornoVal;
-        or2.churn += churnVal;
-
-        // Collect operadora info
-        if (operadoraId !== 'sem_operadora' && !opInfoMap.has(operadoraId)) {
-          opInfoMap.set(operadoraId, { id: operadoraId, nome: operadoraNome, cor_hex: operadoraCor });
-        }
-
-        // Build vendedores list
         vendMap.set(vendedorId, vendedorNome);
 
-        // Build grid: vendedor_id x operadora_id
         if (!grid.has(vendedorId)) grid.set(vendedorId, new Map());
         const vendedorGrid = grid.get(vendedorId)!;
-        if (!vendedorGrid.has(operadoraId)) vendedorGrid.set(operadoraId, emptyCell());
-        const cell = vendedorGrid.get(operadoraId)!;
-        cell.vendas++;
-        cell.receita += lalVal;
-        cell.estorno += estornoVal;
-        cell.churn += churnVal;
-      }
-
-      // Calculate receita_liquida & grid liquido
-      for (const vr of vendedorMap.values()) {
-        vr.receita_liquida = vr.receita_lal - vr.estorno - vr.churn;
-      }
-      for (const or2 of operadoraMap.values()) {
-        or2.receita_liquida = or2.receita_lal - or2.estorno - or2.churn;
-      }
-      for (const vendedorGrid of grid.values()) {
-        for (const cell of vendedorGrid.values()) {
-          cell.liquido = cell.receita - cell.estorno - cell.churn;
-        }
+        const cell: GridCell = {
+          vendas: Number(g.vendas || 0),
+          receita: Number(g.receita || 0),
+          estorno: Number(g.estorno || 0),
+          churn: Number(g.churn || 0),
+          liquido: Number(g.receita || 0) - Number(g.estorno || 0) - Number(g.churn || 0),
+        };
+        vendedorGrid.set(operadoraId, cell);
       }
 
       // Operadora totals for grid
@@ -306,28 +244,6 @@ export default function ComissionamentoPage() {
         }
       }
 
-      const receitaLiquida = receitaConciliada - totalEstornos - churn;
-
-      setStats({
-        totalVendas,
-        vendasInstaladas,
-        vendasConciliadas,
-        receitaInterna,
-        receitaConciliada,
-        totalEstornos,
-        churn,
-        receitaLiquida,
-      });
-
-      setVendedorRows(
-        Array.from(vendedorMap.values()).sort((a, b) => b.receita_liquida - a.receita_liquida)
-      );
-      setOperadoraRows(
-        Array.from(operadoraMap.values()).sort((a, b) => b.receita_liquida - a.receita_liquida)
-      );
-      setOperadoraInfos(
-        Array.from(opInfoMap.values()).sort((a, b) => a.nome.localeCompare(b.nome))
-      );
       setGridData(grid);
       setVendedoresList(
         Array.from(vendMap.entries()).map(([id, nome]) => ({ id, nome })).sort((a, b) => a.nome.localeCompare(b.nome))
