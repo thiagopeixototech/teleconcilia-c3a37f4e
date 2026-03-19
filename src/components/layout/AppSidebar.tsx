@@ -20,7 +20,8 @@ import {
   Receipt,
   Trash2,
   Search,
-  FileWarning } from
+  FileWarning,
+  Database } from
 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/contexts/AuthContext';
