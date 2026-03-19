@@ -164,7 +164,8 @@ export function StepConciliacao({ comissionamentoId }: Props) {
         };
       });
 
-      const lalData = lalRes.data || [];
+      });
+
       setVendas(mapped);
       setLals(lalData);
 
@@ -181,26 +182,55 @@ export function StepConciliacao({ comissionamentoId }: Props) {
 
   const runPreMatch = async (vendasData: ComVenda[], lalData: any[]) => {
     try {
-      const lalApelidos = lalData.map((l: any) => l.apelido);
-      const lalMatchMap = new Map<string, string>();
-      lalData.forEach((l: any) => lalMatchMap.set(l.apelido, l.tipo_match));
+      // Determine if we have lal_importacoes (new arch) or comissionamento_lal (old arch)
+      const isNewArch = lalData.some((l: any) => l.created_by != null); // lal_importacoes has created_by
 
-      // Fetch all linhas for all LALs
       const allLinhas: any[] = [];
-      for (const apelido of lalApelidos) {
-        let offset = 0;
-        while (true) {
-          const { data } = await supabase
-            .from('linha_operadora')
-            .select('id, protocolo_operadora, cpf_cnpj, telefone, valor_lq, apelido')
-            .eq('apelido', apelido)
-            .range(offset, offset + 999);
-          if (!data || data.length === 0) break;
-          allLinhas.push(...data);
-          if (data.length < 1000) break;
-          offset += 1000;
+
+      if (isNewArch) {
+        // NEW ARCHITECTURE: Fetch from lal_registros via importacao IDs
+        const importacaoIds = lalData.map((l: any) => l.id);
+        for (const impId of importacaoIds) {
+          let offset = 0;
+          while (true) {
+            const { data } = await supabase
+              .from('lal_registros' as any)
+              .select('id, n_solicitacao, cpf_cnpj, telefone, receita, importacao_id, status')
+              .eq('importacao_id', impId)
+              .eq('status', 'ativo')
+              .range(offset, offset + 999);
+            if (!data || data.length === 0) break;
+            // Map lal_registros fields to a common shape
+            allLinhas.push(...(data as any[]).map((r: any) => ({
+              id: r.id,
+              protocolo_operadora: r.n_solicitacao,
+              cpf_cnpj: r.cpf_cnpj,
+              telefone: r.telefone,
+              valor_lq: r.receita,
+              apelido: lalData.find((l: any) => l.id === r.importacao_id)?.apelido || '',
+              _importacao_id: r.importacao_id,
+            })));
+            if ((data as any[]).length < 1000) break;
+            offset += 1000;
+          }
         }
-      }
+      } else {
+        // OLD ARCHITECTURE: Fetch from linha_operadora by apelido
+        const lalApelidos = lalData.map((l: any) => l.apelido);
+        for (const apelido of lalApelidos) {
+          let offset = 0;
+          while (true) {
+            const { data } = await supabase
+              .from('linha_operadora')
+              .select('id, protocolo_operadora, cpf_cnpj, telefone, valor_lq, apelido')
+              .eq('apelido', apelido)
+              .range(offset, offset + 999);
+            if (!data || data.length === 0) break;
+            allLinhas.push(...data);
+            if (data.length < 1000) break;
+            offset += 1000;
+          }
+        }
 
       const normDoc = normalizeCpfCnpjForMatch;
       const linhasByProtocolo = new Map<string, any[]>();
